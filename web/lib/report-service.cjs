@@ -49,7 +49,7 @@ function hasFullReport(env = process.env) {
 }
 
 function createPreview(report) {
-  return {
+  const result = {
     archetype: report.archetype,
     subtitle: report.subtitle,
     oneLineFormula: report.oneLineFormula,
@@ -57,6 +57,7 @@ function createPreview(report) {
     strengths: report.strengths.slice(0, 3),
     challenges: report.challenges.slice(0, 1),
   };
+  return result;
 }
 
 async function generateReportRequest(input, options = {}) {
@@ -94,7 +95,7 @@ async function generateReportRequest(input, options = {}) {
   }
   if (!validation || !validation.valid) return { status: 502, body: { aiStatus: "error", error: "Не удалось проверить персональный разбор. Карта остаётся доступна." } };
   const full = options.hasFullReport ?? hasFullReport(options.env);
-  return {
+  const result = {
     status: 200,
     body: {
       aiStatus: "ready", hasFullReport: full,
@@ -103,6 +104,12 @@ async function generateReportRequest(input, options = {}) {
     },
     internal: { report, calculation, context },
   };
+  if (options.reportStore) {
+    try {
+      options.reportStore.saveSemantic({ input: canonicalBirthInput(input), presentation, report, chartId: fingerprints.chartId, reportId: fingerprints.reportId, model, schemaVersion: REPORT_SCHEMA_VERSION });
+    } catch { console.error("[REPORT_STORE_ERROR] Не удалось сохранить локальную копию отчёта."); }
+  }
+  return result;
 }
 
 function currentReportYears() {

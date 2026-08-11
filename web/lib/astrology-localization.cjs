@@ -44,7 +44,7 @@ const STEM_ELEMENTS = Object.freeze({
   "己": "Земля", "庚": "Металл", "辛": "Металл", "壬": "Вода", "癸": "Вода",
 });
 
-const STRENGTH = Object.freeze({ "身强": "Сильная карта", "身弱": "Ослабленная карта", "中和": "Сбалансированная карта" });
+const STRENGTH = Object.freeze({ "身强": "Сильная карта", "偏强": "Скорее сильная карта", "身弱": "Ослабленная карта", "偏弱": "Скорее ослабленная карта", "中和": "Сбалансированная карта" });
 const CONFIDENCE = Object.freeze({ "高": "Высокая", "中": "Средняя", "低": "Низкая" });
 
 function item(original, name) { return { original, name: name || original }; }

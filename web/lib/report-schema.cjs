@@ -1,5 +1,3 @@
-const confidenceLevels = ["Высокий", "Средний", "Низкий"];
-
 const string = { type: "string" };
 const integer = { type: "integer" };
 const strings = (minItems, maxItems = minItems) => ({ type: "array", items: string, minItems, maxItems });
@@ -13,12 +11,12 @@ const yearly = object({ year: integer, theme: string, opportunities: string, ris
 const transition = object({ age: string, period: string, theme: string, change: string });
 const scenario = object({ type: { type: "string", enum: ["Консервативный", "Рост", "Перегруз"] }, title: string, description: string, decisions: string });
 const matrixRow = object({ area: string, bazi: string, ziwei: string, alignment: { type: "string", enum: ["Согласие", "Дополнение", "Расхождение"] }, synthesis: string });
-const confidence = object({ conclusion: string, level: { type: "string", enum: confidenceLevels }, reason: string });
+const insight = object({ heading: string, text: string });
 const editorialSection = object({
   title: string,
   headline: string,
   summary: string,
-  keyPoints: strings(3, 5),
+  insights: array(insight, 3, 4),
   strengths: strings(1, 4),
   risks: strings(1, 3),
   actions: strings(2, 4),
@@ -30,7 +28,7 @@ const REPORT_JSON_SCHEMA = object({
   archetype: string,
   subtitle: string,
   oneLineFormula: string,
-  executivePortrait: object({ summary: string, keyFeatures: strings(3, 3), mainResource: string, mainRisk: string, currentTheme: string }),
+  executivePortrait: object({ headline: string, summary: string, primaryResource: string, decisionStyle: string, innerTension: string, currentFocus: string, synthesis: string }),
   personality: editorialSection,
   keyTraits: array(keyTrait, 5, 5),
   strengths: array(strength, 5, 7),
@@ -43,15 +41,15 @@ const REPORT_JSON_SCHEMA = object({
   environment: object({ supports: string, drains: string, allies: string, toxicPatterns: string, communication: string }),
   leadership: object({ style: string, control: string, authority: string, conflict: string, negotiation: string, mistakes: string }),
   lifestyle: object({ rhythm: string, intensity: string, stabilityVsChange: string, rest: string, overload: string, recovery: string, environment: string }),
-  currentPeriod: object({ period: string, theme: string, opportunities: string, risks: string, career: string, relationships: string, money: string, lesson: string }),
+  currentPeriod: object({ period: string, headline: string, summary: string, opportunities: strings(2, 4), risks: strings(1, 3), actions: strings(2, 4), evidence: strings(0, 6), confidenceNote: string }),
   yearlyOutlook: array(yearly, 3, 3),
   keyLifeTransitions: array(transition, 5, 5),
   scenarios: array(scenario, 3, 3),
   lifeAreaMatrix: array(matrixRow, 8, 8),
   crossValidation: object({ agreements: strings(1, 8), divergences: strings(1, 8), stableConclusions: strings(1, 8), weakerConclusions: strings(1, 8) }),
-  confidence: array(confidence, 3, 12),
+  conclusionStability: object({ wellSupported: strings(2, 5), needsContext: strings(1, 4), notLiteral: strings(3, 6) }),
   actionPlan: object({ doMore: strings(5, 5), avoid: strings(5, 5), next12Months: strings(3, 3), questions: strings(3, 3) }),
-  selfCheck: strings(5, 7),
+  lifeManifestations: strings(5, 7),
   finalSummary: object({ headline: string, summary: string, priorities: strings(3, 5) }),
 });
 

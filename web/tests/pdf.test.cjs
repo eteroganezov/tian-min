@@ -5,7 +5,7 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const { buildReportContext } = require("../lib/report-service.cjs");
 const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
-const { createPdfFilename, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
+const { createPdfFilename, createPdfFromSavedReport, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
@@ -30,7 +30,8 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Цзы Вэй[\s\S]*紫微/);
   assert.match(parsed.text, /Москва, Россия/);
   assert.match(parsed.text, /Время рождения учтено с поправкой/);
-  assert.equal(parsed.numpages >= 14 && parsed.numpages <= 20, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 18 && parsed.numpages <= 26, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal((parsed.text.match(/Материал носит информационный, культурный/g) || []).length, 1);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|Техническое приложение|AI-интерпретация/);
 });
@@ -83,8 +84,18 @@ test("PDF-рендерер принимает короткие и длинные
   const longPdf = await createPdfRequest({ ...input, report: longReport }, { hasFullReport: true });
   assert.equal(longPdf.status, 200);
   const parsed = await pdfParse(longPdf.buffer);
-  assert.match(parsed.text, /Важное пояснение/);
+  assert.match(parsed.text, /Материал носит информационный, культурный/);
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
+});
+
+test("сохранённый отчёт повторно создаёт PDF без обращения к AI-провайдеру", async () => {
+  let providerCalls = 0;
+  const calculation = calculateBirthChart(input);
+  const report = createMockReport(buildReportContext(calculation, { displayName: input.name }, { model: "mock-v1" }));
+  const saved = { kind: "semantic-report", input, presentation: { displayName: input.name }, report };
+  const result = await createPdfFromSavedReport(saved, { provider: { async generate() { providerCalls += 1; } } });
+  assert.equal(result.status, 200);
+  assert.equal(providerCalls, 0);
 });
 
 test("имя PDF безопасно для macOS, Windows и не допускает путь к чужому файлу", () => {

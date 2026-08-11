@@ -22,12 +22,17 @@ function localizeReportText(value) {
   return String(value)
     .replace(/Zi\s*Wei\s*Dou\s*Shu/gi, "Цзы Вэй Доу Шу")
     .replace(/Zi\s*Wei|ZiWei/gi, "Цзы Вэй")
-    .replace(/BaZi|Bazi/gi, "Ба-цзы");
+    .replace(/BaZi|Bazi/gi, "Ба-цзы")
+    .replace(/\bsensitivity\b/gi, "чувствительность расчёта");
+}
+
+function russianTypography(value) {
+  return String(value).replace(/(^|[\s(«„])((?:а|в|и|к|о|с|у|но|на|по|из|за|от|до|для|при))\s+(?=\S)/giu, (_match, before, word) => `${before}${word}\u00a0`);
 }
 
 function cleanFact(value) {
   if (value === undefined || value === null) return null;
-  const text = localizeReportText(value).replace(/\s+/g, " ").trim();
+  const text = russianTypography(localizeReportText(value).replace(/\s+/g, " ").trim());
   return !text || hasBrokenPlaceholder(text) ? null : text;
 }
 
@@ -82,4 +87,4 @@ function sanitizeNode(value, key = "") {
 
 function unique(items) { return [...new Set(items)]; }
 
-module.exports = { buildEvidenceCatalog, cleanFact, localizeReportText, sanitizePersonalReport };
+module.exports = { buildEvidenceCatalog, cleanFact, localizeReportText, russianTypography, sanitizePersonalReport };

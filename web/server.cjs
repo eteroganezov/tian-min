@@ -5,17 +5,22 @@ require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const { calculateRequest } = require("./lib/calculate.cjs");
 const { locationProvider } = require("./lib/location-provider.cjs");
 const { generateReportRequest } = require("./lib/report-service.cjs");
-const { createPdfRequest } = require("./lib/pdf-service.cjs");
+const { createPdfFromSavedReport, createPdfRequest } = require("./lib/pdf-service.cjs");
+const { LocalReportStore } = require("./lib/report-store.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
+  const reportStore = options.reportStore || new LocalReportStore();
   return http.createServer(async (request, response) => {
     try {
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
-      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response);
+      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response, reportStore);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
+      if (request.method === "GET" && request.url === "/api/dev/reports/latest") return handleSavedReport(response, reportStore);
+      if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
+      if (request.method === "POST" && request.url === "/api/dev/reports/pdf") return await handleSavedPdf(request, response, reportStore);
       if (request.method === "GET" && request.url.startsWith("/api/places")) return handlePlaces(request, response);
       if (request.method !== "GET" && request.method !== "HEAD") return sendJson(response, 405, { error: "Метод не поддерживается." });
       return serveStatic(request, response, staticRoot);
@@ -39,11 +44,45 @@ async function handleCalculation(request, response) {
   return sendJson(response, result.status, result.body);
 }
 
-async function handleReport(request, response) {
+async function handleReport(request, response, reportStore) {
   const input = await readJson(request, response, 30_000);
   if (!input) return;
-  const result = await generateReportRequest(input);
+  const result = await generateReportRequest(input, { reportStore });
   return sendJson(response, result.status, result.body);
+}
+
+function handleSavedReport(response, reportStore) {
+  const saved = reportStore.load();
+  return saved ? sendJson(response, 200, saved) : sendJson(response, 404, { error: "Сохранённый отчёт не найден." });
+}
+
+async function handleLegacyImport(request, response, reportStore) {
+  const input = await readImportPayload(request, response, 600_000);
+  if (!input) return;
+  try { return sendJson(response, 201, reportStore.importLegacy(input)); }
+  catch { return sendJson(response, 400, { error: "Не удалось сохранить существующий отчёт." }); }
+}
+
+async function readImportPayload(request, response, limit) {
+  if (!String(request.headers["content-type"] || "").startsWith("application/x-www-form-urlencoded")) return readJson(request, response, limit);
+  let raw = "";
+  for await (const chunk of request) {
+    raw += chunk;
+    if (Buffer.byteLength(raw) > limit) { sendJson(response, 413, { error: "Слишком большой запрос." }); return null; }
+  }
+  try { return JSON.parse(new URLSearchParams(raw).get("payload") || ""); }
+  catch { sendJson(response, 400, { error: "Не удалось прочитать сохранённый отчёт." }); return null; }
+}
+
+async function handleSavedPdf(request, response, reportStore) {
+  const input = await readJson(request, response, 10_000);
+  if (!input) return;
+  const saved = reportStore.load(input.id || "latest");
+  if (!saved) return sendJson(response, 404, { error: "Сохранённый отчёт не найден." });
+  const result = await createPdfFromSavedReport(saved);
+  if (result.status !== 200) return sendJson(response, result.status, { error: result.error });
+  response.writeHead(200, { "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="${result.filename}"`, "Content-Length": result.buffer.length, "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" });
+  return response.end(result.buffer);
 }
 
 async function handlePdf(request, response) {

@@ -5,7 +5,7 @@ const { createMockReport } = require("../lib/mock-report.cjs");
 const { validatePersonalReport } = require("../lib/report-schema.cjs");
 const { generateReportRequest } = require("../lib/report-service.cjs");
 const { OpenAIReportProvider } = require("../lib/report-provider.cjs");
-const { buildEvidenceCatalog, localizeReportText, sanitizePersonalReport } = require("../lib/report-content.cjs");
+const { buildEvidenceCatalog, localizeReportText, russianTypography, sanitizePersonalReport } = require("../lib/report-content.cjs");
 const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { toChartView } = require("../lib/chart-view.cjs");
 
@@ -35,8 +35,10 @@ test("структурированный персональный отчёт п�
   assert.equal(result.body.report.lifeAreaMatrix.length, 8);
   assert.equal(result.body.presentation.displayName, "Эдуард");
   assert.match(result.body.report.executivePortrait.summary, /^Эдуард,/);
-  assert.equal(result.body.report.executivePortrait.keyFeatures.length, 3);
-  assert.deepEqual(Object.keys(result.body.report.career), ["title", "headline", "summary", "keyPoints", "strengths", "risks", "actions", "evidence", "confidenceNote"]);
+  assert.equal(result.body.report.executivePortrait.currentFocus.length > 20, true);
+  assert.equal(result.body.report.career.insights.length, 3);
+  assert.deepEqual(Object.keys(result.body.report.career), ["title", "headline", "summary", "insights", "strengths", "risks", "actions", "evidence", "confidenceNote"]);
+  assert.deepEqual(Object.keys(result.body.report.conclusionStability), ["wellSupported", "needsContext", "notLiteral"]);
   assert.match(result.body.reportId, /^tmr_[a-f0-9]{24}$/);
   assert.match(result.body.chartId, /^tmc_[a-f0-9]{24}$/);
 });
@@ -169,6 +171,10 @@ test("центральная локализация не выпускает ан
   assert.equal(localizeReportText("BaZi + Zi Wei Dou Shu, Bazi и ZiWei"), "Ба-цзы + Цзы Вэй Доу Шу, Ба-цзы и Цзы Вэй");
 });
 
+test("русская типографика не оставляет короткие предлоги в конце строки", () => {
+  assert.equal(russianTypography("с опорой на опыт и ясность"), "с\u00a0опорой на\u00a0опыт и\u00a0ясность");
+});
+
 test("очистка удаляет пустые основания и локализует остальной отчёт", () => {
   const periods = Array.from({ length: 5 }, (_, index) => ({ range: `${index * 10 + 1}–${index * 10 + 10} лет`, ganZhi: "甲子", years: `${2020 + index * 10}–${2029 + index * 10}` }));
   const report = createMockReport({ chartView: { bazi: { dayMaster: "丁", structure: "正官格", majorPeriods: periods }, ziwei: { mingPalace: "子" } }, sensitivity: { level: "LOW" }, evidenceCatalog: { bazi: [], ziwei: [] } });
@@ -186,9 +192,10 @@ test("регрессия Эдуарда: реальные связи стано�
   const calculation = calculateBirthChart(reference);
   const catalog = buildEvidenceCatalog(calculation, toChartView(calculation.chart));
   const text = catalog.bazi.join("\n");
-  assert.match(text, /соединение небесных стволов Дин \(丁\) и Жэнь \(壬\)/);
-  assert.match(text, /столкновение земных ветвей Шэнь \(申\) и Инь \(寅\)/);
-  assert.match(text, /сочетание земных ветвей Хай \(亥\) и Инь \(寅\)/);
-  assert.match(text, /вред земных ветвей Хай \(亥\) и Шэнь \(申\)/);
+  const normalized = text.replace(/\u00a0/g, " ");
+  assert.match(normalized, /соединение небесных стволов Дин \(丁\) и Жэнь \(壬\)/);
+  assert.match(normalized, /столкновение земных ветвей Шэнь \(申\) и Инь \(寅\)/);
+  assert.match(normalized, /сочетание земных ветвей Хай \(亥\) и Инь \(寅\)/);
+  assert.match(normalized, /вред земных ветвей Хай \(亥\) и Шэнь \(申\)/);
   assert.doesNotMatch(text, /(?:^|\s)[-–—](?:[\s.,;]|$)|undefined|null|NaN/);
 });

@@ -1,15 +1,16 @@
 const fs = require("node:fs");
 const PDFDocument = require("pdfkit");
+const { russianTypography } = require("./report-content.cjs");
 
 const colors = { ink: "#18231f", muted: "#66736d", jade: "#173f36", sage: "#dfe8e2", sand: "#f4f0e7", gold: "#b5955d", red: "#9c4938", white: "#ffffff" };
 
 function chooseFont(candidates) { return candidates.find(file => fs.existsSync(file)); }
 
 function clean(value) {
-  return String(value ?? "").replace(/[–—−‑]/g, "-").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "");
+  return russianTypography(String(value ?? "").replace(/[–—−‑]/g, "-").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ""));
 }
 
-function createReportPdf({ chart, metadata, presentation = {}, report, hasFullReport = true }) {
+function createReportPdf({ chart, metadata, presentation = {}, report, legacyReport, hasFullReport = true }) {
   return new Promise((resolve, reject) => {
     const person = presentation.displayName ? `${presentation.displayName} - ` : "";
     const doc = new PDFDocument({ size: "A4", margin: 52, bufferPages: true, info: { Title: `${person}персональная карта личности и жизненного пути`, Author: "Тянь Мин", Subject: "Персональный информационно-развлекательный отчёт" } });
@@ -29,13 +30,13 @@ function createReportPdf({ chart, metadata, presentation = {}, report, hasFullRe
     doc._tianMingCjkReady = cjkReady;
 
     cover(doc, chart, metadata, presentation, report);
+    baziVisualPage(doc, chart, cjkReady);
     if (report && hasFullReport) fullReport(doc, report);
     else if (report) previewReport(doc, report);
+    else if (legacyReport) legacyFullReport(doc, legacyReport);
     else unavailablePage(doc);
-    baziVisualPage(doc, chart, cjkReady);
     luckTimelinePage(doc, chart, cjkReady);
     ziweiVisualPage(doc, chart, cjkReady);
-    disclaimer(doc);
     addPageNumbers(doc);
     doc.end();
   });
@@ -64,7 +65,7 @@ function cover(doc, chart, metadata, presentation, report) {
     "Время рождения учтено с поправкой на место рождения и исторические правила времени.",
     52, 664, { width: 470, lineGap: 2 },
   );
-  doc.fillColor("#91a69e").font("Body").fontSize(8).text("Информационный и развлекательный материал", 52, 760);
+  doc.fillColor("#91a69e").font("Body").fontSize(7.4).text("Материал носит информационный, культурный и развлекательный характер. Интерпретации Ба-цзы и Цзы Вэй не являются медицинскими, финансовыми или юридическими рекомендациями и не заменяют консультацию профильного специалиста.", 52, 738, { width: 470, lineGap: 2 });
 }
 
 function fullReport(doc, report) {
@@ -80,12 +81,27 @@ function fullReport(doc, report) {
   editorialSection(doc, report.career);
   editorialSection(doc, report.money);
   editorialSection(doc, report.relationships);
-  splitSection(doc, "Текущий большой период", Object.entries(report.currentPeriod).map(([key, value]) => [labelFor(key), value]));
+  splitSection(doc, "Текущий большой период", [
+    ["Период", report.currentPeriod.period], ["Главная тема", report.currentPeriod.headline], ["Что меняется", report.currentPeriod.summary],
+    ["Возможности", report.currentPeriod.opportunities.join("\n• ")], ["На что обратить внимание", report.currentPeriod.risks.join("\n• ")],
+    ["Что можно сделать", report.currentPeriod.actions.join("\n• ")],
+    ...(report.currentPeriod.evidence.length ? [["Почему мы сделали такой вывод", report.currentPeriod.evidence.join("\n• ")]] : []),
+    ["Границы интерпретации", report.currentPeriod.confidenceNote],
+  ]);
   cards(doc, "Ближайшие 3 года", report.yearlyOutlook, item => `${item.year} - ${item.theme}\nВозможности: ${item.opportunities}\nРиски: ${item.risks}\nФокус: ${item.focus}\nНе форсировать: ${item.avoid}`);
+  cards(doc, "Ключевые переходы", report.keyLifeTransitions, item => `${item.age} · ${item.period}\n${item.theme}\n${item.change}`);
+  cards(doc, "Возможные сценарии", report.scenarios, item => `${item.type}: ${item.title}\n${item.description}\nОриентир: ${item.decisions}`);
+  matrix(doc, report.lifeAreaMatrix);
+  splitSection(doc, "Насколько устойчивы выводы", [
+    ["Хорошо подтверждается картой", report.conclusionStability.wellSupported.join("\n• ")],
+    ["Требует дополнительного контекста", report.conclusionStability.needsContext.join("\n• ")],
+    ["Не стоит воспринимать буквально", report.conclusionStability.notLiteral.join("\n• ")],
+  ]);
   splitSection(doc, "План действий", [
     ["Делать чаще", report.actionPlan.doMore.join("\n• ")], ["Избегать", report.actionPlan.avoid.join("\n• ")],
     ["Фокус на 12 месяцев", report.actionPlan.next12Months.join("\n• ")], ["Вопросы себе", report.actionPlan.questions.join("\n• ")],
   ]);
+  cards(doc, "Как это проявляется в жизни", report.lifeManifestations, (item, index) => `${index + 1}. ${item}`);
   section(doc, report.finalSummary.headline, `${report.finalSummary.summary}\n\nПриоритеты:\n• ${report.finalSummary.priorities.join("\n• ")}`);
 }
 
@@ -97,11 +113,10 @@ function previewReport(doc, report) {
 }
 
 function executivePortrait(doc, data) {
-  page(doc, "Главное за минуту", "Компактный портрет: особенности, ресурс, риск и тема текущего периода.");
+  page(doc, "Главное о вас", data.headline);
   bodyText(doc, data.summary);
-  doc.moveDown(1);
-  cards(doc, "Три ключевые особенности", data.keyFeatures, (item, index) => `${index + 1}. ${item}`, { continuePage: true });
-  splitSectionContent(doc, [["Главный ресурс", data.mainResource], ["Главный риск", data.mainRisk], ["Тема периода", data.currentTheme]]);
+  doc.moveDown(.6);
+  splitSectionContent(doc, [["Ваш основной ресурс", data.primaryResource], ["Как вы принимаете решения", data.decisionStyle], ["Главное внутреннее противоречие", data.innerTension], ["Что особенно важно сейчас", data.currentFocus], ["Если коротко", data.synthesis]]);
 }
 
 function editorialSection(doc, data) {
@@ -109,13 +124,39 @@ function editorialSection(doc, data) {
   bodyText(doc, data.summary);
   doc.moveDown(1);
   splitSectionContent(doc, [
-    ["Ключевые мысли", data.keyPoints.join("\n• ")],
+    ...data.insights.map(item => [item.heading, item.text]),
     ["Сильные стороны", data.strengths.join("\n• ")],
     ["Риски", data.risks.join("\n• ")],
     ["Практические действия", data.actions.join("\n• ")],
     ...(data.evidence.length ? [["Основания в карте", data.evidence.join("\n• ")]] : []),
     ["Уверенность", data.confidenceNote],
   ]);
+}
+
+function legacyFullReport(doc, legacy) {
+  const sections = new Map((legacy.sections || []).map(section => [section.key, section]));
+  const order = ["executive", "personality", "traits", "strengths", "challenges", "comparison", "stress", "career", "money", "relationships", "current-period", "years", "transitions", "scenarios", "matrix", "confidence", "action-plan", "manifestations", "final"];
+  for (const key of order) {
+    const sectionData = sections.get(key);
+    if (!sectionData) continue;
+    if (key === "executive") legacyExecutive(doc, sectionData);
+    else legacySection(doc, sectionData);
+  }
+}
+
+function legacyExecutive(doc, data) {
+  page(doc, "Главное о вас", data.title || data.label);
+  const [lead, ...rest] = data.paragraphs;
+  if (lead) bodyText(doc, lead);
+  const cardsData = rest.slice(0, 4);
+  if (cardsData.length) cards(doc, "Ключевые линии", cardsData, item => item, { continuePage: true });
+  if (rest.length > 4) { subheading(doc, "Если коротко"); bodyText(doc, rest.slice(4).join("\n\n")); }
+}
+
+function legacySection(doc, data) {
+  page(doc, data.title || data.label);
+  for (const paragraph of data.paragraphs || []) { bodyText(doc, paragraph); doc.moveDown(.8); }
+  if (data.items?.length) cards(doc, data.label || "Ключевые наблюдения", data.items, item => item, { continuePage: true });
 }
 
 function unavailablePage(doc) { section(doc, "Персональный разбор ещё не создан", "Карта уже рассчитана. Ниже приведены четыре столпа Ба-цзы, баланс пяти элементов, жизненные периоды и двенадцать дворцов Цзы Вэй Доу Шу."); }
@@ -200,10 +241,6 @@ function ziweiVisualPage(doc, chart, hasCjk) {
     doc.fillColor(colors.jade).font("Bold").fontSize(8).text(stars, x + 10, y + 57, { width: 136 });
     doc.fillColor(colors.muted).font("Body").fontSize(6.7).text(`${palace.majorPeriod} лет${palace.isCurrentPeriod ? " · текущий" : ""}`, x + 10, y + 82, { width: 136 });
   });
-}
-
-function disclaimer(doc) {
-  page(doc, "Важное пояснение", "Этот отчёт основан на традиционных символических системах Ба-цзы и Цзы Вэй Доу Шу. Он предназначен для культурного исследования, саморефлексии и развлечения. Материал не является медицинской, юридической, финансовой, инвестиционной или иной профессиональной рекомендацией. Формулировки описывают возможные тенденции, а не предопределённые события. Решения человека и объективные обстоятельства важнее любой интерпретации.");
 }
 
 function page(doc, title, intro) {

@@ -26,3 +26,5 @@
 @media(max-width:900px){.foundation{gap:38px}.foundation-copy{grid-template-columns:1fr}.foundation-summary{grid-column:auto}}
 @media(max-width:620px){.foundation{display:block;padding:58px 0}.foundation-heading h2{font-size:34px}.foundation-copy{margin-top:30px}.foundation-copy article{padding:20px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.pulse:after{animation:none}}
+.portrait-features{grid-template-columns:repeat(2,1fr)}.executive-portrait blockquote{margin:30px 0 0;padding:20px 24px;border-left:3px solid var(--gold);background:var(--sand);font:18px/1.55 "Iowan Old Style",Georgia,serif}.editorial-insights{margin:36px 0}.editorial-insights article{padding:22px 0;border-top:1px solid var(--line)}.editorial-insights h3{margin:0 0 9px;color:var(--jade);font:500 19px "Iowan Old Style",Georgia,serif}.editorial-insights p{max-width:720px;margin:0;color:var(--muted);font-size:12px;line-height:1.7}.period-grid li{margin:7px 0;font-size:11px;line-height:1.5}
+@media(max-width:620px){.portrait-features{grid-template-columns:1fr}}

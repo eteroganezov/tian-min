@@ -26,6 +26,19 @@ async function createPdfRequest(input, options = {}) {
   return { status: 200, buffer, filename: createPdfFilename({ displayName, date: calculation.metadata.originalBirthDate, time: calculation.metadata.originalBirthTime }) };
 }
 
+async function createPdfFromSavedReport(saved, options = {}) {
+  if (!saved?.input) return { status: 400, error: "Сохранённый отчёт некорректен." };
+  if (saved.kind === "semantic-report") return createPdfRequest({ ...saved.input, name: saved.presentation?.displayName || saved.input.name || "", report: saved.report }, { ...options, hasFullReport: true });
+  if (saved.kind !== "legacy-rendered-report") return { status: 400, error: "Формат сохранённого отчёта не поддерживается." };
+  let calculation;
+  try { calculation = calculateBirthChart(canonicalBirthInput(saved.input)); }
+  catch (error) { return { status: 400, error: safeMessage(error) }; }
+  const place = locationProvider.resolve(saved.input.placeId);
+  const presentation = { displayName: saved.presentation?.displayName || saved.input.name || "", birthPlace: saved.presentation?.birthPlace || place?.display || null };
+  const buffer = await createReportPdf({ chart: toChartView(calculation.chart), metadata: calculation.metadata, presentation, legacyReport: saved, hasFullReport: true });
+  return { status: 200, buffer, filename: createPdfFilename({ displayName: presentation.displayName, date: calculation.metadata.originalBirthDate, time: calculation.metadata.originalBirthTime }) };
+}
+
 const transliteration = { а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"y",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya" };
 function safeFilenamePart(value) {
   return String(value || "").normalize("NFKD").toLowerCase().split("").map(char => transliteration[char] ?? char).join("")
@@ -43,4 +56,4 @@ function safeMessage(error) {
   return message.replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, "") || "Некорректные данные рождения.";
 }
 
-module.exports = { createPdfFilename, createPdfRequest, safeFilenamePart };
+module.exports = { createPdfFilename, createPdfFromSavedReport, createPdfRequest, safeFilenamePart };

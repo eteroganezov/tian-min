@@ -81,5 +81,10 @@ test("production build содержит форму и необходимые п�
   assert.doesNotMatch(script, /Скачать технический PDF|Техническая карта|Скачать отчёт с картой/);
   assert.match(script, /technical-chart/);
   assert.match(script, /Как учитывается место рождения/);
+  assert.match(script, /Главное о вас/);
+  assert.match(script, /Почему мы сделали такой вывод/);
+  assert.match(script, /Насколько устойчивы выводы/);
+  assert.match(script, /Как это проявляется в жизни/);
+  assert.doesNotMatch(script, /Насколько это про вас\?|Проверьте на себе|data\.keyPoints|report\.confidence|report\.selfCheck/);
   assert.doesNotMatch(html, /Понадобится меньше минуты/);
 });
