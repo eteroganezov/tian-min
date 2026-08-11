@@ -39,20 +39,32 @@ class OpenAIReportProvider {
 
   async generate(context, retryReason) {
     const retryInstruction = retryReason ? `\nПредыдущий ответ не прошёл локальную проверку: ${retryReason}. Верни полностью исправленный объект по schema.` : "";
-    const response = await this.client.responses.create({
-      model: this.model,
-      store: false,
-      reasoning: { effort: "low" },
-      max_output_tokens: 28000,
-      input: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: `CALCULATION_DATA (не изменять):\n${JSON.stringify(context)}${retryInstruction}` },
-      ],
-      text: { format: { type: "json_schema", name: "personal_astrology_report", strict: true, schema: REPORT_JSON_SCHEMA } },
-    });
-    if (!response.output_text) throw new Error("OpenAI не вернул текст отчёта");
-    return JSON.parse(response.output_text);
+    let response;
+    try {
+      response = await this.client.responses.create({
+        model: this.model,
+        store: false,
+        reasoning: { effort: "low" },
+        max_output_tokens: 28000,
+        input: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: `CALCULATION_DATA (не изменять):\n${JSON.stringify(context)}${retryInstruction}` },
+        ],
+        text: { format: { type: "json_schema", name: "personal_astrology_report", strict: true, schema: REPORT_JSON_SCHEMA } },
+      });
+    } catch (error) {
+      throw markAiStage(error, "responses.create");
+    }
+    if (!response.output_text) throw markAiStage(new Error("OpenAI response did not contain output text"), "responses.output_text");
+    try { return JSON.parse(response.output_text); }
+    catch (error) { throw markAiStage(error, "responses.parse_json"); }
   }
+}
+
+function markAiStage(error, stage) {
+  const failure = error instanceof Error ? error : new Error("OpenAI provider failed");
+  if (!failure.aiStage) failure.aiStage = stage;
+  return failure;
 }
 
 class MockReportProvider {

@@ -4,9 +4,24 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
 const { validatePersonalReport } = require("../lib/report-schema.cjs");
 const { generateReportRequest } = require("../lib/report-service.cjs");
+const { OpenAIReportProvider } = require("../lib/report-provider.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+
+test("OpenAI provider использует Responses API и строгий Structured Output", async () => {
+  let request;
+  const client = { responses: { async create(value) { request = value; return { output_text: "{\"ok\":true}" }; } } };
+  const provider = new OpenAIReportProvider({ client, model: "gpt-test" });
+  assert.deepEqual(await provider.generate({ diagnostic: true }), { ok: true });
+  assert.equal(request.model, "gpt-test");
+  assert.equal(request.store, false);
+  assert.equal(request.reasoning.effort, "low");
+  assert.equal(request.text.format.type, "json_schema");
+  assert.equal(request.text.format.strict, true);
+  assert.equal(request.text.format.schema.type, "object");
+  assert.equal(request.text.format.schema.additionalProperties, false);
+});
 
 test("структурированный персональный отчёт проходит строгую схему", async () => {
   const result = await generateReportRequest({ ...input, name: "  Эдуард  " }, { env: { AI_MODE: "mock" }, reportYears: [2026, 2027, 2028] });
@@ -48,6 +63,46 @@ test("без API-ключа карта остаётся доступна, а п�
   assert.equal(result.body.aiStatus, "unavailable");
   assert.equal(result.body.message, "Персональный разбор ещё не создан");
   assert.equal(result.body.report, undefined);
+});
+
+test("ошибка исчерпанного баланса логируется безопасно и не повторяет бесполезный запрос", async () => {
+  let calls = 0;
+  const lines = [];
+  const originalConsoleError = console.error;
+  console.error = line => lines.push(String(line));
+  try {
+    const provider = {
+      model: "gpt-test",
+      async generate() {
+        calls += 1;
+        throw Object.assign(new Error("Сообщение провайдера не должно попасть в лог"), {
+          status: 429,
+          code: "credit_balance_exhausted",
+          type: "insufficient_quota",
+          aiStage: "responses.create",
+        });
+      },
+    };
+    const result = await generateReportRequest({ ...input, name: "Эдуард" }, { provider });
+    assert.equal(calls, 1);
+    assert.equal(result.status, 502);
+    assert.equal(result.body.aiStatus, "error");
+  } finally {
+    console.error = originalConsoleError;
+  }
+  const aiLines = lines.filter(line => line.startsWith("[AI_ERROR] "));
+  assert.equal(aiLines.length, 1);
+  const entry = JSON.parse(aiLines[0].replace(/^\[AI_ERROR\] /, ""));
+  assert.deepEqual(entry, {
+    stage: "responses.create",
+    status: 429,
+    code: "credit_balance_exhausted",
+    type: "insufficient_quota",
+    message: "OpenAI API credits are exhausted.",
+    model: "gpt-test",
+    attempt: 1,
+  });
+  assert.doesNotMatch(aiLines[0], /Эдуард|2000-01-01|Сообщение провайдера/);
 });
 
 test("невалидный ответ AI повторяется один раз и затем возвращает безопасную ошибку", async () => {

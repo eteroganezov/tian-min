@@ -80,14 +80,16 @@ async function generateReportRequest(input, options = {}) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
         return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints } };
       }
-      if (attempt === 1) return { status: 502, body: { aiStatus: "error", error: "Не удалось подготовить персональный разбор. Техническая карта остаётся доступна." } };
+      logAiError(error, { model, attempt: attempt + 1 });
+      if (attempt === 1 || isNonRetryableAiError(error)) return { status: 502, body: { aiStatus: "error", error: "Не удалось подготовить персональный разбор. Карта остаётся доступна." } };
       validation = { errors: ["провайдер вернул техническую ошибку"] };
       continue;
     }
     validation = validatePersonalReport(report);
     if (validation.valid) break;
+    logAiError({ aiStage: "local_schema_validation", code: "INVALID_STRUCTURED_OUTPUT", type: "validation_error" }, { model, attempt: attempt + 1 });
   }
-  if (!validation || !validation.valid) return { status: 502, body: { aiStatus: "error", error: "Не удалось проверить персональный разбор. Техническая карта остаётся доступна." } };
+  if (!validation || !validation.valid) return { status: 502, body: { aiStatus: "error", error: "Не удалось проверить персональный разбор. Карта остаётся доступна." } };
   const full = options.hasFullReport ?? hasFullReport(options.env);
   return {
     status: 200,
@@ -110,4 +112,37 @@ function safeMessage(error) {
   return message.replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, "") || "Некорректные данные рождения.";
 }
 
-module.exports = { buildReportContext, createPreview, currentReportYears, generateReportRequest, hasFullReport };
+function isNonRetryableAiError(error) {
+  const status = Number(error?.status || 0);
+  const code = String(error?.code || "");
+  return ["credit_balance_exhausted", "insufficient_quota", "invalid_api_key", "model_not_found"].includes(code)
+    || [400, 401, 403, 404].includes(status);
+}
+
+function safeAiMessage(error) {
+  const code = String(error?.code || "");
+  const type = String(error?.type || "");
+  if (code === "credit_balance_exhausted" || code === "insufficient_quota" || type === "insufficient_quota") return "OpenAI API credits are exhausted.";
+  if (code === "invalid_api_key") return "OpenAI API key was rejected.";
+  if (code === "model_not_found") return "OpenAI model is unavailable or access is denied.";
+  if (code === "rate_limit_exceeded") return "OpenAI API rate limit was exceeded.";
+  if (error?.aiStage === "local_schema_validation") return "OpenAI response failed local schema validation.";
+  if (error?.aiStage === "responses.output_text") return "OpenAI response did not contain output text.";
+  if (error?.aiStage === "responses.parse_json") return "OpenAI response was not valid JSON.";
+  return "OpenAI API request failed.";
+}
+
+function logAiError(error, { model, attempt }) {
+  const entry = {
+    stage: error?.aiStage || "provider.generate",
+    status: Number.isInteger(error?.status) ? error.status : null,
+    code: error?.code || null,
+    type: error?.type || error?.name || "Error",
+    message: safeAiMessage(error),
+    model,
+    attempt,
+  };
+  console.error(`[AI_ERROR] ${JSON.stringify(entry)}`);
+}
+
+module.exports = { buildReportContext, createPreview, currentReportYears, generateReportRequest, hasFullReport, isNonRetryableAiError, logAiError };
