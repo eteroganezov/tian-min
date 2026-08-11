@@ -1,8 +1,11 @@
 const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
+require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const { calculateRequest } = require("./lib/calculate.cjs");
 const { locationProvider } = require("./lib/location-provider.cjs");
+const { generateReportRequest } = require("./lib/report-service.cjs");
+const { createPdfRequest } = require("./lib/pdf-service.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
@@ -11,6 +14,8 @@ function createServer(options = {}) {
   return http.createServer(async (request, response) => {
     try {
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
+      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response);
+      if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
       if (request.method === "GET" && request.url.startsWith("/api/places")) return handlePlaces(request, response);
       if (request.method !== "GET" && request.method !== "HEAD") return sendJson(response, 405, { error: "Метод не поддерживается." });
       return serveStatic(request, response, staticRoot);
@@ -28,15 +33,41 @@ function handlePlaces(request, response) {
 }
 
 async function handleCalculation(request, response) {
+  const input = await readJson(request, response, 20_000);
+  if (!input) return;
+  const result = calculateRequest(input);
+  return sendJson(response, result.status, result.body);
+}
+
+async function handleReport(request, response) {
+  const input = await readJson(request, response, 30_000);
+  if (!input) return;
+  const result = await generateReportRequest(input);
+  return sendJson(response, result.status, result.body);
+}
+
+async function handlePdf(request, response) {
+  const input = await readJson(request, response, 750_000);
+  if (!input) return;
+  const result = await createPdfRequest(input);
+  if (result.status !== 200) return sendJson(response, result.status, { error: result.error });
+  response.writeHead(200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `attachment; filename="${result.filename}"`,
+    "Content-Length": result.buffer.length,
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+  return response.end(result.buffer);
+}
+
+async function readJson(request, response, limit) {
   let raw = "";
   for await (const chunk of request) {
     raw += chunk;
-    if (Buffer.byteLength(raw) > 20_000) return sendJson(response, 413, { error: "Слишком большой запрос." });
+    if (Buffer.byteLength(raw) > limit) { sendJson(response, 413, { error: "Слишком большой запрос." }); return null; }
   }
-  let input;
-  try { input = JSON.parse(raw); } catch { return sendJson(response, 400, { error: "Не удалось прочитать данные формы." }); }
-  const result = calculateRequest(input);
-  return sendJson(response, result.status, result.body);
+  try { return JSON.parse(raw); } catch { sendJson(response, 400, { error: "Не удалось прочитать данные формы." }); return null; }
 }
 
 function serveStatic(request, response, staticRoot) {

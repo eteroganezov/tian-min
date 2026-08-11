@@ -37,9 +37,13 @@ test("ошибка пользователя не содержит stack trace", 
 
 test("production build содержит форму и необходимые пояснения", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "dist", "index.html"), "utf8");
-  assert.match(html, /Рассчитать мою карту/);
-  assert.match(html, /местную григорианскую дату/);
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "dist", "app.js"), "utf8");
+  assert.match(html, /Получить мой разбор/);
   assert.match(html, /Место рождения/);
-  assert.match(html, /истинное солнечное время/);
-  assert.match(html, /информационных и развлекательных целей/);
+  assert.match(html, /исторические правила времени/);
+  assert.match(html, /информационных, культурных и развлекательных целей/);
+  assert.match(html, /Персональный разбор/);
+  assert.match(script, /Скачать полный отчёт PDF/);
+  assert.match(script, /technical-chart/);
+  assert.match(script, /Как учитывается место рождения/);
 });
