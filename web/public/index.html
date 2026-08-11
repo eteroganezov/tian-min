@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Локальный расчёт китайской карты рождения BaZi и Zi Wei.">
+  <title>Тянь Мин — карта BaZi и Zi Wei</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <main>
+    <section class="hero">
+      <nav class="nav shell" aria-label="Основная навигация">
+        <a class="brand" href="#top" aria-label="Тянь Мин — на главную"><span class="brand-seal">命</span><span>ТЯНЬ МИН</span></a>
+        <span class="nav-note">BaZi · Zi Wei</span>
+      </nav>
+      <div class="hero-grid shell" id="top">
+        <div class="hero-copy">
+          <p class="eyebrow">Карта рождения · два взгляда</p>
+          <h1>Увидеть структуру.<br><em>Понять ритм.</em></h1>
+          <p class="intro">Точный локальный расчёт карты BaZi и двенадцати дворцов Zi Wei — без догадок нейросети и без отправки данных во внешние сервисы.</p>
+          <div class="method-line" aria-label="Этапы расчёта"><span>生</span><i></i><span>算</span><i></i><span>明</span></div>
+        </div>
+        <form class="birth-form" id="birth-form" novalidate>
+          <div class="form-heading"><span class="chapter">01</span><div><h2>Данные рождения</h2><p>Все поля обязательны</p></div></div>
+          <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31"></label>
+          <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time"></label>
+          <fieldset class="gender-field">
+            <legend>Пол</legend>
+            <div class="gender-options">
+              <label><input type="radio" name="gender" value="male"><span>Мужской <b>乾</b></span></label>
+              <label><input type="radio" name="gender" value="female"><span>Женский <b>坤</b></span></label>
+            </div>
+          </fieldset>
+          <div class="form-error" id="form-error" role="alert" hidden></div>
+          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту</span><span aria-hidden="true">→</span></button>
+          <p class="local-note">Расчёт использует местную григорианскую дату и местное время рождения. Коррекция по часовому поясу и истинному солнечному времени в этой версии не выполняется.</p>
+        </form>
+      </div>
+    </section>
+    <div id="result-root" aria-live="polite"></div>
+    <footer class="footer shell"><span>ТЯНЬ МИН · 天命</span><p>Результат предназначен для информационных и развлекательных целей и не является основанием для медицинских, финансовых, юридических или иных важных решений.</p></footer>
+  </main>
+</body>
+</html>
