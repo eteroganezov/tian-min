@@ -11,7 +11,8 @@ function clean(value) {
 
 function createReportPdf({ chart, metadata, presentation = {}, report, hasFullReport = true }) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "A4", margin: 52, bufferPages: true, info: { Title: report ? `${report.archetype} - персональный отчёт` : "Техническая карта Ба-цзы и Цзы Вэй", Author: "Тянь Мин", Subject: "Персональный информационно-развлекательный отчёт" } });
+    const person = presentation.displayName ? `${presentation.displayName} - ` : "";
+    const doc = new PDFDocument({ size: "A4", margin: 52, bufferPages: true, info: { Title: `${person}персональная карта личности и жизненного пути`, Author: "Тянь Мин", Subject: "Персональный информационно-развлекательный отчёт" } });
     const chunks = [];
     doc.on("data", chunk => chunks.push(chunk));
     doc.on("error", reject);
@@ -31,7 +32,9 @@ function createReportPdf({ chart, metadata, presentation = {}, report, hasFullRe
     if (report && hasFullReport) fullReport(doc, report);
     else if (report) previewReport(doc, report);
     else unavailablePage(doc);
-    technicalAppendix(doc, chart, metadata, cjkReady);
+    baziVisualPage(doc, chart, cjkReady);
+    luckTimelinePage(doc, chart, cjkReady);
+    ziweiVisualPage(doc, chart, cjkReady);
     disclaimer(doc);
     addPageNumbers(doc);
     doc.end();
@@ -42,22 +45,25 @@ function cover(doc, chart, metadata, presentation, report) {
   doc.rect(0, 0, doc.page.width, doc.page.height).fill(colors.jade);
   doc.fillColor(colors.gold).font(doc._tianMingBrandFont).fontSize(11).text("ТЯНЬ МИН · 天命", 52, 56, { characterSpacing: 1.2 });
   doc.fillColor("#a9bdb5").font("Body").fontSize(10).text("ПЕРСОНАЛЬНАЯ КАРТА ЛИЧНОСТИ И ЖИЗНЕННОГО ПУТИ", 52, 88, { characterSpacing: .7 });
-  doc.fillColor(colors.white).font("Bold").fontSize(34).text(cleanNarrative(report?.archetype || "Ваша персональная карта"), 52, 168, { width: 490, lineGap: 8 });
-  doc.fillColor("#d9e3dd").font("Body").fontSize(16).text(cleanNarrative(report?.subtitle || "Технический расчёт готов. Персональная AI-интерпретация не была создана."), 52, 270, { width: 460, lineGap: 5 });
-  if (report) doc.fillColor(colors.gold).font("Body").fontSize(11).text(cleanNarrative(report.oneLineFormula), 52, 350, { width: 450, lineGap: 4 });
-  doc.fillColor("#a9bdb5").font(doc._tianMingBrandFont).fontSize(10).text("Ба-цзы (八字) + Цзы Вэй Доу Шу (紫微斗数)", 52, 450, { width: 450 });
-  doc.moveTo(52, 510).lineTo(543, 510).strokeColor("#55736a").stroke();
+  doc.fillColor(colors.white).font("Bold").fontSize(34).text(clean(presentation.displayName || "Ваша персональная карта"), 52, 168, { width: 490, lineGap: 8 });
+  doc.fillColor("#d9e3dd").font("Body").fontSize(16).text("Понять себя. Увидеть свой ритм.", 52, 270, { width: 460, lineGap: 5 });
+  if (report) doc.fillColor(colors.gold).font("Body").fontSize(11).text(cleanNarrative(`${report.archetype}. ${report.subtitle}`), 52, 330, { width: 450, lineGap: 4 });
+  doc.fillColor("#a9bdb5").font(doc._tianMingBrandFont).fontSize(10).text("Ба-цзы (八字) + Цзы Вэй Доу Шу (紫微斗数)", 52, 430, { width: 450 });
+  doc.moveTo(52, 490).lineTo(543, 490).strokeColor("#55736a").stroke();
   const rows = [
-    ...(presentation.displayName ? [["Имя", presentation.displayName]] : []),
-    ["Дата рождения", metadata.originalBirthDate], ["Местное время", metadata.originalBirthTime],
-    ["Место рождения", metadata.birthPlace], ["Метод", metadata.calculationMethod],
+    ["Дата рождения", metadata.originalBirthDate], ["Время рождения", metadata.originalBirthTime],
+    ["Место рождения", presentation.birthPlace?.label || metadata.birthPlace],
   ];
   rows.forEach(([label, value], index) => {
-    const y = 535 + index * 38;
+    const y = 520 + index * 42;
     doc.fillColor("#9eb2aa").font("Body").fontSize(9).text(label.toUpperCase(), 52, y);
     const valueSize = label === "Имя" && clean(value).length > 38 ? 9 : 11;
     doc.fillColor(colors.white).font("Bold").fontSize(valueSize).text(clean(value), 190, y, { width: 350, lineBreak: false, ellipsis: true });
   });
+  doc.fillColor("#91a69e").font("Body").fontSize(8).text(
+    "Время рождения учтено с поправкой на место рождения и исторические правила времени.",
+    52, 664, { width: 470, lineGap: 2 },
+  );
   doc.fillColor("#91a69e").font("Body").fontSize(8).text("Информационный и развлекательный материал", 52, 760);
 }
 
@@ -67,33 +73,15 @@ function fullReport(doc, report) {
   cards(doc, "5 главных черт", report.keyTraits, item => `${item.title}\n${item.explanation}\n\nВ ресурсе: ${item.positive}\nРиск: ${item.shadow}\nОснования: ${item.evidence.join("; ")}`, { continuePage: true });
   cards(doc, "Сильные стороны", report.strengths, item => `${item.title}\n${item.essence}\n\nКак проявляется: ${item.manifestation}\nГде полезно: ${item.usefulWhere}\nПрактика: ${item.practicalUse}`, { continuePage: true });
   cards(doc, "Риски и слабые места", report.challenges, item => `${item.pattern}\nКогда: ${item.trigger}\nВозможное следствие: ${item.consequence}\nЧто помогает: ${item.compensation}`, { continuePage: true });
-  splitSection(doc, "Как вас видят / что происходит внутри", [
-    ["Снаружи", report.externalVsInternal.external], ["Внутри", report.externalVsInternal.internal], ["Синтез", report.externalVsInternal.synthesis],
-  ]);
-  splitSection(doc, "Стресс и решения", Object.entries(report.stressPattern).map(([key, value]) => [labelFor(key), value]));
   section(doc, "Карьера и профессиональный рост", report.career);
   section(doc, "Деньги и финансовое поведение", report.money);
   section(doc, "Отношения и близость", report.relationships);
-  splitSection(doc, "Люди и окружение", Object.entries(report.environment).map(([key, value]) => [labelFor(key), value]));
-  splitSection(doc, "Лидерство и конфликты", Object.entries(report.leadership).map(([key, value]) => [labelFor(key), value]));
-  splitSection(doc, "Образ жизни и ресурс", Object.entries(report.lifestyle).map(([key, value]) => [labelFor(key), value]));
   splitSection(doc, "Текущий большой период", Object.entries(report.currentPeriod).map(([key, value]) => [labelFor(key), value]));
   cards(doc, "Ближайшие 3 года", report.yearlyOutlook, item => `${item.year} - ${item.theme}\nВозможности: ${item.opportunities}\nРиски: ${item.risks}\nФокус: ${item.focus}\nНе форсировать: ${item.avoid}`);
-  cards(doc, "Ключевые переходы жизни", report.keyLifeTransitions, item => `${item.age} / ${item.period}\n${item.theme}\nЧто меняется: ${item.change}`, { continuePage: true });
-  cards(doc, "Три сценария", report.scenarios, item => `${item.type}: ${item.title}\n${item.description}\nРешения: ${item.decisions}`);
-  matrix(doc, report.lifeAreaMatrix);
-  splitSection(doc, "Сопоставление Ба-цзы и Цзы Вэй", [
-    ["Где согласны", report.crossValidation.agreements.join("\n• ")],
-    ["Где расходятся", report.crossValidation.divergences.join("\n• ")],
-    ["Устойчивые выводы", report.crossValidation.stableConclusions.join("\n• ")],
-    ["Более слабые выводы", report.crossValidation.weakerConclusions.join("\n• ")],
-  ]);
-  cards(doc, "Уверенность выводов", report.confidence, item => `${item.conclusion}\nУровень: ${item.level}\n${item.reason}`);
   splitSection(doc, "План действий", [
     ["Делать чаще", report.actionPlan.doMore.join("\n• ")], ["Избегать", report.actionPlan.avoid.join("\n• ")],
     ["Фокус на 12 месяцев", report.actionPlan.next12Months.join("\n• ")], ["Вопросы себе", report.actionPlan.questions.join("\n• ")],
   ]);
-  cards(doc, "Самопроверка", report.selfCheck, (item, index) => `${index + 1}. ${item}`);
   section(doc, "Итог", report.finalSummary);
 }
 
@@ -101,37 +89,91 @@ function previewReport(doc, report) {
   section(doc, "Короткий портрет", report.executiveSummary);
   cards(doc, "Три сильные стороны", report.strengths.slice(0, 3), item => `${item.title}\n${item.essence}`);
   cards(doc, "Главная зона внимания", report.challenges.slice(0, 1), item => `${item.pattern}\n${item.compensation}`);
-  section(doc, "Полная версия", "Расширенные разделы отчёта не входят в текущий доступ. Техническая карта приведена ниже.");
+  section(doc, "Полная версия", "Расширенные разделы отчёта не входят в текущий доступ. Подробная карта приведена ниже.");
 }
 
-function unavailablePage(doc) {
-  section(doc, "Персональная интерпретация", "Персональная AI-интерпретация не была создана. Ниже сохранён полный технический расчёт Ба-цзы и Цзы Вэй.");
+function unavailablePage(doc) { section(doc, "Персональный разбор ещё не создан", "Карта уже рассчитана. Ниже приведены четыре столпа Ба-цзы, баланс пяти элементов, жизненные периоды и двенадцать дворцов Цзы Вэй Доу Шу."); }
+
+function baziVisualPage(doc, chart, hasCjk) {
+  page(doc, "Ба-цзы: основа карты", "Четыре столпа и баланс пяти элементов, рассчитанные по дате, времени и месту рождения.");
+  const cardWidth = 116;
+  chart.bazi.pillars.forEach((pillar, index) => {
+    const x = 52 + index * 125;
+    doc.roundedRect(x, 188, cardWidth, 158, 8).fill(index % 2 ? colors.sand : colors.sage);
+    doc.fillColor(colors.muted).font("Bold").fontSize(8).text(pillar.label.toUpperCase(), x + 12, 204, { width: 92, align: "center" });
+    doc.fillColor(colors.jade).font(hasCjk ? "CJK" : "Bold").fontSize(27).text(`${pillar.gan}${pillar.zhi}`, x + 12, 235, { width: 92, align: "center" });
+    doc.fillColor(colors.ink).font("Bold").fontSize(9).text(pillar.shiShenDisplay.name, x + 10, 285, { width: 96, align: "center" });
+    doc.fillColor(colors.red).font(hasCjk ? "CJK" : "Body").fontSize(8).text(pillar.shiShenDisplay.original, x + 12, 320, { width: 92, align: "center" });
+  });
+
+  const summaries = [
+    ["Дневной хозяин", chart.bazi.dayMaster, "Центральная точка карты"],
+    ["Структура", chart.bazi.structureDisplay.name.replace(/^Структура\s*/, ""), chart.bazi.structure],
+    ["Сила карты", chart.bazi.strength.display.name, `Оценка ${chart.bazi.strength.score}`],
+  ];
+  summaries.forEach(([label, value, note], index) => {
+    const x = 52 + index * 166;
+    doc.roundedRect(x, 374, 156, 92, 6).lineWidth(1).strokeColor("#d8ded9").stroke();
+    doc.fillColor(colors.gold).font("Bold").fontSize(7.5).text(label.toUpperCase(), x + 12, 390, { width: 132 });
+    doc.fillColor(colors.ink).font(hasCjk && /[\u3400-\u9FFF]/.test(String(value)) ? "CJK" : "Bold").fontSize(12).text(clean(value), x + 12, 412, { width: 132 });
+    doc.fillColor(colors.muted).font(hasCjk ? "CJK" : "Body").fontSize(7.5).text(clean(note), x + 12, 442, { width: 132 });
+  });
+
+  doc.fillColor(colors.ink).font("Bold").fontSize(16).text("Баланс пяти элементов", 52, 505);
+  const max = Math.max(...chart.bazi.elementsDisplay.map(item => Number(item.value)), 1);
+  chart.bazi.elementsDisplay.forEach((item, index) => {
+    const y = 548 + index * 38;
+    doc.fillColor(colors.ink).font("Bold").fontSize(9).text(item.name, 52, y, { width: 82 });
+    doc.fillColor(colors.gold).font(hasCjk ? "CJK" : "Body").fontSize(9).text(item.original, 122, y, { width: 24 });
+    doc.roundedRect(158, y + 1, 330, 10, 5).fill("#e7e7e1");
+    doc.roundedRect(158, y + 1, Math.max(4, 330 * Number(item.value) / max), 10, 5).fill(index === 2 ? colors.red : colors.jade);
+    doc.fillColor(colors.ink).font("Bold").fontSize(9).text(String(item.value), 505, y, { width: 35, align: "right" });
+  });
 }
 
-function technicalAppendix(doc, chart, metadata, hasCjk) {
-  page(doc, "Техническое приложение", "Рассчитанные данные не изменялись AI-интерпретацией.");
-  subheading(doc, "Ба-цзы (八字) - четыре столпа");
-  chart.bazi.pillars.forEach(pillar => technicalRow(doc, pillar.label, `${pillar.gan}${pillar.zhi} / ${pillar.shiShenDisplay.name} (${pillar.shiShenDisplay.original})`, hasCjk));
-  technicalRow(doc, "Дневной хозяин - центральный элемент личности", chart.bazi.dayMaster, hasCjk);
-  technicalRow(doc, "Структура - ведущий тип взаимодействия", `${chart.bazi.structureDisplay.name} (${chart.bazi.structure})`, hasCjk);
-  technicalRow(doc, "Сила - общий баланс карты", `${chart.bazi.strength.display.name} / ${chart.bazi.strength.verdict} (${chart.bazi.strength.score})`, hasCjk);
-  technicalRow(doc, "Пять элементов", chart.bazi.elementsDisplay.map(item => `${item.name} ${item.original}: ${item.value}`).join(" / "), hasCjk);
-  technicalRow(doc, "Регулирующие элементы - точки баланса", chart.bazi.regulatingDisplay.map(item => `${item.name} (${item.original})`).join(" / ") || "-", hasCjk);
-  subheading(doc, "Большие жизненные периоды Ба-цзы");
-  chart.bazi.majorPeriods.forEach(item => technicalRow(doc, `${item.range} / ${item.years}`, `${item.ganZhi} / ${item.detailDisplay.map(value => `${value.name} (${value.original})`).join(" · ")}`, hasCjk));
-  subheading(doc, "Цзы Вэй Доу Шу (紫微斗数) - основные данные");
-  technicalRow(doc, "Лунная дата", chart.ziwei.lunarDate, hasCjk);
-  technicalRow(doc, "Дворец судьбы", chart.ziwei.mingPalace, hasCjk);
-  technicalRow(doc, "Дворец тела", chart.ziwei.shenPalace, hasCjk);
-  technicalRow(doc, "Система пяти элементов", `${chart.ziwei.fiveElementBureauDisplay.name} (${chart.ziwei.fiveElementBureau})`, hasCjk);
-  technicalRow(doc, "Четыре трансформации", chart.ziwei.transformations.join(" / "), hasCjk);
-  subheading(doc, "Двенадцать дворцов");
-  chart.ziwei.palaces.forEach(item => technicalRow(doc, `${item.displayName.name} / ${item.name} · ${item.ganZhi}`, `${item.mainStarsDisplay.map(star => `${star.name} (${star.original})`).join(" / ") || "Без главной звезды"}; ${item.auxStars.join(" / ") || "-"}`, hasCjk));
-  subheading(doc, "Метод времени");
-  technicalRow(doc, "Исходное местное время", metadata.originalLocalDateTime, false);
-  technicalRow(doc, "Истинное солнечное время", metadata.trueSolarDateTime, false);
-  technicalRow(doc, "Метод", metadata.calculationMethod, false);
-  if (metadata.calculationSensitivity === "HIGH") technicalRow(doc, "Примечание", "Время рождения находится близко к чувствительной границе расчёта.", false);
+function luckTimelinePage(doc, chart, hasCjk) {
+  page(doc, "Большие жизненные периоды", "Последовательные десятилетние этапы карты Ба-цзы. Выделен период, включающий текущий календарный год.");
+  const currentYear = new Date().getUTCFullYear();
+  doc.moveTo(96, 202).lineTo(96, 720).lineWidth(2).strokeColor("#d6ddd8").stroke();
+  chart.bazi.majorPeriods.forEach((item, index) => {
+    const y = 205 + index * 86;
+    const years = String(item.years).match(/(\d{4}).*?(\d{4})/);
+    const current = years && currentYear >= Number(years[1]) && currentYear <= Number(years[2]);
+    doc.circle(96, y + 21, current ? 9 : 6).fill(current ? colors.red : colors.gold);
+    if (current) doc.roundedRect(122, y - 2, 420, 67, 7).fill(colors.sage);
+    doc.fillColor(colors.muted).font("Bold").fontSize(8).text(item.range, 52, y + 8, { width: 34, align: "right" });
+    doc.fillColor(colors.jade).font(hasCjk ? "CJK" : "Bold").fontSize(18).text(item.ganZhi, 140, y + 7, { width: 70 });
+    doc.fillColor(colors.ink).font("Bold").fontSize(10).text(item.detailDisplay.map(value => value.name).join(" · "), 225, y + 8, { width: 285 });
+    doc.fillColor(colors.muted).font("Body").fontSize(8).text(`${item.years}${current ? " · текущий период" : ""}`, 225, y + 35, { width: 285 });
+  });
+}
+
+function ziweiVisualPage(doc, chart, hasCjk) {
+  page(doc, "Цзы Вэй: двенадцать дворцов", "Русское название показано первым. Китайские обозначения и транслитерации сохранены как вторичный профессиональный слой.");
+  const facts = [
+    ["Лунная дата", chart.ziwei.lunarDateDisplay], ["Дворец судьбы", chart.ziwei.mingPalace],
+    ["Дворец тела", chart.ziwei.shenPalace], ["Система элементов", chart.ziwei.fiveElementBureauDisplay.name],
+  ];
+  facts.forEach(([label, value], index) => {
+    const x = 52 + index * 123;
+    doc.roundedRect(x, 182, 115, 62, 6).fill(index % 2 ? colors.sand : colors.sage);
+    doc.fillColor(colors.gold).font("Bold").fontSize(7).text(label.toUpperCase(), x + 9, 194, { width: 97 });
+    doc.fillColor(colors.ink).font(hasCjk && /[\u3400-\u9FFF]/.test(String(value)) ? "CJK" : "Bold").fontSize(9).text(clean(value), x + 9, 214, { width: 97 });
+  });
+  if (chart.ziwei.transformationsDisplay.length) {
+    doc.fillColor(colors.muted).font("Body").fontSize(7.5).text(`Четыре трансформации: ${chart.ziwei.transformationsDisplay.map(item => item.name).join(" · ")}`, 52, 258, { width: 491 });
+  }
+  chart.ziwei.palaces.forEach((palace, index) => {
+    const col = index % 3, row = Math.floor(index / 3);
+    const x = 52 + col * 166, y = 288 + row * 112;
+    doc.roundedRect(x, y, 156, 102, 6).fill(palace.isCurrentPeriod ? colors.sage : index % 2 ? colors.sand : "#f8f7f2");
+    if (palace.isCurrentPeriod) doc.rect(x, y, 4, 102).fill(colors.gold);
+    doc.fillColor(colors.ink).font("Bold").fontSize(8.3).text(palace.displayName.name, x + 10, y + 10, { width: 136, height: 25 });
+    doc.fillColor(colors.gold).font(hasCjk ? "CJK" : "Body").fontSize(7).text(`${palace.name} · ${palace.ganZhi}`, x + 10, y + 38, { width: 136 });
+    const stars = palace.mainStarsDisplay.length ? palace.mainStarsDisplay.map(star => star.name).join(" · ") : "Без главной звезды";
+    doc.fillColor(colors.jade).font("Bold").fontSize(8).text(stars, x + 10, y + 57, { width: 136 });
+    doc.fillColor(colors.muted).font("Body").fontSize(6.7).text(`${palace.majorPeriod} лет${palace.isCurrentPeriod ? " · текущий" : ""}`, x + 10, y + 82, { width: 136 });
+  });
 }
 
 function disclaimer(doc) {

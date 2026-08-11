@@ -1,7 +1,7 @@
 const DIZHI = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
 const {
-  bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay,
-  strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay,
+  auxiliaryStarDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay,
+  strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay, transformationDisplay,
 } = require("./astrology-localization.cjs");
 
 function toChartView(chart) {
@@ -43,15 +43,18 @@ function toChartView(chart) {
     },
     ziwei: {
       lunarDate: ziwei.lunarDate ? `${ziwei.lunarDate.year} год · ${ziwei.lunarDate.monthCn} месяц · ${ziwei.lunarDate.dayCn}` : "—",
+      lunarDateDisplay: ziwei.lunarDate ? `${ziwei.lunarDate.year} год · ${ziwei.lunarDate.month}-й лунный месяц · ${ziwei.lunarDate.day}-й день` : "—",
       yinYang: ziwei.yinYang || "—", mingPalace: ziwei.gongs[0]?.dizhi || "—",
       shenPalace: DIZHI[ziwei.shenGongIndex] || "—", fiveElementBureau: ziwei.wuXingJu?.name || "—",
       fiveElementBureauDisplay: bureauDisplay(ziwei.wuXingJu?.name || "—"),
       transformations,
+      transformationsDisplay: transformations.map(transformationDisplay),
       palaces: ziwei.gongs.map(gong => ({
         name: gong.gong.endsWith("宫") ? gong.gong : `${gong.gong}宫`,
         displayName: palaceDisplay(gong.gong.endsWith("宫") ? gong.gong : `${gong.gong}宫`), dizhi: gong.dizhi,
         ganZhi: gong.tiangan + gong.dizhi, mainStars: gong.mainStars, auxStars: gong.auxStars,
         mainStarsDisplay: gong.mainStars.map(starDisplay),
+        auxStarsDisplay: gong.auxStars.map(auxiliaryStarDisplay),
         transformations: (gong.sihua || []).map(item => `${item.star}${item.hua}`),
         majorPeriod: gong.daXian ? `${gong.daXian.startAge}–${gong.daXian.endAge}` : "—",
         isCurrentPeriod: Boolean(gong.daXian?.isCurrent),

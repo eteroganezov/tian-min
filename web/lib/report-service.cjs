@@ -4,11 +4,12 @@ const { createReportProvider } = require("./report-provider.cjs");
 const { validatePersonalReport } = require("./report-schema.cjs");
 const { canonicalBirthInput, normalizeDisplayName } = require("./personalization.cjs");
 const { createFingerprints, INTERPRETATION_PROMPT_VERSION, REPORT_SCHEMA_VERSION } = require("./report-fingerprint.cjs");
+const { locationProvider } = require("./location-provider.cjs");
 
 function buildReportContext(calculation, presentation = {}, options = {}) {
   const reportYears = options.reportYears || currentReportYears();
   const context = {
-    presentation: { displayName: presentation.displayName || "" },
+    presentation: { displayName: presentation.displayName || "", birthPlace: presentation.birthPlace || null },
     interpretation: {
       promptVersion: INTERPRETATION_PROMPT_VERSION,
       schemaVersion: REPORT_SCHEMA_VERSION,
@@ -19,7 +20,7 @@ function buildReportContext(calculation, presentation = {}, options = {}) {
     birth: {
       date: calculation.metadata.originalBirthDate,
       time: calculation.metadata.originalBirthTime,
-      place: calculation.metadata.birthPlace,
+      place: presentation.birthPlace?.label || calculation.metadata.birthPlace,
       trueSolarDate: calculation.metadata.trueSolarDate,
       trueSolarTime: calculation.metadata.trueSolarTime,
     },
@@ -64,9 +65,11 @@ async function generateReportRequest(input, options = {}) {
   }
   catch (error) { return { status: 400, body: { error: safeMessage(error) } }; }
   const provider = options.provider || createReportProvider(options.env || process.env);
+  const place = locationProvider.resolve(input.placeId);
   const model = provider.model || options.env?.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-terra";
   const reportYears = options.reportYears || currentReportYears();
-  const context = buildReportContext(calculation, { displayName }, { model, reportYears });
+  const presentation = { displayName, birthPlace: place?.display || null };
+  const context = buildReportContext(calculation, presentation, { model, reportYears });
   const fingerprints = createFingerprints({ input, calculation, displayName, model, reportYears });
   let report;
   let validation;
@@ -75,7 +78,7 @@ async function generateReportRequest(input, options = {}) {
       report = await provider.generate(context, attempt ? validation.errors.slice(0, 4).join("; ") : undefined);
     } catch (error) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
-        return { status: 200, body: { aiStatus: "unavailable", message: "Персональная интерпретация пока не подключена", hasFullReport: hasFullReport(options.env), presentation: { displayName }, ...fingerprints } };
+        return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints } };
       }
       if (attempt === 1) return { status: 502, body: { aiStatus: "error", error: "Не удалось подготовить персональный разбор. Техническая карта остаётся доступна." } };
       validation = { errors: ["провайдер вернул техническую ошибку"] };
@@ -91,7 +94,7 @@ async function generateReportRequest(input, options = {}) {
     body: {
       aiStatus: "ready", hasFullReport: full,
       report: full ? report : createPreview(report),
-      model, presentation: { displayName }, ...fingerprints,
+      model, presentation, ...fingerprints,
     },
     internal: { report, calculation, context },
   };

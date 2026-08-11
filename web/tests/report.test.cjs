@@ -42,11 +42,11 @@ test("имя передаётся отдельно от неизменяемых
   assert.equal(result.status, 200);
 });
 
-test("без API-ключа технический расчёт остаётся доступен, а AI имеет честный статус", async () => {
+test("без API-ключа карта остаётся доступна, а персональный разбор имеет честный статус", async () => {
   const result = await generateReportRequest(input, { env: {} });
   assert.equal(result.status, 200);
   assert.equal(result.body.aiStatus, "unavailable");
-  assert.match(result.body.message, /не подключена/);
+  assert.equal(result.body.message, "Персональный разбор ещё не создан");
   assert.equal(result.body.report, undefined);
 });
 

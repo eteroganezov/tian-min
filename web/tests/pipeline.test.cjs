@@ -12,8 +12,29 @@ function place(query) {
 test("русский запрос города возвращает проверяемое место, а поддельный id отклоняется", () => {
   const moscow = place("Москва");
   assert.equal(moscow.timeZone, "Europe/Moscow");
+  assert.equal(moscow.display.label, "Москва, Россия");
+  assert.match(moscow.label, /^Moscow,/);
   assert.equal(locationProvider.resolve(moscow.id).longitude, 37.61552283);
   assert.equal(locationProvider.resolve(Buffer.from("fake|place").toString("base64url")), null);
+});
+
+test("русская подпись места не меняет канонические координаты, id и часовой пояс", () => {
+  for (const [query, expected] of [["Москва", "Москва, Россия"], ["Санкт-Петербург", "Санкт-Петербург, Россия"], ["Алматы", "Алматы, Казахстан"], ["London United Kingdom", "Лондон, Великобритания"], ["New York New York", "Нью-Йорк, Соединенные Штаты"]]) {
+    const selected = place(query);
+    const resolved = locationProvider.resolve(selected.id);
+    assert.equal(selected.display.label, expected, query);
+    assert.equal(resolved.id, selected.id, query);
+    assert.equal(resolved.latitude, selected.latitude, query);
+    assert.equal(resolved.longitude, selected.longitude, query);
+    assert.equal(resolved.timeZone, selected.timeZone, query);
+  }
+});
+
+test("неизвестный словарю город сохраняет каноническое имя и переводит страну", () => {
+  const urumqi = place("Urumqi China");
+  assert.equal(urumqi.display.city, urumqi.city);
+  assert.equal(urumqi.display.country, "Китай");
+  assert.equal(urumqi.display.isCityLocalized, false);
 });
 
 test("сквозная цепочка работает для городов разных зон, включая крайнее положение внутри зоны", () => {

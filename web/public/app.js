@@ -62,7 +62,7 @@ async function loadPersonalReport(chart, metadata, presentation) {
     const response = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(currentInput) });
     const payload = await response.json();
     if (!response.ok || payload.aiStatus === "error") throw new Error(payload.error || "Не удалось подготовить персональный разбор.");
-    if (payload.aiStatus === "unavailable") { updatePdfEntitlement(false, "technical"); return updateAiState("unavailable", payload.message, "Техническая карта и PDF с расчётом уже доступны."); }
+    if (payload.aiStatus === "unavailable") { updatePdfEntitlement(false); return updateAiState("unavailable", payload.message, "Карта уже рассчитана. После подключения персональной интерпретации здесь появится полный разбор характера, карьеры, отношений и жизненных периодов."); }
     currentReport = payload.report;
     currentHasFullReport = payload.hasFullReport;
     const normalizedPresentation = payload.presentation || presentation;
@@ -71,18 +71,19 @@ async function loadPersonalReport(chart, metadata, presentation) {
     updatePdfEntitlement(payload.hasFullReport);
     bindResultActions();
   } catch (error) {
-    updateAiState("error", "Персональный разбор сейчас не удалось подготовить.", "Техническая карта остаётся доступна — расчёт не потерян.");
+    updateAiState("error", "Персональный разбор сейчас не удалось подготовить.", "Карта остаётся доступна — расчёт не потерян.");
   }
 }
 
 function renderBaseResult(chart, metadata, presentation) {
   const name = presentation?.displayName || "";
+  const place = presentation?.birthPlace?.label || metadata.place.name;
   return `<section class="report-shell">
     <header class="report-cover shell">
       <div class="cover-kicker"><span>Ваш персональный разбор</span><i></i><span>Ба-цзы × Цзы Вэй</span></div>
-      <h2>${name ? `${e(name)}, карта готова.` : "Карта готова."}<br><em>Теперь — к главному.</em></h2>
-      <p>${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(metadata.place.name)}</p>
-      <div class="cover-actions"><button class="pdf-button" data-action="pdf">Скачать отчёт PDF <span>↓</span></button><button class="text-button" data-action="technical">Техническая карта</button></div>
+      <h2>${name ? `${e(name)}, ваша карта готова.` : "Ваша карта готова."}<br><em>Теперь — к главному.</em></h2>
+      <p>${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(place)}</p>
+      <div class="cover-actions"><button class="pdf-button" data-action="pdf">Скачать полный отчёт <span>↓</span></button><button class="text-button" data-action="technical">Посмотреть карту</button></div>
     </header>
     <div id="personal-report" class="personal-report shell">${renderAiState("loading", "Готовим персональный разбор…", "Сопоставляем две системы и собираем понятную картину.")}</div>
     ${renderTechnical(chart, metadata)}
@@ -95,7 +96,7 @@ function renderPersonalReport(report, full, chart, metadata, presentation) {
     <section class="report-section lead"><p class="section-label">Короткий портрет</p><p>${paragraphs(report.executiveSummary)}</p></section>
     ${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
     <section class="locked-report"><span>Полный отчёт</span><h2>Карьера, деньги, отношения, периоды и план действий</h2><p>Архитектура полной версии уже готова. В текущем режиме открыта бесплатная предварительная версия.</p></section>`;
-  return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote><div class="birth-caption">${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(metadata.birthPlace)}</div></section>
+  return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote><div class="birth-caption">${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(presentation?.birthPlace?.label || metadata.birthPlace)}</div></section>
     <section class="report-section lead"><p class="section-label">В двух словах</p><h2>Главное о вас</h2><div class="prose">${paragraphs(report.executiveSummary)}</div></section>
     <section class="report-section"><p class="section-label">Внутренний портрет</p><h2>Как устроена ваша личность</h2><div class="prose narrow">${paragraphs(report.personality)}</div></section>
     ${renderTraits(report.keyTraits)}${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
@@ -131,7 +132,7 @@ function renderSelfCheck(items) { return `<section class="report-section self-ch
 
 function renderTechnical(chart, metadata) {
   const max = Math.max(...chart.bazi.elementsDisplay.map(item => Number(item.value)), 1);
-  return `<section class="technical shell" id="technical-chart"><details><summary><span>Техническая карта Ба-цзы и Цзы Вэй</span><small>Подробные данные, на которых основан ваш персональный разбор</small></summary><div class="technical-body">
+  return `<section class="technical shell" id="technical-chart"><details><summary><span>Карта Ба-цзы и Цзы Вэй</span><small>Подробные данные, на которых основан персональный разбор</small></summary><div class="technical-body">
     <details class="method-details"><summary>Как учитывается место рождения</summary><p>Вы вводите местное время рождения — то время, которое показывали часы в месте рождения. Система автоматически определяет исторический часовой пояс, учитывает действовавшее в тот момент летнее время и выполняет необходимую временную коррекцию для расчёта карты.</p><p>Вам не нужно самостоятельно определять UTC, часовой пояс или солнечное время.</p>${metadata.calculationSensitivity === "HIGH" ? `<small>Время рождения находится близко к чувствительной границе расчёта.</small>` : ""}</details>
     <div class="technical-heading"><div><span>Ба-цзы</span><small>八字</small></div><h3>Четыре столпа</h3><p>Год, месяц, день и час образуют основу карты. Китайские знаки сохранены как исходные профессиональные обозначения.</p></div>
     <div class="pillars-grid">${chart.bazi.pillars.map(p=>`<article><span>${e(p.label)}</span><strong>${e(p.gan)}${e(p.zhi)}</strong><b>${e(p.shiShenDisplay.name)}</b><small>${e(p.shiShenDisplay.original)}</small><em>${e(p.stemDisplay.name)} · ${e(p.branchDisplay.name)}</em></article>`).join("")}</div>
@@ -139,8 +140,8 @@ function renderTechnical(chart, metadata) {
     <h4>Соотношение пяти элементов</h4><div class="elements-list">${chart.bazi.elementsDisplay.map(item=>`<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Number(item.value)/max*100}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div>
     <h4>Большие жизненные периоды Ба-цзы</h4><p class="technical-note">Последовательные десятилетние этапы карты. Смысл текущего периода раскрывается выше в персональной интерпретации.</p><div class="period-strip">${chart.bazi.majorPeriods.map(item=>`<article><b>${e(item.ganZhi)}</b><span>${e(item.range)}</span><small>${e(item.years)}</small><em>${item.detailDisplay.map(value=>e(value.name)).join(" · ")}</em></article>`).join("")}</div>
     <div class="technical-heading ziwei-heading"><div><span>Цзы Вэй Доу Шу</span><small>紫微斗数</small></div><h3>Двенадцать дворцов</h3><p>Каждый дворец обозначает отдельную жизненную сферу. Русское название показано первым, китайский оригинал — вторично.</p></div>
-    <div class="technical-facts"><p><span>Лунная дата</span><b>${e(chart.ziwei.lunarDate)}</b></p><p><span>Дворец судьбы</span><b>${e(chart.ziwei.mingPalace)}</b></p><p><span>Дворец тела</span><b>${e(chart.ziwei.shenPalace)}</b></p><p><span>Система пяти элементов</span><b>${e(chart.ziwei.fiveElementBureauDisplay.name)}</b><small>${e(chart.ziwei.fiveElementBureau)}</small></p></div>
-    <div class="palaces-grid">${chart.ziwei.palaces.map(item=>`<article class="${item.isCurrentPeriod ? "current-palace" : ""}"><header><div><b>${e(item.displayName.name)}</b><small>${e(item.name)}</small></div><span>${e(item.ganZhi)}</span></header><div class="main-stars">${item.mainStarsDisplay.length ? item.mainStarsDisplay.map(star=>`<p><b>${e(star.name)}</b><small>${e(star.original)}</small></p>`).join("") : `<p><b>Без главной звезды</b></p>`}</div><footer><span>Дополнительные звёзды</span><small>${e(item.auxStars.join(" · ") || "—")}</small></footer><em>${e(item.majorPeriod)} лет${item.isCurrentPeriod ? " · текущий период" : ""}</em></article>`).join("")}</div>
+    <div class="technical-facts"><p><span>Лунная дата</span><b>${e(chart.ziwei.lunarDateDisplay)}</b><small>${e(chart.ziwei.lunarDate)}</small></p><p><span>Дворец судьбы</span><b>${e(chart.ziwei.mingPalace)}</b></p><p><span>Дворец тела</span><b>${e(chart.ziwei.shenPalace)}</b></p><p><span>Система пяти элементов</span><b>${e(chart.ziwei.fiveElementBureauDisplay.name)}</b><small>${e(chart.ziwei.fiveElementBureau)}</small></p></div>
+    <div class="palaces-grid">${chart.ziwei.palaces.map(item=>`<article class="${item.isCurrentPeriod ? "current-palace" : ""}"><header><div><b>${e(item.displayName.name)}</b><small>${e(item.name)}</small></div><span>${e(item.ganZhi)}</span></header><div class="main-stars">${item.mainStarsDisplay.length ? item.mainStarsDisplay.map(star=>`<p><b>${e(star.name)}</b><small>${e(star.original)}</small></p>`).join("") : `<p><b>Без главной звезды</b></p>`}</div><footer><span>Дополнительные звёзды</span><small>${item.auxStarsDisplay.length ? item.auxStarsDisplay.map(star=>`${e(star.name)} <i>${e(star.original)}</i>`).join(" · ") : "—"}</small></footer><em>${e(item.majorPeriod)} лет${item.isCurrentPeriod ? " · текущий период" : ""}</em></article>`).join("")}</div>
   </div></details></section>`;
 }
 
@@ -152,15 +153,16 @@ async function downloadPdf(button) {
     const response = await fetch("/api/pdf", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
     if (!response.ok) { const error = await response.json(); throw new Error(error.error || "Не удалось создать PDF."); }
     const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a");
-    link.href = url; link.download = `tian-ming-report-${currentInput.date}.pdf`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
+    const disposition = response.headers.get("Content-Disposition") || ""; const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `tian-min-report-${currentInput.date}-${currentInput.time.replace(":","-")}.pdf`;
+    link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   } catch (error) { showError(error instanceof Error ? error.message : "Не удалось создать PDF."); }
   finally { button.disabled = false; button.innerHTML = original; }
 }
 
 function bindResultActions() { document.querySelectorAll('[data-action="pdf"]').forEach(button=>button.onclick=()=>downloadPdf(button)); document.querySelectorAll('[data-action="technical"]').forEach(button=>button.onclick=()=>{const details=document.querySelector("#technical-chart details"); if(details){details.open=true;details.scrollIntoView({behavior:"smooth"});}}); }
-function updatePdfEntitlement(full, mode) { document.querySelectorAll('[data-action="pdf"]').forEach(button => { button.innerHTML = mode === "technical" ? "Скачать технический PDF <span>↓</span>" : full ? "Скачать полный отчёт PDF <span>↓</span>" : "Скачать доступную версию PDF <span>↓</span>"; }); }
+function updatePdfEntitlement() { document.querySelectorAll('[data-action="pdf"]').forEach(button => { button.innerHTML = "Скачать полный отчёт <span>↓</span>"; }); }
 async function searchPlaces(query) { try { const response=await fetch(`/api/places?q=${encodeURIComponent(query)}`); const payload=await response.json(); if(placeInput.value.trim()===query) renderPlaceOptions(response.ok?payload.places:[]); } catch { renderPlaceOptions([]); } }
-function renderPlaceOptions(places) { placeOptions.innerHTML=places.map((place,index)=>`<button type="button" role="option" data-index="${index}"><strong>${e(place.city)}</strong><span>${e([place.region,place.country].filter(Boolean).join(", "))}</span></button>`).join(""); placeOptions.hidden=!places.length; placeInput.setAttribute("aria-expanded",String(Boolean(places.length))); placeOptions.querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{selectedPlace=places[index];placeInput.value=selectedPlace.label;renderPlaceOptions([]);showError("");})); }
+function renderPlaceOptions(places) { placeOptions.innerHTML=places.map((place,index)=>`<button type="button" role="option" data-index="${index}"><strong>${e(place.display?.city || place.city)}</strong><span>${e(place.display?.country || place.country)}</span></button>`).join(""); placeOptions.hidden=!places.length; placeInput.setAttribute("aria-expanded",String(Boolean(places.length))); placeOptions.querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{selectedPlace=places[index];placeInput.value=selectedPlace.display?.label || selectedPlace.label;renderPlaceOptions([]);showError("");})); }
 function showAmbiguity(options) { setLoading(false); ambiguityBox.innerHTML=`<p>В эту ночь указанное время наступало дважды. Выберите вариант:</p>${options.map(option=>`<button type="button" data-value="${e(option.value)}">${e(option.label)}</button>`).join("")}`; ambiguityBox.hidden=false; ambiguityBox.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>submitCalculation(button.dataset.value))); }
 function showError(message) { errorBox.textContent=message; errorBox.hidden=!message; }
 function setLoading(loading) { submitButton.disabled=loading; buttonLabel.textContent=loading?"Рассчитываем карту…":"Получить свой разбор"; }

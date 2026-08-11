@@ -31,6 +31,14 @@ const MAJOR_STARS = Object.freeze({
   "七杀": "Ци Ша", "破军": "По Цзюнь",
 });
 
+const AUXILIARY_STARS = Object.freeze({
+  "禄存":"Лу Цунь", "天马":"Тянь Ма", "陀罗":"То Ло", "地空":"Ди Кун", "地劫":"Ди Цзе",
+  "文昌":"Вэнь Чан", "铃星":"Лин Син", "火星":"Хо Син", "左辅":"Цзо Фу", "右弼":"Ю Би",
+  "天魁":"Тянь Куй", "红鸾":"Хун Луань", "天姚":"Тянь Яо", "文曲":"Вэнь Цюй",
+  "天钺":"Тянь Юэ", "擎羊":"Цин Ян", "天刑":"Тянь Син", "天喜":"Тянь Си",
+});
+const TRANSFORMATIONS = Object.freeze({ "化禄":"Хуа Лу", "化权":"Хуа Цюань", "化科":"Хуа Кэ", "化忌":"Хуа Цзи" });
+
 const STEM_ELEMENTS = Object.freeze({
   "甲": "Дерево", "乙": "Дерево", "丙": "Огонь", "丁": "Огонь", "戊": "Земля",
   "己": "Земля", "庚": "Металл", "辛": "Металл", "壬": "Вода", "癸": "Вода",
@@ -44,6 +52,14 @@ function palaceDisplay(original) { return item(original, PALACES[original]); }
 function elementDisplay(original) { return item(original, FIVE_ELEMENTS[original]); }
 function tenGodDisplay(original) { return item(original, TEN_GODS[original]); }
 function starDisplay(original) { return item(original, MAJOR_STARS[original]); }
+function auxiliaryStarDisplay(original) { return item(original, AUXILIARY_STARS[original]); }
+function transformationDisplay(original) {
+  const suffix = Object.keys(TRANSFORMATIONS).find(value => String(original).endsWith(value));
+  if (!suffix) return item(original);
+  const star = String(original).slice(0, -suffix.length);
+  const starName = MAJOR_STARS[star] || AUXILIARY_STARS[star] || star;
+  return item(original, `${starName} · ${TRANSFORMATIONS[suffix]}`);
+}
 function strengthDisplay(original) { return item(original, STRENGTH[original]); }
 function confidenceDisplay(original) { return item(original, CONFIDENCE[original]); }
 function stemDisplay(original) { return item(original, STEM_ELEMENTS[original] ? `${STEM_ELEMENTS[original]} · небесный ствол` : undefined); }
@@ -64,8 +80,7 @@ function tenGodPairDisplay(value) {
 }
 
 module.exports = {
-  CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STRENGTH, TEN_GODS,
-  bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay,
+  AUXILIARY_STARS, CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STRENGTH, TEN_GODS, TRANSFORMATIONS,
+  auxiliaryStarDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay, transformationDisplay,
   strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay,
 };
-

@@ -3,6 +3,7 @@ const { calculateBirthChart } = require("./birth-chart-pipeline.cjs");
 const { toChartView } = require("./chart-view.cjs");
 const { CivilTimeError } = require("./civil-time.cjs");
 const { canonicalBirthInput, normalizeDisplayName } = require("./personalization.cjs");
+const { locationProvider } = require("./location-provider.cjs");
 
 function calculateRequest(input) {
   if (!input || typeof input !== "object") return failure("Передайте данные рождения.");
@@ -13,7 +14,8 @@ function calculateRequest(input) {
   try {
     const displayName = normalizeDisplayName(input.name);
     const result = calculateBirthChart(canonicalBirthInput(input));
-    return { status: 200, body: { chart: toChartView(result.chart), metadata: result.metadata, presentation: { displayName }, ...(input.audit === true && process.env.NODE_ENV !== "production" ? { auditTrail: result.auditTrail } : {}) } };
+    const place = locationProvider.resolve(input.placeId);
+    return { status: 200, body: { chart: toChartView(result.chart), metadata: result.metadata, presentation: { displayName, birthPlace: place?.display || null }, ...(input.audit === true && process.env.NODE_ENV !== "production" ? { auditTrail: result.auditTrail } : {}) } };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Некорректные данные рождения.";
     const body = { error: message.replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, "") || "Некорректные данные рождения." };

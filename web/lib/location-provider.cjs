@@ -4,10 +4,23 @@ const cityTimezones = require("city-timezones");
 // Все возвращаемые координаты и зоны всегда берутся из установленного набора данных.
 const SEARCH_ALIASES = new Map([
   ["москва", "Moscow Russia"], ["лондон", "London United Kingdom"],
+  ["санкт-петербург", "St. Petersburg Russia"], ["санкт петербург", "St. Petersburg Russia"],
+  ["петербург", "St. Petersburg Russia"], ["алматы", "Almaty Kazakhstan"],
   ["нью-йорк", "New York New York"], ["нью йорк", "New York New York"],
   ["пекин", "Beijing China"], ["париж", "Paris France"],
   ["владивосток", "Vladivostok Russia"], ["калининград", "Kaliningrad Russia"],
 ]);
+
+// Это отдельный слой показа. Ключи привязаны к канонической записи набора данных,
+// поэтому локализация не влияет на id, координаты или IANA timezone.
+const LOCALIZED_CITY_NAMES = new Map([
+  ["Moscow|RU", "Москва"], ["St. Petersburg|RU", "Санкт-Петербург"],
+  ["Almaty|KZ", "Алматы"], ["London|GB", "Лондон"], ["New York|US", "Нью-Йорк"],
+  ["Beijing|CN", "Пекин"], ["Paris|FR", "Париж"], ["Vladivostok|RU", "Владивосток"],
+  ["Kaliningrad|RU", "Калининград"],
+]);
+
+const russianCountries = new Intl.DisplayNames(["ru"], { type: "region" });
 
 function normalize(value) {
   return String(value || "").trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
@@ -21,11 +34,23 @@ function placeId(city) {
   return Buffer.from(dataKey(city), "utf8").toString("base64url");
 }
 
+function localizedDisplay(city) {
+  const localizedCity = LOCALIZED_CITY_NAMES.get(`${city.city}|${city.iso2}`) || city.city;
+  const localizedCountry = russianCountries.of(city.iso2) || city.country;
+  return {
+    city: localizedCity,
+    country: localizedCountry,
+    label: [localizedCity, localizedCountry].filter(Boolean).join(", "),
+    isCityLocalized: localizedCity !== city.city,
+  };
+}
+
 function toPlace(city) {
+  const display = localizedDisplay(city);
   return {
     id: placeId(city), city: city.city, region: city.province || "", country: city.country,
     countryCode: city.iso2, latitude: city.lat, longitude: city.lng, timeZone: city.timezone,
-    label: [city.city, city.province, city.country].filter(Boolean).join(", "),
+    label: [city.city, city.province, city.country].filter(Boolean).join(", "), display,
   };
 }
 
@@ -56,4 +81,4 @@ class LocalLocationProvider {
 }
 
 const locationProvider = new LocalLocationProvider();
-module.exports = { LocalLocationProvider, locationProvider };
+module.exports = { LocalLocationProvider, localizedDisplay, locationProvider };

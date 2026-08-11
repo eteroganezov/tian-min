@@ -69,7 +69,14 @@ test("production build содержит форму и необходимые п�
   assert.match(html, /исторические правила времени/);
   assert.match(html, /информационных, культурных и развлекательных целей/);
   assert.match(html, /Персональная карта личности и жизненного пути/);
-  assert.match(script, /Скачать полный отчёт PDF/);
+  assert.match(html, /Что лежит в основе разбора/);
+  assert.match(html, /Введите имя/);
+  assert.doesNotMatch(html, /placeholder="Эдуард"/);
+  assert.match(script, /Скачать полный отчёт/);
+  assert.match(script, /Посмотреть карту/);
+  assert.match(script, /Карта Ба-цзы и Цзы Вэй/);
+  assert.match(script, /Подробные данные, на которых основан персональный разбор/);
+  assert.doesNotMatch(script, /Скачать технический PDF|Техническая карта|Скачать отчёт с картой/);
   assert.match(script, /technical-chart/);
   assert.match(script, /Как учитывается место рождения/);
 });

@@ -5,7 +5,7 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const { buildReportContext } = require("../lib/report-service.cjs");
 const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
-const { createPdfRequest } = require("../lib/pdf-service.cjs");
+const { createPdfFilename, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
@@ -23,21 +23,25 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Персональная карта личности и жизненного пути/i);
   assert.match(parsed.text, /Личность и внутренний мотив/);
   assert.match(parsed.text, /Карьера и профессиональный рост/);
-  assert.match(parsed.text, /Ба-цзы .* четыре столпа/);
-  assert.match(parsed.text, /Цзы Вэй Доу Шу .* основные/);
-  assert.match(parsed.text, /Дворец партнёрства и отношений/);
-  assert.match(parsed.text, /Дерево 木: 1/);
-  assert.match(parsed.text, /Цзы Вэй \(紫微\)/);
-  assert.equal(parsed.numpages <= 30, true);
+  assert.match(parsed.text, /Ба-цзы: основа карты/);
+  assert.match(parsed.text, /Цзы Вэй: двенадцать дворцов/);
+  assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
+  assert.match(parsed.text, /Дерево[\s\S]*木[\s\S]*1/);
+  assert.match(parsed.text, /Цзы Вэй[\s\S]*紫微/);
+  assert.match(parsed.text, /Москва, Россия/);
+  assert.match(parsed.text, /Время рождения учтено с поправкой/);
+  assert.equal(parsed.numpages >= 15 && parsed.numpages <= 25, true, `Получилось ${parsed.numpages} страниц`);
+  assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|Техническое приложение|AI-интерпретация/);
 });
 
-test("PDF создаётся и без AI, сохраняя технический расчёт", async () => {
+test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
   const result = await createPdfRequest(input, { hasFullReport: true });
   assert.equal(result.status, 200);
   const parsed = await pdfParse(result.buffer);
-  assert.match(parsed.text, /AI-интерпретация не была создана/);
-  assert.match(parsed.text, /Ба-цзы .* четыре столпа/);
-  assert.match(parsed.text, /Цзы Вэй Доу Шу .* основные/);
+  assert.match(parsed.text, /Персональный разбор ещё не/);
+  assert.match(parsed.text, /Ба-цзы: основа карты/);
+  assert.match(parsed.text, /Цзы Вэй: двенадцать дворцов/);
+  assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI|техническ/i);
 });
 
 test("PDF безопасно принимает длинное русское имя", async () => {
@@ -54,4 +58,25 @@ test("PDF сохраняет китайские оригинальные обо�
   const parsed = await pdfParse(result.buffer);
   assert.match(parsed.text, /紫微/);
   assert.match(parsed.text, /正财格/);
+});
+
+test("PDF-инфографика использует реальные столпы, элементы и периоды карты", async () => {
+  const calculation = calculateBirthChart(input);
+  const result = await createPdfRequest(input, { hasFullReport: true });
+  const parsed = await pdfParse(result.buffer);
+  const chart = calculation.chart;
+  for (const pillar of Object.values(chart.bazi.siZhu)) assert.match(parsed.text, new RegExp(`${pillar.gan}${pillar.zhi}`));
+  for (const period of chart.bazi.dayun.slice(0, 6)) assert.match(parsed.text, new RegExp(period.ganZhi));
+  assert.match(parsed.text, /Дворец судьбы и личности/);
+  assert.match(parsed.text, /Четыре трансформации/);
+});
+
+test("имя PDF безопасно для macOS, Windows и не допускает путь к чужому файлу", () => {
+  assert.equal(createPdfFilename({ displayName: "Эдуард", date: "2000-01-01", time: "12:05" }), "tian-min-eduard-2000-01-01-12-05.pdf");
+  const hostile = createPdfFilename({ displayName: "../../\\secret:<script>", date: "../../etc", time: "12/00" });
+  assert.equal(hostile.includes("/"), false);
+  assert.equal(hostile.includes("\\"), false);
+  assert.equal(hostile.includes(".."), false);
+  assert.match(hostile, /^tian-min-[a-z0-9-]+-date-time\.pdf$/);
+  assert.equal(safeFilenamePart("  Анна Мария  "), "anna-mariya");
 });
