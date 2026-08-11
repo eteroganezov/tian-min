@@ -93,6 +93,8 @@ See [`SKILL.md`](./SKILL.md) for the full flow and [`TEST-GUIDE.md`](./TEST-GUID
 
 ### Charting directly from the CLI (no agent)
 
+The current MVP accepts **local Gregorian date + local clock time at the birthplace + gender** only. Lunar input, automatic time-zone conversion, and true solar time correction are intentionally unsupported and rejected.
+
 ```bash
 cd calculator
 # chart -> JSON
@@ -103,6 +105,8 @@ node dist/dump-text.js --input=chart.json --output=chart.txt
 node dist/render.js --chart=chart.json --analysis=analysis.json \
   --template=../templates/report-zonghe-poster.html --output=report.html --currentYear=2026
 ```
+
+A future web layer can call `calculateLocalChart({ date, time, gender })` from `calculator/local-chart.ts` without duplicating chart logic.
 
 A synthetic sample is bundled (male, 2000-01-01, not a real person):
 - `examples/sample-chart.json` — algorithm chart output

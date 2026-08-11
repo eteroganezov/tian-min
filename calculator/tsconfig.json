@@ -14,10 +14,12 @@
   },
   "include": [
     "run-chart.ts",
+    "local-chart.ts",
     "dump-text.ts",
     "render.ts",
     "yiqi-core/**/*.ts",
-    "bazi-enrich/**/*.ts"
+    "bazi-enrich/**/*.ts",
+    "tests/**/*.ts"
   ],
   "exclude": [
     "bazi-enrich/print-full.ts",

@@ -100,8 +100,8 @@ function dumpZiwei(z, bi) {
             lines.push(`${childPrefix}├生年四化 : ${g.sihua.map((s) => s.star + s.hua).join('·')}`);
         }
         if (g.daXian) {
-            const dxMark = g.daXian.isCurrent ? '★当前' : '';
-            lines.push(`${childPrefix}├大限 : ${g.daXian.startAge}-${g.daXian.endAge}虚岁 ${dxMark}`);
+            const dxMark = g.daXian.isCurrent ? ' ★当前' : '';
+            lines.push(`${childPrefix}├大限 : ${g.daXian.startAge}-${g.daXian.endAge}虚岁${dxMark}`);
         }
         if (g.liuNian && g.liuNian.length > 0) {
             lines.push(`${childPrefix}└流年 : ${g.liuNian.join('·')}虚岁`);

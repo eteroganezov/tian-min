@@ -6,8 +6,8 @@
       "day": 1,
       "hour": 12,
       "minute": 0,
-      "isLunar": false,
       "gender": "male",
+      "isLunar": false,
       "timeZone": 8
     },
     "siZhu": {
@@ -1105,8 +1105,8 @@
       "day": 1,
       "hour": 12,
       "minute": 0,
-      "isLunar": false,
       "gender": "male",
+      "isLunar": false,
       "timeZone": 8
     },
     "lunarDate": {
@@ -1134,7 +1134,7 @@
         "zhi": "午"
       }
     },
-    "yinYang": "阳男",
+    "yinYang": "阴男",
     "mingGongIndex": 6,
     "shenGongIndex": 6,
     "wuXingJu": {
@@ -1158,7 +1158,7 @@
           "startAge": 5,
           "endAge": 14,
           "isCurrent": false,
-          "daXianGongName": "大夫"
+          "daXianGongName": "大福"
         },
         "liuNian": [
           5,
@@ -1189,22 +1189,22 @@
         ],
         "sihua": [],
         "daXian": {
-          "startAge": 115,
-          "endAge": 124,
+          "startAge": 15,
+          "endAge": 24,
           "isCurrent": false,
-          "daXianGongName": "大子"
+          "daXianGongName": "大父"
         },
         "liuNian": [
-          115,
-          116,
-          117,
-          118,
-          119,
-          120,
-          121,
-          122,
-          123,
-          124
+          15,
+          16,
+          17,
+          18,
+          19,
+          20,
+          21,
+          22,
+          23,
+          24
         ],
         "liuNianYear": 2025
       },
@@ -1221,22 +1221,22 @@
         ],
         "sihua": [],
         "daXian": {
-          "startAge": 105,
-          "endAge": 114,
-          "isCurrent": false,
-          "daXianGongName": "大财"
+          "startAge": 25,
+          "endAge": 34,
+          "isCurrent": true,
+          "daXianGongName": "大命"
         },
         "liuNian": [
-          105,
-          106,
-          107,
-          108,
-          109,
-          110,
-          111,
-          112,
-          113,
-          114
+          25,
+          26,
+          27,
+          28,
+          29,
+          30,
+          31,
+          32,
+          33,
+          34
         ],
         "liuNianYear": 2024
       },
@@ -1258,22 +1258,22 @@
           }
         ],
         "daXian": {
-          "startAge": 95,
-          "endAge": 104,
+          "startAge": 35,
+          "endAge": 44,
           "isCurrent": false,
-          "daXianGongName": "大疾"
+          "daXianGongName": "大兄"
         },
         "liuNian": [
-          95,
-          96,
-          97,
-          98,
-          99,
-          100,
-          101,
-          102,
-          103,
-          104
+          35,
+          36,
+          37,
+          38,
+          39,
+          40,
+          41,
+          42,
+          43,
+          44
         ]
       },
       {
@@ -1294,22 +1294,22 @@
           }
         ],
         "daXian": {
-          "startAge": 85,
-          "endAge": 94,
+          "startAge": 45,
+          "endAge": 54,
           "isCurrent": false,
-          "daXianGongName": "大迁"
+          "daXianGongName": "大夫"
         },
         "liuNian": [
-          85,
-          86,
-          87,
-          88,
-          89,
-          90,
-          91,
-          92,
-          93,
-          94
+          45,
+          46,
+          47,
+          48,
+          49,
+          50,
+          51,
+          52,
+          53,
+          54
         ]
       },
       {
@@ -1323,22 +1323,22 @@
         "auxStars": [],
         "sihua": [],
         "daXian": {
-          "startAge": 75,
-          "endAge": 84,
+          "startAge": 55,
+          "endAge": 64,
           "isCurrent": false,
-          "daXianGongName": "大友"
+          "daXianGongName": "大子"
         },
         "liuNian": [
-          75,
-          76,
-          77,
-          78,
-          79,
-          80,
-          81,
-          82,
-          83,
-          84
+          55,
+          56,
+          57,
+          58,
+          59,
+          60,
+          61,
+          62,
+          63,
+          64
         ],
         "liuNianYear": 2033
       },
@@ -1364,7 +1364,7 @@
           "startAge": 65,
           "endAge": 74,
           "isCurrent": false,
-          "daXianGongName": "大官"
+          "daXianGongName": "大财"
         },
         "liuNian": [
           65,
@@ -1392,22 +1392,22 @@
         ],
         "sihua": [],
         "daXian": {
-          "startAge": 55,
-          "endAge": 64,
+          "startAge": 75,
+          "endAge": 84,
           "isCurrent": false,
-          "daXianGongName": "大田"
+          "daXianGongName": "大疾"
         },
         "liuNian": [
-          55,
-          56,
-          57,
-          58,
-          59,
-          60,
-          61,
-          62,
-          63,
-          64
+          75,
+          76,
+          77,
+          78,
+          79,
+          80,
+          81,
+          82,
+          83,
+          84
         ],
         "liuNianYear": 2031
       },
@@ -1429,22 +1429,22 @@
           }
         ],
         "daXian": {
-          "startAge": 45,
-          "endAge": 54,
+          "startAge": 85,
+          "endAge": 94,
           "isCurrent": false,
-          "daXianGongName": "大福"
+          "daXianGongName": "大迁"
         },
         "liuNian": [
-          45,
-          46,
-          47,
-          48,
-          49,
-          50,
-          51,
-          52,
-          53,
-          54
+          85,
+          86,
+          87,
+          88,
+          89,
+          90,
+          91,
+          92,
+          93,
+          94
         ],
         "liuNianYear": 2030
       },
@@ -1456,22 +1456,22 @@
         "auxStars": [],
         "sihua": [],
         "daXian": {
-          "startAge": 35,
-          "endAge": 44,
+          "startAge": 95,
+          "endAge": 104,
           "isCurrent": false,
-          "daXianGongName": "大父"
+          "daXianGongName": "大友"
         },
         "liuNian": [
-          35,
-          36,
-          37,
-          38,
-          39,
-          40,
-          41,
-          42,
-          43,
-          44
+          95,
+          96,
+          97,
+          98,
+          99,
+          100,
+          101,
+          102,
+          103,
+          104
         ],
         "liuNianYear": 2029
       },
@@ -1487,22 +1487,22 @@
         ],
         "sihua": [],
         "daXian": {
-          "startAge": 25,
-          "endAge": 34,
-          "isCurrent": true,
-          "daXianGongName": "大命"
+          "startAge": 105,
+          "endAge": 114,
+          "isCurrent": false,
+          "daXianGongName": "大官"
         },
         "liuNian": [
-          25,
-          26,
-          27,
-          28,
-          29,
-          30,
-          31,
-          32,
-          33,
-          34
+          105,
+          106,
+          107,
+          108,
+          109,
+          110,
+          111,
+          112,
+          113,
+          114
         ],
         "liuNianYear": 2028
       },
@@ -1517,22 +1517,22 @@
         ],
         "sihua": [],
         "daXian": {
-          "startAge": 15,
-          "endAge": 24,
+          "startAge": 115,
+          "endAge": 124,
           "isCurrent": false,
-          "daXianGongName": "大兄"
+          "daXianGongName": "大田"
         },
         "liuNian": [
-          15,
-          16,
-          17,
-          18,
-          19,
-          20,
-          21,
-          22,
-          23,
-          24
+          115,
+          116,
+          117,
+          118,
+          119,
+          120,
+          121,
+          122,
+          123,
+          124
         ],
         "liuNianYear": 2027
       }

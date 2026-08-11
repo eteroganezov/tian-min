@@ -28,8 +28,12 @@ function getHourZhiIndex(hour) {
 /**
  * 判断阴阳男女
  */
-function getYinYang(year, gender) {
-    const ganIndex = (year - 4) % 10; // 修正公式：2014年 → (2014-4)%10 = 0 → 甲
+function getYinYang(yearGan, gender) {
+    // Zi Wei уже получил годовой ствол из китайской лунной даты.
+    // Использование номера григорианского года здесь противоречило этой дате до китайского Нового года.
+    const ganIndex = TIANGAN.indexOf(yearGan);
+    if (ganIndex < 0)
+        throw new Error(`无效年干: ${yearGan}`);
     const isYangYear = ganIndex % 2 === 0; // 甲丙戊庚壬为阳（索引0,2,4,6,8）
     if (gender === 'male') {
         return isYangYear ? '阳男' : '阴男';
@@ -403,7 +407,7 @@ function createZiweiChart(birthInfo) {
             hour: { gan: hourGan, zhi: hourZhi }
         };
         // 3. 判断阴阳男女
-        const yinYang = getYinYang(birthInfo.year, birthInfo.gender);
+        const yinYang = getYinYang(yearGan, birthInfo.gender);
         // 4. 计算命宫、身宫
         const mingGongIndex = calculateMingGong(lunarMonth, birthInfo.hour);
         const shenGongIndex = calculateShenGong(lunarMonth, birthInfo.hour);
@@ -591,8 +595,45 @@ function createZiweiChart(birthInfo) {
     }
 }
 function runZiweiTests() {
-    console.error('紫微斗数测试功能待实现');
-    return { passed: 0, failed: 0, details: [] };
+    const cases = [
+        {
+            name: '2000-01-01 男：农历己卯年应为阴男',
+            input: { year: 2000, month: 1, day: 1, hour: 12, minute: 0, gender: 'male', isLunar: false, timeZone: 8 },
+            expected: { lunarYear: 1999, yearGan: '己', yinYang: '阴男', ming: '午', shen: '午', ju: '土五局' }
+        },
+        {
+            name: '2000-02-05 男：中国新年后庚辰年应为阳男',
+            input: { year: 2000, month: 2, day: 5, hour: 12, minute: 0, gender: 'male', isLunar: false, timeZone: 8 },
+            expected: { lunarYear: 2000, yearGan: '庚', yinYang: '阳男', ming: '申', shen: '申', ju: '水二局' }
+        }
+    ];
+    const details = [];
+    let passed = 0;
+    let failed = 0;
+    for (const testCase of cases) {
+        try {
+            const result = createZiweiChart(testCase.input);
+            const actual = {
+                lunarYear: result.lunarDate?.year,
+                yearGan: result.siZhu?.year.gan,
+                yinYang: result.yinYang,
+                ming: result.gongs[0].dizhi,
+                shen: DIZHI[result.shenGongIndex],
+                ju: result.wuXingJu?.name
+            };
+            const ok = Object.entries(testCase.expected).every(([key, value]) => actual[key] === value);
+            if (ok)
+                passed++;
+            else
+                failed++;
+            details.push({ name: testCase.name, passed: ok, expected: testCase.expected, actual });
+        }
+        catch (error) {
+            failed++;
+            details.push({ name: testCase.name, passed: false, error: error.message });
+        }
+    }
+    return { passed, failed, details };
 }
 /**
  * 安红鸾、天喜

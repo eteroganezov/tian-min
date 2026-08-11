@@ -8,15 +8,39 @@ exports.runAllTests = runAllTests;
 exports.formatChartResult = formatChartResult;
 const bazi_1 = require("./bazi");
 const ziwei_standard_1 = require("./ziwei-standard");
+const enrich_1 = require("../bazi-enrich/enrich");
 /**
  * 创建完整的排盘（八字 + 紫微斗数）
  * @param birthInfo 生辰信息
  * @returns 完整排盘结果
  */
 function createChart(birthInfo) {
+    const validation = validateBirthInfo(birthInfo);
+    if (!validation.valid) {
+        throw new Error(`Некорректные данные рождения: ${validation.errors.join('; ')}`);
+    }
     try {
         const bazi = (0, bazi_1.createBaziChart)(birthInfo);
         const ziwei = (0, ziwei_standard_1.createZiweiChart)(birthInfo);
+        const dm = bazi.dayMaster;
+        const z = bazi.siZhu;
+        bazi.cangGan = {
+            year: (0, bazi_1.getZhiCangGanFull)(z.year.zhi, dm),
+            month: (0, bazi_1.getZhiCangGanFull)(z.month.zhi, dm),
+            day: (0, bazi_1.getZhiCangGanFull)(z.day.zhi, dm),
+            hour: (0, bazi_1.getZhiCangGanFull)(z.hour.zhi, dm)
+        };
+        for (const period of bazi.dayun || []) {
+            if (period.startAge !== undefined && period.endAge === undefined) {
+                period.endAge = period.startAge + 9;
+            }
+        }
+        bazi.enrichment = (0, enrich_1.enrichBazi)({
+            年: z.year,
+            月: z.month,
+            日: z.day,
+            时: z.hour
+        });
         return {
             bazi,
             ziwei
@@ -33,40 +57,57 @@ function createChart(birthInfo) {
  */
 function validateBirthInfo(birthInfo) {
     const errors = [];
+    const integerFields = [
+        ['year', 'год'],
+        ['month', 'месяц'],
+        ['day', 'день'],
+        ['hour', 'час'],
+        ['minute', 'минута']
+    ];
+    for (const [field, label] of integerFields) {
+        if (!Number.isInteger(birthInfo[field])) {
+            errors.push(`${label} должен быть целым числом`);
+        }
+    }
     // 验证年份
-    if (birthInfo.year < 1900 || birthInfo.year > 2100) {
-        errors.push('年份应在1900-2100之间');
+    if (Number.isInteger(birthInfo.year) && (birthInfo.year < 1900 || birthInfo.year > 2100)) {
+        errors.push('год должен быть в диапазоне 1900-2100');
     }
     // 验证月份
-    if (birthInfo.month < 1 || birthInfo.month > 12) {
-        errors.push('月份应在1-12之间');
+    if (Number.isInteger(birthInfo.month) && (birthInfo.month < 1 || birthInfo.month > 12)) {
+        errors.push('месяц должен быть в диапазоне 1-12');
     }
     // 验证日期
-    if (birthInfo.day < 1 || birthInfo.day > 31) {
-        errors.push('日期应在1-31之间');
+    if (Number.isInteger(birthInfo.day) && (birthInfo.day < 1 || birthInfo.day > 31)) {
+        errors.push('день должен быть в диапазоне 1-31');
     }
     // 验证时辰
-    if (birthInfo.hour < 0 || birthInfo.hour > 23) {
-        errors.push('小时应在0-23之间');
+    if (Number.isInteger(birthInfo.hour) && (birthInfo.hour < 0 || birthInfo.hour > 23)) {
+        errors.push('час должен быть в диапазоне 0-23');
     }
     // 验证分钟
-    if (birthInfo.minute < 0 || birthInfo.minute > 59) {
-        errors.push('分钟应在0-59之间');
+    if (Number.isInteger(birthInfo.minute) && (birthInfo.minute < 0 || birthInfo.minute > 59)) {
+        errors.push('минуты должны быть в диапазоне 0-59');
     }
     // 验证性别
     if (birthInfo.gender !== 'male' && birthInfo.gender !== 'female') {
-        errors.push('性别必须为男性或女性');
+        errors.push('пол должен быть male или female');
     }
-    // 简单的闰年和月份天数验证
-    if (birthInfo.month === 2) {
-        const isLeapYear = (birthInfo.year % 4 === 0 && birthInfo.year % 100 !== 0) || (birthInfo.year % 400 === 0);
-        if (birthInfo.day > (isLeapYear ? 29 : 28)) {
-            errors.push('2月份日期超出范围');
-        }
+    if (birthInfo.isLunar !== false) {
+        errors.push('текущая версия принимает только локальную григорианскую дату; ввод лунной даты не поддерживается');
     }
-    else if ([4, 6, 9, 11].includes(birthInfo.month)) {
-        if (birthInfo.day > 30) {
-            errors.push('该月份只有30天');
+    if (birthInfo.timeZone !== 8) {
+        errors.push('пересчёт часового пояса не поддерживается; вводите местное время рождения без другого timeZone');
+    }
+    // Проверка реального существования григорианской даты, включая високосные годы.
+    if (Number.isInteger(birthInfo.year) && birthInfo.year >= 1900 && birthInfo.year <= 2100 &&
+        Number.isInteger(birthInfo.month) && birthInfo.month >= 1 && birthInfo.month <= 12 &&
+        Number.isInteger(birthInfo.day) && birthInfo.day >= 1 && birthInfo.day <= 31) {
+        const date = new Date(Date.UTC(birthInfo.year, birthInfo.month - 1, birthInfo.day));
+        if (date.getUTCFullYear() !== birthInfo.year ||
+            date.getUTCMonth() !== birthInfo.month - 1 ||
+            date.getUTCDate() !== birthInfo.day) {
+            errors.push('такой григорианской даты не существует');
         }
     }
     return {
@@ -112,7 +153,7 @@ function formatChartResult(chart) {
     // 紫微斗数部分
     result += '【紫微斗数】\n';
     result += `命宫: ${chart.ziwei.gongs[0].dizhi}宫\n`;
-    const shenGongDizhi = chart.ziwei.gongs[chart.ziwei.shenGongIndex]?.dizhi || '未知';
+    const shenGongDizhi = ['子', '丑', '寅', '卯', '辰', '巳', '午', '未', '申', '酉', '戌', '亥'][chart.ziwei.shenGongIndex] || '未知';
     result += `身宫: ${shenGongDizhi}宫\n`;
     // 显示有主星的宫位
     chart.ziwei.gongs.forEach(gong => {

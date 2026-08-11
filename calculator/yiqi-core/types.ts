@@ -1,5 +1,7 @@
 // 核心数据类型定义
 
+import type { BaziEnrichment } from '../bazi-enrich/enrich';
+
 // 生辰信息
 export interface BirthInfo {
   year: number;
@@ -7,9 +9,9 @@ export interface BirthInfo {
   day: number;
   hour: number;
   minute: number;
-  isLunar: boolean; // 是否为农历
+  isLunar: boolean; // 当前必须为 false；MVP 不支持农历输入
   gender: 'male' | 'female';
-  timeZone: number; // 时区偏移，默认为8（北京时间）
+  timeZone: number; // legacy 字段，当前必须为8且不参与换算；网页接口不暴露此字段
 }
 
 // 保存的案例
@@ -89,6 +91,18 @@ export interface BaziChart {
   dayun: DayunDetail[]; // 大运详情列表，通常显示前10步
 }
 
+// Полная BaZi-карта после слоя enrichBazi, которую возвращает единый интерфейс.
+export interface CompleteBaziChart extends BaziChart {
+  cangGan: {
+    year: Array<{ gan: string; shiShen: string }>;
+    month: Array<{ gan: string; shiShen: string }>;
+    day: Array<{ gan: string; shiShen: string }>;
+    hour: Array<{ gan: string; shiShen: string }>;
+  };
+  enrichment: BaziEnrichment;
+  dayun: Array<DayunDetail & { endAge: number }>;
+}
+
 // 紫微斗数十二宫
 export type ZiweiGong = '命宫' | '兄弟宫' | '夫妻宫' | '子女宫' | '财帛宫' | '疾厄宫' | 
                         '迁移宫' | '交友宫' | '官禄宫' | '田宅宫' | '福德宫' | '父母宫';
@@ -147,6 +161,6 @@ export interface ZiweiChart {
 
 // 完整的排盘结果
 export interface ChartResult {
-  bazi: BaziChart;
+  bazi: CompleteBaziChart;
   ziwei: ZiweiChart;
 }

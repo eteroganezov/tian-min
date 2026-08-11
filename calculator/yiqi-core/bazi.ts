@@ -285,8 +285,9 @@ export function runBaziTests() {
       expected: {
         year: '庚辰',
         month: '戊寅',
-        day: '乙卯',
-        hour: '壬午',
+        // lunar-typescript 1.8.6: Lunar.getDayInGanZhi() и EightChar.getDay() оба дают 戊午.
+        day: '戊午',
+        hour: '戊午',
         isYangYear: true, // 庚为阳年
         shouldShunPai: false // 阳年女命逆排
       }

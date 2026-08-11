@@ -93,6 +93,8 @@ Agent 会：
 
 ### 命令行直接排盘（不经 Agent）
 
+当前 MVP 只接受**本地公历日期 + 出生地当地钟表时间 + 性别**。不支持农历输入、时区自动换算或真太阳时校正；传入相关参数会明确报错。
+
 ```bash
 cd calculator
 # 排盘 → JSON
@@ -103,6 +105,8 @@ node dist/dump-text.js --input=chart.json --output=chart.txt
 node dist/render.js --chart=chart.json --analysis=analysis.json \
   --template=../templates/report-zonghe-poster.html --output=report.html --currentYear=2026
 ```
+
+未来网页可直接复用 `calculator/local-chart.ts` 的 `calculateLocalChart({ date, time, gender })`，无需复制排盘逻辑。
 
 仓库自带一份合成示例（2000-01-01 男，非真人）：
 - `examples/sample-chart.json` — 算法层排盘输出
