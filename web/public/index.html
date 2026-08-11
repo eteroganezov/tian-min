@@ -26,6 +26,11 @@
           <div class="form-heading"><span class="chapter">01</span><div><h2>Данные рождения</h2><p>Все поля обязательны</p></div></div>
           <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31"></label>
           <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time"></label>
+          <div class="field place-field">
+            <label for="birth-place">Место рождения</label>
+            <input id="birth-place" type="search" autocomplete="off" placeholder="Начните вводить город" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false">
+            <div class="place-options" id="place-options" role="listbox" hidden></div>
+          </div>
           <fieldset class="gender-field">
             <legend>Пол</legend>
             <div class="gender-options">
@@ -34,8 +39,9 @@
             </div>
           </fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
+          <div class="ambiguity-box" id="ambiguity-box" hidden></div>
           <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту</span><span aria-hidden="true">→</span></button>
-          <p class="local-note">Расчёт использует местную григорианскую дату и местное время рождения. Коррекция по часовому поясу и истинному солнечному времени в этой версии не выполняется.</p>
+          <p class="local-note">Расчёт использует местную григорианскую дату и местное время рождения. Исторический часовой пояс и истинное солнечное время определяются автоматически по выбранному месту.</p>
         </form>
       </div>
     </section>

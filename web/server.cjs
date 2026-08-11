@@ -2,6 +2,7 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const { calculateRequest } = require("./lib/calculate.cjs");
+const { locationProvider } = require("./lib/location-provider.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
@@ -10,12 +11,20 @@ function createServer(options = {}) {
   return http.createServer(async (request, response) => {
     try {
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
+      if (request.method === "GET" && request.url.startsWith("/api/places")) return handlePlaces(request, response);
       if (request.method !== "GET" && request.method !== "HEAD") return sendJson(response, 405, { error: "Метод не поддерживается." });
       return serveStatic(request, response, staticRoot);
     } catch {
       return sendJson(response, 500, { error: "Внутренняя ошибка. Попробуйте ещё раз." });
     }
   });
+}
+
+function handlePlaces(request, response) {
+  const url = new URL(request.url, "http://localhost");
+  const query = url.searchParams.get("q") || "";
+  if (query.length > 100) return sendJson(response, 400, { error: "Слишком длинный поисковый запрос." });
+  return sendJson(response, 200, { places: locationProvider.search(query) });
 }
 
 async function handleCalculation(request, response) {

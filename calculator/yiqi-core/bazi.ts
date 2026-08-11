@@ -1,6 +1,6 @@
 // 八字排盘核心算法（使用lunar-javascript库）
 
-import { BirthInfo, BaziChart, SiZhu, Tiangan, DayunDetail, LiuNian, GanZhi } from './types';
+import { BirthInfo, BaziChart, CalculationOptions, SiZhu, Tiangan, DayunDetail, LiuNian, GanZhi } from './types';
 import { Lunar, Solar } from 'lunar-typescript';
 import { getSiZhuChangSheng } from './zhangsheng';
 import { getSiZhuNaYin } from './nayin';
@@ -102,7 +102,7 @@ function getAdjustedSolarForZiShi(solar: Solar): Solar {
  * @param birthInfo 生辰信息
  * @returns 八字排盘结果
  */
-export function createBaziChart(birthInfo: BirthInfo): BaziChart {
+export function createBaziChart(birthInfo: BirthInfo, options?: CalculationOptions): BaziChart {
   try {
     // 创建Solar对象（公历日期）
     const solar = Solar.fromYmdHms(
@@ -125,14 +125,29 @@ export function createBaziChart(birthInfo: BirthInfo): BaziChart {
     // 获取八字
     const baZi = lunar.getEightChar();
 
+    // 节气 в lunar-typescript заданы в китайской шкале UTC+8. Для нового режима
+    // сравниваем их с тем же абсолютным моментом, представленным в UTC+8.
+    // Legacy-вызовы без options продолжают работать точно как раньше.
+    const solarTermSolar = options?.solarTermReference
+      ? Solar.fromYmdHms(
+          options.solarTermReference.year,
+          options.solarTermReference.month,
+          options.solarTermReference.day,
+          options.solarTermReference.hour,
+          options.solarTermReference.minute,
+          0
+        )
+      : solar;
+    const solarTermBaZi = solarTermSolar.getLunar().getEightChar();
+
     // 使用精确节气时刻计算月柱
-    const accurateMonthGZ = getAccurateMonthGanZhi(solar);
+    const accurateMonthGZ = getAccurateMonthGanZhi(solarTermSolar);
 
     // 获取四柱干支
     const siZhu: SiZhu = {
       year: {
-        gan: baZi.getYear().substring(0, 1) as Tiangan,
-        zhi: baZi.getYear().substring(1, 2) as any
+        gan: solarTermBaZi.getYear().substring(0, 1) as Tiangan,
+        zhi: solarTermBaZi.getYear().substring(1, 2) as any
       },
       month: {
         gan: accurateMonthGZ.gan,  // 使用精确节气计算的月柱
@@ -159,7 +174,7 @@ export function createBaziChart(birthInfo: BirthInfo): BaziChart {
     };
 
     // 获取大运（使用lunar-javascript库）
-    const yun = baZi.getYun(birthInfo.gender === 'male' ? 1 : 0);
+    const yun = solarTermBaZi.getYun(birthInfo.gender === 'male' ? 1 : 0);
     const dayunStart = Math.floor(yun.getStartYear());
     
     // 获取大运列表（跳过第一个，因为它是起运前的状态）

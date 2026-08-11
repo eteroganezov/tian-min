@@ -1,5 +1,5 @@
-// Будущий внутренний интерфейс сайта: локальная григорианская дата + местное время + пол → готовая карта.
-// Здесь намеренно нет параметров лунной даты и часового пояса: MVP их не поддерживает.
+// Внутренний интерфейс сайта к существующему deterministic engine.
+// Legacy-метод ниже сохранён; новый адаптер принимает уже нормализованное TRUE_SOLAR_TIME_V1.
 
 import { createChart } from './yiqi-core/index';
 import { ChartResult } from './yiqi-core/types';
@@ -36,4 +36,23 @@ export function calculateLocalChart(input: LocalChartInput): ChartResult {
     // Служебное legacy-поле движка. Пересчёт часового пояса не выполняется.
     timeZone: 8
   });
+}
+
+export type NormalizedSolarChartInput = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  gender: 'male' | 'female';
+};
+
+export function calculateNormalizedSolarChart(
+  input: NormalizedSolarChartInput,
+  solarTermReference: Omit<NormalizedSolarChartInput, 'gender'>
+): ChartResult {
+  return createChart(
+    { ...input, isLunar: false, timeZone: 8 },
+    { solarTermReference }
+  );
 }

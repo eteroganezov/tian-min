@@ -14,6 +14,12 @@ export interface BirthInfo {
   timeZone: number; // legacy 字段，当前必须为8且不参与换算；网页接口不暴露此字段
 }
 
+// Контекст абсолютного момента нужен только для корректного сравнения с 节气.
+// Дата и время в BirthInfo при этом остаются истинным солнечным временем места рождения.
+export interface CalculationOptions {
+  solarTermReference?: Omit<BirthInfo, 'gender' | 'isLunar' | 'timeZone'>;
+}
+
 // 保存的案例
 export interface SavedCase {
   id: string;

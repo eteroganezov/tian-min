@@ -1,17 +1,23 @@
-// Используем скомпилированный результат calculator/local-chart.ts; расчётная логика здесь не дублируется.
-const { calculateLocalChart } = require("../../calculator/dist/local-chart.js");
+// Новый слой только нормализует место и время; само астрологическое ядро не дублируется.
+const { calculateBirthChart } = require("./birth-chart-pipeline.cjs");
 const { toChartView } = require("./chart-view.cjs");
+const { CivilTimeError } = require("./civil-time.cjs");
 
 function calculateRequest(input) {
-  if (!input || typeof input !== "object") return failure("Передайте дату, время и пол.");
+  if (!input || typeof input !== "object") return failure("Передайте данные рождения.");
   if (typeof input.date !== "string" || !input.date) return failure("Укажите дату рождения.");
   if (typeof input.time !== "string" || !input.time) return failure("Укажите время рождения.");
   if (input.gender !== "male" && input.gender !== "female") return failure("Выберите пол.");
+  if (typeof input.placeId !== "string" || !input.placeId) return failure("Выберите место рождения из списка подсказок.");
   try {
-    return { status: 200, body: { chart: toChartView(calculateLocalChart({ date: input.date, time: input.time, gender: input.gender })) } };
+    const result = calculateBirthChart(input);
+    return { status: 200, body: { chart: toChartView(result.chart), metadata: result.metadata, ...(input.audit === true && process.env.NODE_ENV !== "production" ? { auditTrail: result.auditTrail } : {}) } };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Некорректные данные рождения.";
-    return failure(message.replace(/^Некорректные данные рождения:\s*/, "") || "Некорректные данные рождения.");
+    const body = { error: message.replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, "") || "Некорректные данные рождения." };
+    if (error instanceof CivilTimeError && error.code === "AMBIGUOUS_LOCAL_TIME") return { status: 409, body: { ...body, code: error.code, ...error.details } };
+    if (error && error.code) body.code = error.code;
+    return { status: 400, body };
   }
 }
 

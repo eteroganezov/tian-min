@@ -1,5 +1,8 @@
 # dependencies
 node_modules/
+.env
+.env.*
+!.env.example
 calculator/node_modules/
 
 # build / runtime artifacts

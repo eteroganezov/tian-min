@@ -14,13 +14,13 @@ const enrich_1 = require("../bazi-enrich/enrich");
  * @param birthInfo 生辰信息
  * @returns 完整排盘结果
  */
-function createChart(birthInfo) {
+function createChart(birthInfo, options) {
     const validation = validateBirthInfo(birthInfo);
     if (!validation.valid) {
         throw new Error(`Некорректные данные рождения: ${validation.errors.join('; ')}`);
     }
     try {
-        const bazi = (0, bazi_1.createBaziChart)(birthInfo);
+        const bazi = (0, bazi_1.createBaziChart)(birthInfo, options);
         const ziwei = (0, ziwei_standard_1.createZiweiChart)(birthInfo);
         const dm = bazi.dayMaster;
         const z = bazi.siZhu;

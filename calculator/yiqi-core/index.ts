@@ -1,6 +1,6 @@
 // 统一排盘接口
 
-import { BirthInfo, ChartResult, CompleteBaziChart } from './types';
+import { BirthInfo, CalculationOptions, ChartResult, CompleteBaziChart } from './types';
 import { createBaziChart, getZhiCangGanFull, runBaziTests } from './bazi';
 import { createZiweiChart, runZiweiTests } from './ziwei-standard';
 import { enrichBazi } from '../bazi-enrich/enrich';
@@ -10,14 +10,14 @@ import { enrichBazi } from '../bazi-enrich/enrich';
  * @param birthInfo 生辰信息
  * @returns 完整排盘结果
  */
-export function createChart(birthInfo: BirthInfo): ChartResult {
+export function createChart(birthInfo: BirthInfo, options?: CalculationOptions): ChartResult {
   const validation = validateBirthInfo(birthInfo);
   if (!validation.valid) {
     throw new Error(`Некорректные данные рождения: ${validation.errors.join('; ')}`);
   }
 
   try {
-    const bazi = createBaziChart(birthInfo) as CompleteBaziChart;
+    const bazi = createBaziChart(birthInfo, options) as CompleteBaziChart;
     const ziwei = createZiweiChart(birthInfo);
 
     const dm = bazi.dayMaster;

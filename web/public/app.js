@@ -3,11 +3,38 @@ const errorBox = document.querySelector("#form-error");
 const submitButton = document.querySelector("#submit-button");
 const buttonLabel = submitButton.querySelector(".button-label");
 const resultRoot = document.querySelector("#result-root");
+const placeInput = document.querySelector("#birth-place");
+const placeOptions = document.querySelector("#place-options");
+const ambiguityBox = document.querySelector("#ambiguity-box");
 const elementNames = ["木", "火", "土", "金", "水"];
+let selectedPlace = null;
+let searchTimer = null;
+
+placeInput.addEventListener("input", () => {
+  selectedPlace = null;
+  ambiguityBox.hidden = true;
+  clearTimeout(searchTimer);
+  const query = placeInput.value.trim();
+  if (query.length < 2) return renderPlaceOptions([]);
+  searchTimer = setTimeout(() => searchPlaces(query), 180);
+});
+
+placeInput.addEventListener("keydown", event => {
+  if (event.key === "Escape") renderPlaceOptions([]);
+});
+
+document.addEventListener("click", event => {
+  if (!event.target.closest(".place-field")) renderPlaceOptions([]);
+});
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  await submitCalculation();
+});
+
+async function submitCalculation(timeOccurrence) {
   showError("");
+  ambiguityBox.hidden = true;
   const data = new FormData(form);
   const date = String(data.get("date") || "");
   const time = String(data.get("time") || "");
@@ -15,17 +42,19 @@ form.addEventListener("submit", async (event) => {
   if (!date) return showError("Укажите дату рождения.");
   if (!time) return showError("Укажите время рождения.");
   if (!gender) return showError("Выберите пол.");
+  if (!selectedPlace) return showError("Выберите место рождения из списка подсказок.");
 
   setLoading(true);
   try {
     const response = await fetch("/api/calculate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ date, time, gender }),
+      body: JSON.stringify({ date, time, gender, placeId: selectedPlace.id, ...(timeOccurrence ? { timeOccurrence } : {}) }),
     });
     const payload = await response.json();
+    if (response.status === 409 && payload.code === "AMBIGUOUS_LOCAL_TIME") return showAmbiguity(payload.options || []);
     if (!response.ok) throw new Error(payload.error || "Не удалось выполнить расчёт.");
-    resultRoot.innerHTML = renderResults(payload.chart);
+    resultRoot.innerHTML = renderResults(payload.chart, payload.metadata);
     resultRoot.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (error) {
     resultRoot.innerHTML = "";
@@ -33,7 +62,34 @@ form.addEventListener("submit", async (event) => {
   } finally {
     setLoading(false);
   }
-});
+}
+
+async function searchPlaces(query) {
+  try {
+    const response = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
+    const payload = await response.json();
+    if (placeInput.value.trim() === query) renderPlaceOptions(response.ok ? payload.places : []);
+  } catch { renderPlaceOptions([]); }
+}
+
+function renderPlaceOptions(places) {
+  placeOptions.innerHTML = places.map((place, index) => `<button type="button" role="option" data-index="${index}"><strong>${e(place.city)}</strong><span>${e([place.region, place.country].filter(Boolean).join(", "))}</span></button>`).join("");
+  placeOptions.hidden = places.length === 0;
+  placeInput.setAttribute("aria-expanded", String(places.length > 0));
+  placeOptions.querySelectorAll("button").forEach((button, index) => button.addEventListener("click", () => {
+    selectedPlace = places[index];
+    placeInput.value = selectedPlace.label;
+    renderPlaceOptions([]);
+    showError("");
+  }));
+}
+
+function showAmbiguity(options) {
+  setLoading(false);
+  ambiguityBox.innerHTML = `<p>В эту ночь часы переводили назад, поэтому указанное время наступало дважды. Выберите вариант:</p>${options.map(option => `<button type="button" data-value="${e(option.value)}">${e(option.label)}</button>`).join("")}`;
+  ambiguityBox.hidden = false;
+  ambiguityBox.querySelectorAll("button").forEach(button => button.addEventListener("click", () => submitCalculation(button.dataset.value)));
+}
 
 function showError(message) {
   errorBox.textContent = message;
@@ -45,13 +101,14 @@ function setLoading(loading) {
   buttonLabel.textContent = loading ? "Рассчитываем карту…" : "Рассчитать мою карту";
 }
 
-function renderResults(chart) {
+function renderResults(chart, metadata) {
   const maxElement = Math.max(...Object.values(chart.bazi.elements), 1);
   return `<div class="results">
     <header class="result-header shell">
-      <div><p class="eyebrow">Персональная карта</p><h2>${e(chart.input.date)} <span>·</span> ${e(chart.input.time)}</h2><p>${e(chart.input.gender)} · ${e(chart.ziwei.lunarDate)}</p></div>
+      <div><p class="eyebrow">Персональная карта</p><h2>${e(metadata.originalLocalDateTime.split(" ")[0])} <span>·</span> ${e(metadata.originalLocalDateTime.split(" ")[1])}</h2><p>${e(chart.input.gender)} · ${e(metadata.place.name)}</p></div>
       <div class="result-mark"><span>八字</span><i></i><span>紫微</span></div>
     </header>
+    <section class="method-details shell"><details><summary>Как учитывается место рождения</summary><div class="method-grid"><p><span>Исходное местное время</span><strong>${e(metadata.originalLocalDateTime)}</strong></p><p><span>Истинное солнечное время</span><strong>${e(metadata.trueSolarDateTime)}</strong></p><p><span>Часовой пояс места</span><strong>${e(metadata.ianaTimeZone)}</strong></p><p><span>Поправка</span><strong>${e(formatSigned(metadata.trueSolarCorrectionMinutes))} мин</strong></p></div><small>Исторические правила часового пояса, летнее время, долгота и уравнение времени учтены автоматически. Метод: ${e(metadata.calculationMethod)}.</small></details></section>
     <section class="chart-section shell">
       <div class="section-title"><span class="chapter">02</span><div><p>Четыре столпа</p><h2>BaZi <small>八字</small></h2></div></div>
       <div class="pillars-grid">${chart.bazi.pillars.map(p => `<article class="pillar-card"><p>${e(p.label)}</p><span>${e(p.shiShen)}</span><strong>${e(p.gan)}</strong><strong>${e(p.zhi)}</strong></article>`).join("")}</div>
@@ -76,6 +133,11 @@ function renderResults(chart) {
       <article class="ziwei-periods panel dark-panel"><div class="panel-head"><h3>Первые большие периоды Zi Wei</h3><span>大限</span></div><div class="period-list">${chart.ziwei.majorPeriods.map(period => `<div class="period"><strong>${e(period.gong)}</strong><span>${e(period.range)}</span><small>${e(period.detail)}</small></div>`).join("")}</div></article>
     </div></section>
   </div>`;
+}
+
+function formatSigned(value) {
+  const rounded = Math.round(Number(value) * 10) / 10;
+  return `${rounded >= 0 ? "+" : ""}${rounded}`;
 }
 
 function e(value) {
