@@ -26,13 +26,14 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Роль, где можно влиять на качество/);
   assert.match(parsed.text, /Ваша карта в одном взгляде/);
   assert.match(parsed.text, /Янская Земля\s*·\s*戊/);
-  assert.match(parsed.text, /Цзы Вэй: двенадцать дворцов/);
+  assert.match(parsed.text, /Цзы Вэй в одном взгляде/);
+  assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
   assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
   assert.match(parsed.text, /Дерево[\s\S]*木[\s\S]*1/);
   assert.match(parsed.text, /Цзы Вэй[\s\S]*紫微/);
   assert.match(parsed.text, /Москва, Россия/);
   assert.match(parsed.text, /Время рождения учтено с поправкой/);
-  assert.equal(parsed.numpages >= 18 && parsed.numpages <= 26, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 19 && parsed.numpages <= 27, true, `Получилось ${parsed.numpages} страниц`);
   assert.equal((parsed.text.match(/Материал носит информационный, культурный/g) || []).length, 1);
   assert.equal((parsed.text.match(/Главное о вас/g) || []).length, 1);
   assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
@@ -47,7 +48,7 @@ test("PDF создаётся без персонального разбора и
   const parsed = await pdfParse(result.buffer);
   assert.match(parsed.text, /Персональный разбор ещё не/);
   assert.match(parsed.text, /Ваша карта в одном взгляде/);
-  assert.match(parsed.text, /Цзы Вэй: двенадцать дворцов/);
+  assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI|техническ/i);
 });
 
@@ -98,6 +99,47 @@ test("consumer PDF удаляет пустые evidence-значения цел�
   const parsed = await pdfParse(result.buffer);
   assert.doesNotMatch(parsed.text, /\b(?:undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text, /(?:соединение|столкновение|сочетание|вред)\s*[-–—](?:\s|$)/i);
+});
+
+test("редакционный PDF очищает внутренние формулировки, Unicode и сохраняет последовательную нумерацию", async () => {
+  const saved = {
+    kind: "legacy-rendered-report",
+    input,
+    presentation: { displayName: input.name },
+    sections: [
+      { key: "archetype", title: "Спокойный стратег", paragraphs: ["Знания → ясное решение → устойчивый результат."] },
+      { key: "executive", title: "Главное о вас", paragraphs: [
+        "Этот отчёт основан на двух системах — это методическое пояснение. Главная объединяющая тема карты — ясность и последовательность. Лучше раскрывается там, где знания становятся результатом.",
+        "Оценка силы обозначена как низкая. Давление ожиданий может истощать.",
+        "Особенно заметна способность соединять людей.",
+        "Практическая формула периода — ясные договорённости.",
+      ] },
+      { key: "relationships", title: "Близость, выбор и конфликты", paragraphs: [
+        "Первый вводный смысл. Первый реальный смысловой пункт.",
+        "Второй реальный смысловой пункт.",
+        "Третий реальный смысловой пункт.",
+        "Ба-цзы: Конфликт 申–寅 может отражать разные внутренние импульсы.",
+        "Высокая чувствительность расчёта к часу рождения требует снизить уверенность.",
+        "Шестой исходный, но пятый отображаемый смысловой пункт.",
+      ] },
+      { key: "matrix", title: "Матрица жизненных сфер", items: ["Окружение Согласие Ба-цзы Конфликт 申–寅 может отражать напряжение. Экспертно\uFFFEструктурные роли поддерживают результат."] },
+      { key: "confidence", title: "Насколько устойчивы выводы", items: ["Хорошо подтверждается картой — Основная линия.", "Требует дополнительного контекста — Детали периода.", "Не стоит воспринимать буквально — Конкретные события."] },
+      { key: "final", title: "Ваша главная линия", paragraphs: ["В рамках этой символической интерпретации ваша опора — ясность."] },
+    ],
+  };
+  const result = await createPdfFromSavedReport(saved);
+  assert.equal(result.status, 200);
+  const parsed = await pdfParse(result.buffer);
+  assert.equal((parsed.text.match(/Главное о вас/g) || []).length, 1);
+  assert.doesNotMatch(parsed.text, /Этот отчёт основан|в рамках этой символической интерпретации|ПЕРСОНАЛЬНЫЙ СИНТЕЗ|Профессиональный слой отчёта|Русское название показано первым/i);
+  assert.doesNotMatch(parsed.text, /(?:Конфликт|Соединение|Столкновение|Сочетание|Вред)\s*[-–—](?:\s|$)/i);
+  assert.doesNotMatch(parsed.text, /[\u00AD\u200B-\u200D\u2060\uFFFD\uFFFE\uFFFF]/u);
+  assert.doesNotMatch(parsed.text, /\b(?:undefined|null|NaN|sensitivity)\b|следует воспринимать особенно осторожно/i);
+  const relationships = parsed.text.slice(parsed.text.indexOf("Близость, выбор и конфликты"), parsed.text.indexOf("Матрица жизненных сфер"));
+  for (const number of ["01", "02", "03", "04", "05"]) assert.match(relationships, new RegExp(`${number}\\s*·`));
+  assert.doesNotMatch(relationships, /06\s*·/);
+  assert.equal((parsed.text.match(/Материал носит информационный, культурный/g) || []).length, 1);
+  assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
 });
 
 test("PDF-рендерер принимает короткие и длинные смысловые блоки без потери финала", async () => {

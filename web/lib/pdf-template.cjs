@@ -9,7 +9,15 @@ const dayMasters = Object.freeze({ 甲:"Янское Дерево",乙:"Иньс
 function chooseFont(candidates) { return candidates.find(file => fs.existsSync(file)); }
 
 function clean(value) {
-  return russianTypography(String(value ?? "").replace(/[–—−‑]/g, "-").replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, ""));
+  return russianTypography(String(value ?? "")
+    .normalize("NFC")
+    .replace(/[\u00AD\u200B-\u200D\u2060\uFEFF]/gu, "")
+    .replace(/[\uFFFD\uFFFE\uFFFF]/gu, "-")
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/gu, "")
+    .replace(/[−‑]/gu, "-")
+    .replace(/\s+-\s+/gu, " — ")
+    .replace(/\s+([,.;:!?])/gu, "$1")
+    .replace(/[ \t]{2,}/gu, " "));
 }
 
 function createReportPdf({ chart, metadata, presentation = {}, report, legacyReport, hasFullReport = true }) {
@@ -33,11 +41,11 @@ function createReportPdf({ chart, metadata, presentation = {}, report, legacyRep
 
     cover(doc, chart, metadata, presentation, report);
     baziVisualPage(doc, chart, cjkReady);
+    ziweiSummaryPage(doc, chart, cjkReady);
     if (report && hasFullReport) fullReport(doc, report);
     else if (report) previewReport(doc, report);
     else if (legacyReport) legacyFullReport(doc, legacyReport);
     else unavailablePage(doc);
-    appendixDividerPage(doc);
     luckTimelinePage(doc, chart, cjkReady);
     ziweiVisualPages(doc, chart, cjkReady);
     addPageNumbers(doc);
@@ -155,32 +163,41 @@ function legacyFullReport(doc, legacy) {
   legacyMatrix(doc, sections.get("matrix"));
   legacyStability(doc, sections.get("confidence"));
   legacyActionPlan(doc, sections.get("action-plan"));
-  legacyManifestations(doc, sections.get("manifestations"));
   legacyFinal(doc, sections.get("final"), sections.get("archetype"));
 }
 
 function legacyExecutive(doc, data, archetype) {
   if (!data) return;
-  page(doc, "Главное о вас", archetype?.title || "Персональный портрет", { kicker:"ПЕРСОНАЛЬНЫЙ СИНТЕЗ" });
+  page(doc, "Главное о вас", archetype?.title || "Персональный портрет");
   const paragraphs = data.paragraphs || [];
-  const lead = firstSentences(paragraphs[0], 2);
+  const lead = findSentence(paragraphs[0], /Главная объединяющая тема/u) || firstUsefulSentence(paragraphs[0]);
   if (lead) pullQuote(doc, lead);
   const labels = ["Ваш главный ресурс", "Что особенно заметно", "Что может мешать", "Тема текущего периода"];
-  const sources = paragraphs.length >= 4 ? paragraphs : [...paragraphs, ...(archetype?.paragraphs || [])];
-  const y = Math.max(doc.y + 22, 330);
-  sources.slice(0, 4).forEach((text, index) => insightCard(doc, 52 + (index % 2) * 251, y + Math.floor(index / 2) * 152, 239, 138, `${String(index + 1).padStart(2,"0")} · ${labels[index]}`, compactText(text, 360), index % 2));
-  doc.y = y + 316;
-  if (archetype?.paragraphs?.[0]) quietNote(doc, "Если коротко", archetype.paragraphs[0]);
+  const sources = [
+    findSentence(paragraphs[0], /лучше раскрывается/u) || firstUsefulSentence(paragraphs[0]),
+    findSentence(paragraphs[2], /интеллектуальн|партнёр/u) || firstUsefulSentence(paragraphs[2]),
+    String(findSentence(paragraphs[1], /давление дедлайнов|чужих ожиданий/u) || firstUsefulSentence(paragraphs[1])).replace(/^.*?(давление дедлайнов)/iu,"Давление дедлайнов"),
+    findSentence(paragraphs[3], /практическая формула|период/u) || firstUsefulSentence(paragraphs[3]),
+  ].map(editorialNarrative);
+  const y = Math.max(doc.y + 18, 282);
+  const heights = [0,1].map(row => Math.max(...sources.slice(row*2,row*2+2).map(text => insightCardHeight(doc,text,239)), 126));
+  sources.forEach((text, index) => {
+    const row=Math.floor(index/2), cardY=y+(row?heights[0]+12:0);
+    insightCard(doc,52+(index%2)*251,cardY,239,heights[row],`${String(index+1).padStart(2,"0")} · ${labels[index]}`,text,index%2);
+  });
+  doc.y=y+heights[0]+heights[1]+30;
+  if (archetype?.paragraphs?.[0]) summaryPath(doc, archetype.paragraphs[0]);
 }
 
 function legacyEditorial(doc, data, headings, options = {}) {
   if (!data) return;
-  const chunks = (data.paragraphs || []).map((text,index)=>({heading:headings[index] || `Ключевая линия ${index+1}`,text}));
-  let pageIndex=0;
-  page(doc,data.title,firstSentences(chunks[0]?.text,1),{kicker:"ПЕРСОНАЛЬНЫЙ РАЗБОР"});
+  const chunks = (data.paragraphs || []).map((text,index)=>({heading:headings[index] || `Ключевая линия ${index+1}`,text:editorialNarrative(text)})).filter(item=>validConsumerText(item.text));
+  const intro=firstSentences(chunks[0]?.text,1);
+  page(doc,data.title,intro,{kicker:"ПЕРСОНАЛЬНЫЙ РАЗБОР"});
   chunks.forEach((item,index)=>{
     const text=index===0?remainingSentences(item.text,1):item.text;
-    if(doc.y+editorialBlockHeight(doc,text)>spacing.bottom){pageIndex+=1;page(doc,`${data.title} · продолжение`,"Продолжение персонального разбора",{kicker:"ПРОДОЛЖЕНИЕ"});}
+    if(!validConsumerText(text))return;
+    if(doc.y+editorialBlockHeight(doc,text)>spacing.bottom)continuationPage(doc,data.title);
     editorialBlock(doc,item.heading,text,index);
   });
 }
@@ -188,33 +205,32 @@ function legacyEditorial(doc, data, headings, options = {}) {
 function legacyTraits(doc, data) {
   if (!data) return;
   const parsed=(data.items||[]).map(parseTrait);
-  [parsed.slice(0,2),parsed.slice(2,4),parsed.slice(4)].filter(x=>x.length).forEach((items,pageIndex)=>{
-    page(doc,pageIndex?"Пять главных черт · продолжение":"Пять главных черт",pageIndex?"Каждая черта может проявляться по-разному в зависимости от ресурса и среды.":"Не ярлыки, а повторяющиеся способы воспринимать ситуацию и действовать.",{kicker:"ХАРАКТЕР"});
-    items.forEach((item,index)=>traitCard(doc,item,pageIndex*2+index));
+  [parsed.slice(0,2),parsed.slice(2)].filter(x=>x.length).forEach((items,pageIndex)=>{
+    if(pageIndex)continuationPage(doc,"Пять главных черт"); else page(doc,"Пять главных черт","Не ярлыки, а повторяющиеся способы воспринимать ситуацию и действовать.",{kicker:"ХАРАКТЕР"});
+    items.forEach((item,index)=>traitCard(doc,item,pageIndex*2+index,pageIndex?190:228));
   });
 }
 
 function legacyStrengths(doc,data){
   if(!data)return;const parsed=(data.items||[]).map(parseStrength);
-  [parsed.slice(0,3),parsed.slice(3)].filter(x=>x.length).forEach((items,pageIndex)=>{page(doc,pageIndex?"Сильные стороны · продолжение":"Сильные стороны",pageIndex?"Ещё два ресурса, на которые можно опираться.":"Качества, которые особенно полезны в работе, отношениях и сложных решениях.",{kicker:"ВАШИ РЕСУРСЫ"});items.forEach((item,index)=>resourceCard(doc,item,pageIndex*3+index));});
+  [parsed.slice(0,3),parsed.slice(3)].filter(x=>x.length).forEach((items,pageIndex)=>{if(pageIndex)continuationPage(doc,"Сильные стороны");else page(doc,"Сильные стороны","Качества, которые особенно полезны в работе, отношениях и сложных решениях.",{kicker:"ВАШИ РЕСУРСЫ"});items.forEach((item,index)=>resourceCard(doc,item,pageIndex*3+index));});
 }
 
 function legacyChallenges(doc,data){
   if(!data)return;const parsed=(data.items||[]).map(parseChallenge);
-  [parsed.slice(0,3),parsed.slice(3)].filter(x=>x.length).forEach((items,pageIndex)=>{page(doc,pageIndex?"Что может мешать · продолжение":"Что может мешать",pageIndex?"Эти паттерны не являются приговором: важен способ вовремя их заметить.":"Ситуации, в которых сильные качества могут начать расходовать слишком много ресурса.",{kicker:"ЗОНЫ ВНИМАНИЯ"});items.forEach((item,index)=>challengeCard(doc,item,pageIndex*3+index));});
+  [parsed.slice(0,3),parsed.slice(3)].filter(x=>x.length).forEach((items,pageIndex)=>{if(pageIndex)continuationPage(doc,"Что может мешать");else page(doc,"Что может мешать","Ситуации, в которых сильные качества могут начать расходовать слишком много ресурса.",{kicker:"ЗОНЫ ВНИМАНИЯ"});items.forEach((item,index)=>challengeCard(doc,item,pageIndex*3+index));});
 }
 
-function legacyComparison(doc,data){if(!data)return;page(doc,data.title,"Разница между внешним впечатлением и внутренним переживанием.",{kicker:"ДВА СЛОЯ"});const y=220;(data.items||[]).slice(0,2).forEach((item,index)=>insightCard(doc,52+index*251,y,239,210,index?"Что происходит внутри":"Как вас видят",stripLeadingLabel(item),index));if(data.paragraphs?.[0]){doc.y=460;pullQuote(doc,data.paragraphs[0]);}}
-function legacyStress(doc,data){if(!data)return;page(doc,data.title,"Как меняется способ думать и действовать под давлением.",{kicker:"ПОД ДАВЛЕНИЕМ"});const labels=["Первая реакция","Где возникает ошибка","Как восстановить ясность"];(data.items||[]).slice(0,3).forEach((item,index)=>processStep(doc,index,labels[index],stripStep(item)));if(data.paragraphs?.[0]){doc.y=Math.max(doc.y,650);quietNote(doc,"Важно",data.paragraphs[0]);}}
+function legacyComparison(doc,data){if(!data)return;page(doc,"Как вас видят и что происходит внутри","Два слоя восприятия: внешнее впечатление и внутреннее переживание.",{kicker:"ДВА СЛОЯ"});const y=220;(data.items||[]).slice(0,2).forEach((item,index)=>insightCard(doc,52+index*251,y,239,210,index?"Что происходит внутри":"Как вас видят",stripLeadingLabel(item),index));if(data.paragraphs?.[0]){doc.y=460;quietNote(doc,"Практический ориентир",data.paragraphs[0]);}}
+function legacyStress(doc,data){if(!data)return;page(doc,data.title,"Как меняется способ думать и действовать под давлением.",{kicker:"ПОД ДАВЛЕНИЕМ"});const labels=["Первая реакция","Где возникает ошибка","Как восстановить ясность"];(data.items||[]).slice(0,3).forEach((item,index)=>processStep(doc,index,labels[index],stripStep(item)));if(data.paragraphs?.[0]){doc.y=Math.max(doc.y,650);quietNote(doc,"Один важный ориентир",String(data.paragraphs[0]).replace(/^Лучше не делать:\s*Не следует\s*/u,"Не "));}}
 
 function legacyCurrentPeriod(doc,data){if(!data)return;page(doc,"Текущий жизненный период",data.title,{kicker:"СЕЙЧАС"});const parsed=(data.items||[]).map(parseUpperItem);parsed.forEach((item,index)=>periodCell(doc,item,index));}
 function legacyYears(doc,data){if(!data)return;page(doc,data.title,"Три последовательных фокуса, а не буквальный событийный прогноз.",{kicker:"БЛИЖАЙШИЙ ГОРИЗОНТ"});(data.items||[]).map(parseYear).forEach((item,index)=>yearCard(doc,item,index));}
 function legacyTransitions(doc,data){if(!data)return;page(doc,data.title,"Поворотные точки, уже выделенные в сохранённом отчёте.",{kicker:"ДЛИННАЯ ПЕРСПЕКТИВА"});(data.items||[]).map(parseTransition).forEach((item,index)=>transitionRow(doc,item,index));}
 function legacyScenarios(doc,data){if(!data)return;page(doc,data.title,"Сценарии показывают последствия разных способов использовать один и тот же потенциал.",{kicker:"ВЫБОР, А НЕ ПРЕДСКАЗАНИЕ"});const labels=["Устойчивый путь","Путь роста","Сценарий перегруза"];(data.items||[]).map(parseScenario).forEach((item,index)=>scenarioCard(doc,item,labels[index],index));}
-function legacyMatrix(doc,data){if(!data)return;const rows=(data.items||[]).map(parseMatrixItem).filter(Boolean);[rows.slice(0,4),rows.slice(4)].filter(x=>x.length).forEach((group,pageIndex)=>{page(doc,pageIndex?"Матрица жизненных сфер · продолжение":"Матрица жизненных сфер",pageIndex?"Оставшиеся области сопоставления.":"Как Ба-цзы и Цзы Вэй дополняют друг друга в разных областях жизни.",{kicker:"ДВЕ СИСТЕМЫ"});group.forEach((item,index)=>matrixRow(doc,item,index));});}
-function legacyStability(doc,data){if(!data)return;page(doc,data.title,"Методологическая прозрачность: где выводы устойчивы, а где важен жизненный контекст.",{kicker:"ГРАНИЦЫ ИНТЕРПРЕТАЦИИ"});(data.items||[]).forEach((item,index)=>stabilityBand(doc,item,index));}
+function legacyMatrix(doc,data){if(!data)return;const rows=(data.items||[]).map(parseMatrixItem).filter(Boolean);[rows.slice(0,4),rows.slice(4)].filter(x=>x.length).forEach((group,pageIndex)=>{if(pageIndex)continuationPage(doc,"Матрица жизненных сфер");else page(doc,"Матрица жизненных сфер","Как Ба-цзы и Цзы Вэй дополняют друг друга в разных областях жизни.",{kicker:"ДВЕ СИСТЕМЫ"});group.forEach((item,index)=>matrixRow(doc,item,index));});}
+function legacyStability(doc,data){if(!data)return;page(doc,data.title,"Где выводы устойчивы, а где важен жизненный контекст.",{kicker:"ГРАНИЦЫ ИНТЕРПРЕТАЦИИ"});(data.items||[]).forEach((item,index)=>stabilityBand(doc,item,index));doc.y=Math.min(doc.y,690);quietNote(doc,"Точность времени","Точность отдельных деталей зависит от точности времени рождения, особенно в темах, связанных с конкретными периодами и событиями.");}
 function legacyActionPlan(doc,data){if(!data)return;page(doc,data.title,"Практические действия, уже сформулированные в сохранённом отчёте.",{kicker:"ПРАКТИЧЕСКИЙ ИТОГ"});(data.items||[]).forEach((item,index)=>actionColumn(doc,item,index));}
-function legacyManifestations(doc,data){if(!data)return;page(doc,data.title,"Наблюдения, по которым выводы карты можно сопоставить с реальной жизнью.",{kicker:"УЗНАВАЕМЫЕ ПАТТЕРНЫ"});(data.items||[]).forEach((item,index)=>numberedObservation(doc,item,index));}
 function legacyFinal(doc,data,archetype){
   if(!data)return;
   doc.addPage();
@@ -226,7 +242,7 @@ function legacyFinal(doc,data,archetype){
   doc.moveTo(52,292).lineTo(543,292).strokeColor("#55736a").stroke();
   let y=320;
   (data.paragraphs||[]).forEach((text,index)=>{
-    const value=cleanNarrative(text);
+    const value=cleanNarrative(editorialNarrative(text));
     const font=index===0?"Bold":"Body",size=index===0?11.5:9.4,width=470,lineGap=index===0?4:3.5;
     doc.font(font).fontSize(size);
     const height=doc.heightOfString(value,{width,lineGap});
@@ -238,11 +254,16 @@ function legacyFinal(doc,data,archetype){
 function firstSentences(text,count){return sentences(text).slice(0,count).join(" ");}
 function remainingSentences(text,count){return sentences(text).slice(count).join(" ");}
 function sentences(text){return String(text||"").split(/(?<=[.!?])\s+/u).filter(Boolean);}
+function findSentence(text,pattern){return sentences(text).find(sentence=>pattern.test(sentence))||"";}
+function firstUsefulSentence(text){return sentences(text).find(sentence=>!isMethodSentence(sentence))||"";}
 function compactText(text,max=260){const value=cleanNarrative(text);return value.length<=max?value:`${value.slice(0,max).replace(/\s+\S*$/u,"")}…`;}
-function validConsumerText(value){const text=cleanNarrative(value).replace(/\bв рамках этой символической интерпретации\s*/giu,"").trim();return text&&!/\b(?:undefined|null|nan)\b|(?:соединение|столкновение|сочетание|вред)\s*[-–—](?:\s|$)/iu.test(text)?text:"";}
-function validEvidenceText(value){const text=clean(value).replace(/\bв рамках этой символической интерпретации\s*/giu,"").trim();return text&&!/\b(?:undefined|null|nan)\b|(?:соединение|столкновение|сочетание|вред)\s*[-–—](?=\s*(?:[·.;,]|$))/iu.test(text)?text:"";}
-function prepareLegacySections(sections){return sections.map(section=>({...section,paragraphs:(section.paragraphs||[]).map(text=>normalizeSensitivity(text,section.key==="final")).filter(Boolean),items:(section.items||[]).map(text=>normalizeSensitivity(text,false)).filter(Boolean)}));}
-function normalizeSensitivity(text,keep){const parts=sentences(text);let inserted=false;const timeWord="(?<!\\p{L})(?:час(?:а|у|ом|ов)?|время|времени|временем)(?!\\p{L})";const warning=new RegExp(`(?:(?:чувствительн\\p{L}*|точност\\p{L}*)[^.]{0,90}${timeWord}|${timeWord}[^.]{0,90}чувствительн\\p{L}*)`,"iu");return parts.map(sentence=>{if(!warning.test(sentence))return sentence.replace(/\bв рамках этой символической интерпретации\s*/iu,"");if(keep&&!inserted){inserted=true;return "Расчёт чувствителен к точности времени рождения, поэтому детали, связанные с конкретными датами и событиями, могут меняться при уточнении времени.";}return "";}).filter(Boolean).join(" ").trim();}
+function isMethodSentence(value){return /(?:этот отчёт основан|в рамках (?:этой )?(?:системы|символической интерпретации)|оценк\p{L}* (?:силы|обозначен)|уверенност\p{L}* обозначен|структура.*уверенност|не объективн\p{L}* прогноз|высок\p{L}* чувствительност|следует воспринимать особенно осторожно|расч[её]т чувствителен)/iu.test(String(value));}
+function stripMethodClauses(value){return String(value).replace(/(?:;|,)\s*(?:слабость дневного хозяина оценена с низкой уверенностью|сила дневного хозяина неопределённа|вывод осторожный)/giu,"").replace(/(?:;|,)\s*оценка силы дневного хозяина[^.;]*/giu,"").replace(/в рамках (?:этой )?(?:системы|символической интерпретации)\s*/giu,"").trim();}
+function editorialNarrative(value){return stripMethodClauses(sentences(value).filter(sentence=>!isMethodSentence(sentence)).join(" "));}
+function validConsumerText(value){const text=cleanNarrative(value).replace(/\bв рамках этой символической интерпретации\s*/giu,"").trim();return text&&!/\b(?:undefined|null|nan)\b|(?:соединение|столкновение|сочетание|вред|конфликт)\s*[-–—](?:\s|$)/iu.test(text)?text:"";}
+function validEvidenceText(value){const text=stripMethodClauses(clean(value).replace(/,?\s*уверенность\s+(?:низкая|средняя|высокая)/giu,"")).trim();return text&&!/\b(?:undefined|null|nan)\b|(?:соединение|столкновение|сочетание|вред)\s*[-–—](?=\s*(?:[·.;,]|$))/iu.test(text)?text:"";}
+function prepareLegacySections(sections){return sections.map(section=>({...section,paragraphs:(section.paragraphs||[]).map(normalizeSensitivity).filter(Boolean),items:(section.items||[]).map(normalizeSensitivity).filter(Boolean)}));}
+function normalizeSensitivity(text){const timeWord="(?<!\\p{L})(?:час(?:а|у|ом|ов)?|время|времени|временем)(?!\\p{L})";const warning=new RegExp(`(?:(?:чувствительн\\p{L}*|точност\\p{L}*)[^.]{0,180}${timeWord}|${timeWord}[^.]{0,180}(?:чувствительн\\p{L}*|точност\\p{L}*)|следует воспринимать особенно осторожно)`,"iu");return sentences(text).filter(sentence=>!warning.test(sentence)).map(sentence=>sentence.replace(/в рамках этой символической интерпретации\s*/iu,"")).filter(Boolean).join(" ").trim();}
 function splitByMarkers(text,markers){const source=String(text||"");const positions=markers.map(marker=>({marker,index:source.search(marker)})).filter(x=>x.index>=0).sort((a,b)=>a.index-b.index);const result={lead:positions.length?source.slice(0,positions[0].index).trim():source.trim()};positions.forEach((entry,index)=>{const start=entry.index+source.slice(entry.index).match(entry.marker)[0].length;const end=positions[index+1]?.index??source.length;result[entry.marker.source]=source.slice(start,end).trim();});return result;}
 function splitLegacyTitle(prefix,bodyStart){const match=String(prefix).match(bodyStart);if(!match)return{title:compactText(prefix,70),body:""};return{title:prefix.slice(0,match.index).trim(),body:prefix.slice(match.index).trim()};}
 function parseTrait(text){const number=String(text).match(/^(\d{2})\s+/)?.[1]||"";const raw=String(text).replace(/^\d{2}\s+/,"");const parts=splitByMarkers(raw,[/В\s+РЕСУРСЕ\s+/u,/В\s+ПЕРЕГРУЗЕ\s+/u,/Основания карты:\s*/u]);const main=splitLegacyTitle(parts.lead,/(?:Преобладание|Структура|Текущий|Финансовый|Связка)/u);return{number,title:main.title,description:main.body,strong:parts[/В\s+РЕСУРСЕ\s+/u.source],low:parts[/В\s+ПЕРЕГРУЗЕ\s+/u.source],evidence:validEvidenceText(parts[/Основания карты:\s*/u.source])};}
@@ -258,10 +279,12 @@ function stripStep(text){return String(text).replace(/^\d{2}\s+(?:Реакция
 
 function pullQuote(doc,text){const value=validConsumerText(text);if(!value)return;doc.fillColor(colors.jade).font("Bold").fontSize(15).text(value,52,doc.y,{width:491,lineGap:6});doc.y+=18;}
 function quietNote(doc,label,text){const value=validConsumerText(text);if(!value)return;doc.roundedRect(52,doc.y,491,70,7).fill(colors.sand);doc.fillColor(colors.gold).font("Bold").fontSize(8).text(clean(label).toUpperCase(),68,doc.y+14,{width:130});doc.fillColor(colors.ink).font("Body").fontSize(9.5).text(value,170,doc.y+13,{width:355,lineGap:3});doc.y+=82;}
-function insightCard(doc,x,y,w,h,label,text,variant=0){doc.roundedRect(x,y,w,h,8).fill(variant%2?colors.sand:colors.sage);doc.fillColor(colors.gold).font("Bold").fontSize(7.6).text(clean(label).toUpperCase(),x+16,y+16,{width:w-32});doc.fillColor(colors.ink).font("Body").fontSize(9.2).text(validConsumerText(text),x+16,y+44,{width:w-32,height:h-56,lineGap:3,ellipsis:true});}
-function editorialBlockHeight(doc,text){const value=validConsumerText(text);doc.font("Body").fontSize(9.6);return Math.max(86,doc.heightOfString(value,{width:491,lineGap:3})+48)+8;}
-function editorialBlock(doc,heading,text,index){const value=validConsumerText(text);if(!value)return;const height=editorialBlockHeight(doc,value)-8;const y=doc.y;doc.fillColor(colors.gold).font("Bold").fontSize(8).text(`${String(index+1).padStart(2,"0")} · ${clean(heading).toUpperCase()}`,52,y,{width:460});doc.fillColor(colors.ink).font("Body").fontSize(9.6).text(value,52,y+24,{width:491,lineGap:3});doc.y=y+height+8;doc.moveTo(52,doc.y-2).lineTo(543,doc.y-2).strokeColor("#dde1dc").stroke();}
-function traitCard(doc,item,index){const evidence=validEvidenceText(item.evidence);const height=evidence?245:205;ensure(doc,height+12);const y=doc.y;doc.roundedRect(52,y,491,height,9).fill(index%2?colors.sand:colors.sage);doc.fillColor(colors.gold).font("Bold").fontSize(10).text(item.number||String(index+1).padStart(2,"0"),70,y+18);doc.fillColor(colors.ink).font("Bold").fontSize(16).text(clean(item.title),112,y+15,{width:410});doc.fillColor(colors.ink).font("Body").fontSize(9.5).text(validConsumerText(item.description),70,y+52,{width:451,lineGap:3});const splitY=y+112;doc.fillColor(colors.jade).font("Bold").fontSize(7.5).text("В СИЛЬНОЙ ПОЗИЦИИ",70,splitY);doc.fillColor(colors.ink).font("Body").fontSize(8.7).text(validConsumerText(item.strong),70,splitY+18,{width:210,lineGap:2});doc.fillColor(colors.red).font("Bold").fontSize(7.5).text("КОГДА РЕСУРСА МАЛО",305,splitY);doc.fillColor(colors.ink).font("Body").fontSize(8.7).text(validConsumerText(item.low),305,splitY+18,{width:216,lineGap:2});if(evidence){doc.fillColor(colors.muted).font(doc._tianMingBrandFont).fontSize(7.3).text(`Почему карта на это указывает · ${evidence}`,70,y+height-40,{width:451,lineGap:2});}doc.y=y+height+12;}
+function insightCardHeight(doc,text,width){doc.font("Body").fontSize(9.2);return Math.max(126,doc.heightOfString(validConsumerText(text),{width:width-32,lineGap:3})+65);}
+function insightCard(doc,x,y,w,h,label,text,variant=0){doc.roundedRect(x,y,w,h,8).fill(variant%2?colors.sand:colors.sage);doc.fillColor(colors.gold).font("Bold").fontSize(7.6).text(clean(label).toUpperCase(),x+16,y+16,{width:w-32});doc.fillColor(colors.ink).font("Body").fontSize(9.2).text(validConsumerText(text),x+16,y+44,{width:w-32,lineGap:3});}
+function summaryPath(doc,text){const value=validConsumerText(text);if(!value)return;const parts=value.split(/\s*→\s*/u);const y=doc.y;doc.roundedRect(52,y,491,86,8).fill(colors.jade);doc.fillColor(colors.gold).font("Bold").fontSize(7.5).text("ЕСЛИ КОРОТКО",52,y+14,{width:491,align:"center",characterSpacing:1});doc.fillColor(colors.white).font("Bold").fontSize(12.5).text(parts.join("  →  "),72,y+39,{width:451,align:"center",lineGap:4});doc.y=y+98;}
+function editorialBlockHeight(doc,text){const value=validConsumerText(text);doc.font("Body").fontSize(9.4);return Math.max(94,doc.heightOfString(value,{width:491,lineGap:3})+58)+8;}
+function editorialBlock(doc,heading,text,index){const value=validConsumerText(text);if(!value)return;const parts=sentences(value),takeaway=parts[0]||value,body=parts.slice(1).join(" ");const y=doc.y;doc.fillColor(colors.gold).font("Bold").fontSize(8).text(`${String(index+1).padStart(2,"0")} · ${clean(heading).toUpperCase()}`,52,y,{width:460});doc.fillColor(colors.jade).font("Bold").fontSize(10.2).text(takeaway,52,y+23,{width:491,lineGap:3});if(body){const bodyY=doc.y+9;doc.fillColor(colors.ink).font("Body").fontSize(9.2).text(body,52,bodyY,{width:491,lineGap:3});}doc.y+=14;doc.moveTo(52,doc.y).lineTo(543,doc.y).strokeColor("#dde1dc").stroke();doc.y+=14;}
+function traitCard(doc,item,index,height=228){const evidence=validEvidenceText(item.evidence);ensure(doc,height+12);const y=doc.y;doc.roundedRect(52,y,491,height,9).fill("#f8f7f2");doc.fillColor(colors.gold).font("Bold").fontSize(10).text(String(index+1).padStart(2,"0"),70,y+16);doc.fillColor(colors.ink).font("Bold").fontSize(15).text(clean(item.title),112,y+13,{width:410});doc.fillColor(colors.ink).font("Body").fontSize(8.8).text(validConsumerText(item.description),70,y+44,{width:451,lineGap:2});const splitY=y+(height>200?88:72),panelH=height>200?82:72;[[70,colors.sage,colors.jade,"В СИЛЬНОЙ ПОЗИЦИИ",item.strong],[299,"#f3e9df",colors.gold,"КОГДА РЕСУРСА МАЛО",item.low]].forEach(([x,bg,accent,label,text])=>{doc.roundedRect(x,splitY,222,panelH,6).fill(bg);doc.fillColor(accent).font("Bold").fontSize(7).text(label,x+12,splitY+11,{width:198});doc.fillColor(colors.ink).font("Body").fontSize(height>200?8.1:7.7).text(validConsumerText(text),x+12,splitY+28,{width:198,lineGap:2});});if(evidence){doc.moveTo(70,y+height-39).lineTo(521,y+height-39).strokeColor("#d8ded9").stroke();doc.fillColor(colors.muted).font(doc._tianMingBrandFont).fontSize(6.8).text(`Почему карта на это указывает · ${evidence}`,70,y+height-29,{width:451,lineGap:1});}doc.y=y+height+12;}
 function resourceCard(doc,item,index){ensure(doc,150);const y=doc.y;doc.fillColor(colors.gold).font("Bold").fontSize(8).text(String(index+1).padStart(2,"0"),52,y+4);doc.fillColor(colors.jade).font("Bold").fontSize(15).text(clean(item.title).toUpperCase(),88,y,{width:440});doc.fillColor(colors.ink).font("Body").fontSize(9.5).text(validConsumerText(item.description),88,y+29,{width:455,lineGap:3});if(item.action){doc.fillColor(colors.gold).font("Bold").fontSize(7.5).text("КАК ИСПОЛЬЗОВАТЬ",88,y+84);doc.fillColor(colors.muted).font("Body").fontSize(8.8).text(validConsumerText(item.action),190,y+82,{width:353,lineGap:3});}doc.moveTo(52,y+136).lineTo(543,y+136).strokeColor("#d8ded9").stroke();doc.y=y+150;}
 function challengeCard(doc,item,index){ensure(doc,170);const y=doc.y;doc.roundedRect(52,y,491,156,8).lineWidth(1).strokeColor("#d8ded9").stroke();doc.rect(52,y,5,156).fill(index%2?colors.gold:colors.red);doc.fillColor(colors.ink).font("Bold").fontSize(14).text(clean(item.title),72,y+16,{width:450});[["КОГДА ПРОЯВЛЯЕТСЯ",item.when],["ЧТО ПРОИСХОДИТ",item.risk],["ЧТО ПОМОГАЕТ",item.help]].forEach(([label,text],i)=>{doc.fillColor(i===1?colors.red:colors.gold).font("Bold").fontSize(7).text(label,72,y+51+i*31,{width:116});doc.fillColor(colors.ink).font("Body").fontSize(8.3).text(validConsumerText(text),194,y+49+i*31,{width:329,height:28,lineGap:2,ellipsis:true});});doc.y=y+170;}
 function processStep(doc,index,label,text){const y=doc.y;doc.circle(73,y+20,20).fill(index===1?colors.sand:colors.sage);doc.fillColor(colors.gold).font("Bold").fontSize(9).text(String(index+1).padStart(2,"0"),61,y+15,{width:24,align:"center"});doc.fillColor(colors.jade).font("Bold").fontSize(13).text(label,112,y,{width:420});doc.fillColor(colors.ink).font("Body").fontSize(9.5).text(validConsumerText(text),112,y+25,{width:420,lineGap:3});doc.y=y+115;}
@@ -269,7 +292,7 @@ function periodCell(doc,item,index){const col=index%2,row=Math.floor(index/2),x=
 function yearCard(doc,item,index){const x=52+index*166,y=224,w=154,h=430;doc.roundedRect(x,y,w,h,9).fill(index===1?colors.sage:colors.sand);doc.fillColor(colors.gold).font("Bold").fontSize(26).text(item.year,x+16,y+18,{width:w-32});doc.fillColor(colors.ink).font("Bold").fontSize(12).text(clean(item.title),x+16,y+66,{width:w-32,height:55});[["ЧТО ПОДДЕРЖИВАЕТ",item.support],["ФОКУС",item.focus],["НЕ ФОРСИРОВАТЬ",item.avoid]].forEach(([label,text],i)=>{const sy=y+145+i*92;doc.fillColor(i===2?colors.red:colors.gold).font("Bold").fontSize(6.7).text(label,x+16,sy,{width:w-32});doc.fillColor(colors.ink).font("Body").fontSize(7.8).text(validConsumerText(text),x+16,sy+18,{width:w-32,height:70,lineGap:2,ellipsis:true});});}
 function transitionRow(doc,item,index){const y=doc.y;doc.moveTo(92,y).lineTo(92,y+94).lineWidth(2).strokeColor("#d8ded9").stroke();doc.circle(92,y+18,index===2?8:5).fill(index===2?colors.red:colors.gold);doc.fillColor(colors.gold).font("Bold").fontSize(9).text(item.age,52,y+8,{width:30,align:"right"});doc.fillColor(colors.jade).font("Bold").fontSize(12).text(item.years,120,y+4,{width:90});doc.fillColor(colors.ink).font("Body").fontSize(9).text(validConsumerText(item.text),220,y+2,{width:323,lineGap:3});doc.y=y+100;}
 function scenarioCard(doc,item,label,index){const x=52+index*166,y=230,w=154,h=420;doc.roundedRect(x,y,w,h,9).fill(index===2?"#eee6df":index===1?colors.sage:colors.sand);doc.fillColor(index===2?colors.red:colors.gold).font("Bold").fontSize(7.2).text(label.toUpperCase(),x+16,y+18,{width:w-32});doc.fillColor(colors.ink).font("Bold").fontSize(13).text(clean(item.title),x+16,y+55,{width:w-32});doc.fillColor(colors.ink).font("Body").fontSize(8.3).text(validConsumerText(item.text),x+16,y+120,{width:w-32,height:180,lineGap:3,ellipsis:true});doc.fillColor(colors.gold).font("Bold").fontSize(7).text("ОРИЕНТИР",x+16,y+322);doc.fillColor(colors.muted).font("Body").fontSize(7.7).text(validConsumerText(item.action),x+16,y+342,{width:w-32,height:65,lineGap:2,ellipsis:true});}
-function matrixRow(doc,item,index){ensure(doc,135);const y=doc.y;doc.fillColor(colors.jade).font("Bold").fontSize(12).text(clean(item.area),52,y,{width:135});doc.fillColor(item.alignment==="Расхождение"?colors.red:colors.gold).font("Bold").fontSize(7.3).text(item.alignment.toUpperCase(),52,y+38,{width:130});doc.fillColor(colors.ink).font("Body").fontSize(8.7).text(validConsumerText(item.text),205,y,{width:338,height:112,lineGap:2.5,ellipsis:true});doc.moveTo(52,y+122).lineTo(543,y+122).strokeColor("#d8ded9").stroke();doc.y=y+136;}
+function matrixRow(doc,item,index){const value=validConsumerText(stripMethodClauses(item.text));if(!value)return;doc.font("Body").fontSize(8.5);const height=Math.max(112,doc.heightOfString(value,{width:338,lineGap:2.5})+10);ensure(doc,height+24);const y=doc.y;doc.fillColor(colors.jade).font("Bold").fontSize(12).text(clean(item.area),52,y,{width:135});doc.fillColor(item.alignment==="Расхождение"?colors.red:colors.gold).font("Bold").fontSize(7.3).text(item.alignment.toUpperCase(),52,y+38,{width:130});doc.fillColor(colors.ink).font("Body").fontSize(8.5).text(value,205,y,{width:338,lineGap:2.5});doc.moveTo(52,y+height).lineTo(543,y+height).strokeColor("#d8ded9").stroke();doc.y=y+height+14;}
 function stabilityBand(doc,item,index){const labels=["Хорошо подтверждается картой","Требует дополнительного контекста","Не стоит воспринимать буквально"];const text=String(item).replace(new RegExp(`^${labels[index]}\\s*[-—–]\\s*`),"");const y=doc.y,h=index===1?160:135;doc.roundedRect(52,y,491,h,8).fill(index===0?colors.sage:index===1?colors.sand:"#eee6df");doc.fillColor(index===2?colors.red:colors.gold).font("Bold").fontSize(8).text(labels[index].toUpperCase(),70,y+18,{width:455});doc.fillColor(colors.ink).font("Body").fontSize(9.3).text(validConsumerText(text),70,y+48,{width:455,height:h-60,lineGap:3,ellipsis:true});doc.y=y+h+14;}
 function actionColumn(doc,item,index){const label=index?"Чего избегать":"Делать чаще";const text=String(item).replace(new RegExp(`^${index?"Избегать":"Делать чаще"}\\s+`),"");const values=sentences(text);const x=52+index*251,y=230,w=239;doc.fillColor(index?colors.red:colors.jade).font("Bold").fontSize(14).text(label,x,y,{width:w});values.forEach((value,i)=>{const iy=y+45+i*82;doc.fillColor(colors.gold).font("Bold").fontSize(8).text(String(i+1).padStart(2,"0"),x,iy);doc.fillColor(colors.ink).font("Body").fontSize(8.7).text(validConsumerText(value),x+34,iy-2,{width:w-34,height:72,lineGap:2.5,ellipsis:true});});}
 function numberedObservation(doc,item,index){const y=doc.y;doc.fillColor(colors.gold).font("Bold").fontSize(10).text(String(index+1).padStart(2,"0"),52,y+4,{width:28});doc.fillColor(colors.ink).font(index<2?"Bold":"Body").fontSize(index<2?11.2:10).text(validConsumerText(item),96,y,{width:447,lineGap:3});doc.y=y+72;doc.moveTo(96,doc.y-14).lineTo(543,doc.y-14).strokeColor("#e1e3df").stroke();}
@@ -297,7 +320,7 @@ function baziVisualPage(doc, chart, hasCjk) {
     const x = 52 + index * 166;
     doc.roundedRect(x, 374, 156, 92, 6).lineWidth(1).strokeColor("#d8ded9").stroke();
     doc.fillColor(colors.gold).font("Bold").fontSize(7.5).text(label.toUpperCase(), x + 12, 390, { width: 132 });
-    doc.fillColor(colors.ink).font(hasCjk && /[\u3400-\u9FFF]/.test(String(value)) ? "CJK" : "Bold").fontSize(10.5).text(clean(value), x + 12, 410, { width: 132, height:30 });
+    doc.fillColor(index===2?colors.jade:colors.ink).font(hasCjk && /[\u3400-\u9FFF]/.test(String(value)) ? "CJK":index===2?"Body":"Bold").fontSize(index===2?10:10.5).text(clean(value), x + 12, 410, { width: 132, height:30 });
     doc.fillColor(colors.muted).font("Body").fontSize(7.1).text(clean(note), x + 12, 443, { width: 132, height:26, lineGap:1 });
   });
 
@@ -313,19 +336,8 @@ function baziVisualPage(doc, chart, hasCjk) {
   });
 }
 
-function appendixDividerPage(doc) {
-  doc.addPage();
-  doc.rect(0,0,doc.page.width,doc.page.height).fill(colors.sand);
-  doc.fillColor(colors.gold).font(doc._tianMingBrandFont).fontSize(10).text("ТЯНЬ МИН · 天命",52,54,{characterSpacing:1.1});
-  doc.fillColor(colors.jade).font("Bold").fontSize(11).text("ПРИЛОЖЕНИЕ",52,210,{characterSpacing:1.8});
-  doc.fillColor(colors.ink).font("Bold").fontSize(34).text("Подробная карта",52,250,{width:480});
-  doc.fillColor(colors.muted).font("Body").fontSize(12).text("Профессиональный слой отчёта: большие периоды Ба-цзы, двенадцать дворцов Цзы Вэй и исходные китайские обозначения.",52,332,{width:430,lineGap:6});
-  doc.moveTo(52,445).lineTo(543,445).strokeColor("#d4cbb9").stroke();
-  doc.fillColor(colors.gold).font(doc._tianMingBrandFont).fontSize(42).text("八字  ·  紫微斗数",52,500,{width:491,align:"center"});
-}
-
 function luckTimelinePage(doc, chart, hasCjk) {
-  page(doc, "Большие жизненные периоды", "Последовательные десятилетние этапы карты Ба-цзы. Выделен период, включающий текущий календарный год.");
+  page(doc, "Большие жизненные периоды", "Последовательные десятилетние этапы карты Ба-цзы. Выделен период, включающий текущий календарный год.", { kicker:"ПОДРОБНЫЕ ДАННЫЕ ВАШЕЙ КАРТЫ" });
   const currentYear = new Date().getUTCFullYear();
   doc.moveTo(96, 202).lineTo(96, 720).lineWidth(2).strokeColor("#d6ddd8").stroke();
   chart.bazi.majorPeriods.forEach((item, index) => {
@@ -344,7 +356,7 @@ function luckTimelinePage(doc, chart, hasCjk) {
 function ziweiVisualPages(doc, chart, hasCjk) {
   const groups=[chart.ziwei.palaces.slice(0,6),chart.ziwei.palaces.slice(6)];
   groups.forEach((palaces,pageIndex)=>{
-  page(doc, pageIndex?"Цзы Вэй: двенадцать дворцов · продолжение":"Цзы Вэй: двенадцать дворцов", pageIndex?"Оставшиеся шесть дворцов подробной карты.":"Русское название показано первым. Китайские обозначения сохранены как профессиональный слой.", { kicker:"ЦЗЫ ВЭЙ ДОУ ШУ" });
+  if(pageIndex)continuationPage(doc,"Двенадцать дворцов Цзы Вэй");else page(doc,"Двенадцать дворцов Цзы Вэй","Полная рассчитанная карта: дворцы, главные звёзды и возрастные периоды.",{ kicker:"ПОДРОБНЫЕ ДАННЫЕ ВАШЕЙ КАРТЫ" });
   if(pageIndex===0){
   const lunar=formatLunarDate(chart.ziwei.lunarDateDisplay);
   const bureauElement=String(chart.ziwei.fiveElementBureau||"")[0];
@@ -376,6 +388,21 @@ function ziweiVisualPages(doc, chart, hasCjk) {
   });
 }
 
+function ziweiSummaryPage(doc, chart, hasCjk) {
+  page(doc,"Цзы Вэй в одном взгляде","Главные рассчитанные опоры карты до подробной интерпретации.",{kicker:"ЦЗЫ ВЭЙ ДОУ ШУ"});
+  const lunar=formatLunarDate(chart.ziwei.lunarDateDisplay);
+  const bureauElement=String(chart.ziwei.fiveElementBureau||"")[0];
+  const current=chart.ziwei.palaces.find(palace=>palace.isCurrentPeriod);
+  const facts=[
+    ["Лунная дата",lunar],["Дворец судьбы",chart.ziwei.mingPalace],
+    ["Дворец тела",chart.ziwei.shenPalace],["Система элементов",`${chart.ziwei.fiveElementBureauDisplay.name.replace(/^Система элемента\s*[«"]?|[»"]$/gu,"")} · ${bureauElement}`],
+  ];
+  facts.forEach(([label,value],index)=>{const col=index%2,row=Math.floor(index/2),x=52+col*251,y=212+row*88;doc.roundedRect(x,y,239,76,7).fill(index%2?colors.sand:colors.sage);doc.fillColor(colors.gold).font("Bold").fontSize(7).text(label.toUpperCase(),x+15,y+13,{width:205});doc.fillColor(colors.ink).font(hasCjk&&/[\u3400-\u9FFF]/u.test(String(value))?"CJK":"Bold").fontSize(10.5).text(clean(value),x+15,y+35,{width:205,lineGap:2});});
+  if(current){const y=414;doc.roundedRect(52,y,491,124,8).fill(colors.jade);doc.fillColor(colors.gold).font("Bold").fontSize(7.5).text("ТЕКУЩИЙ ДВОРЕЦ И ВОЗРАСТНОЙ ПЕРИОД",70,y+17,{width:455});doc.fillColor(colors.white).font("Bold").fontSize(17).text(clean(current.displayName.name),70,y+43,{width:300});doc.fillColor("#d9e3dd").font(hasCjk?"CJK":"Body").fontSize(9).text(clean(`${current.name} · ${current.ganZhi}`),385,y+45,{width:138,align:"right"});doc.fillColor("#d9e3dd").font("Body").fontSize(9).text(`Возрастной период · ${current.majorPeriod} лет`,70,y+77,{width:230});const stars=current.mainStarsDisplay?.map(star=>star.name).join(" · ")||"Без главной звезды";doc.fillColor(colors.gold).font("Bold").fontSize(9).text(clean(stars),280,y+77,{width:243,align:"right"});}
+  const transformations=chart.ziwei.transformationsDisplay||[];
+  if(transformations.length){doc.fillColor(colors.jade).font("Bold").fontSize(14).text("Четыре трансформации",52,584);transformations.forEach((item,index)=>{const x=52+(index%2)*251,y=622+Math.floor(index/2)*48;doc.fillColor(colors.gold).font("Bold").fontSize(8).text(String(index+1).padStart(2,"0"),x,y,{width:24});doc.fillColor(colors.ink).font("Body").fontSize(9).text(clean(item.name),x+34,y,{width:205});});}
+}
+
 function formatLunarDate(value){const match=String(value).match(/(\d{4})\s+год\s+·\s+(\d+)-й\s+лунный месяц\s+·\s+(\d+)-й\s+день/u);return match?`${match[3]}-й день · ${match[2]}-й месяц · ${match[1]}`:value;}
 
 function page(doc, title, intro, options = {}) {
@@ -389,6 +416,14 @@ function page(doc, title, intro, options = {}) {
     doc.fillColor(colors.muted).font("Body").fontSize(10).text(clean(intro), 52, introY, { width: 490, lineGap: 4 });
     doc.y = Math.max(options.kicker?204:188, doc.y + 18);
   } else doc.y = Math.max(options.kicker?170:145, titleBottom + 20);
+}
+
+function continuationPage(doc, sectionTitle) {
+  doc.addPage();
+  doc.fillColor(colors.gold).font(doc._tianMingBrandFont).fontSize(9).text("ТЯНЬ МИН · 天命",52,48,{characterSpacing:1.1});
+  doc.fillColor(colors.muted).font("Bold").fontSize(8).text(clean(sectionTitle).toUpperCase(),52,84,{width:490,characterSpacing:.8});
+  doc.moveTo(52,108).lineTo(543,108).strokeColor("#dde1dc").stroke();
+  doc.y=128;
 }
 
 function section(doc, title, text) { page(doc, title); bodyText(doc, text); }
@@ -447,10 +482,14 @@ function ensure(doc, height) { if (doc.y + height > 770) { doc.addPage(); doc.y 
 
 function cleanNarrative(value) {
   return clean(value)
+    .replace(/в\s+рамках\s+(?:этой\s+)?(?:системы|символической\s+интерпретации)\s*/giu, "")
+    .replace(/(конфликт|соединение|столкновение|сочетание|вред)\s+[\u3400-\u9FFF]+\s*[–—-]\s*[\u3400-\u9FFF]+/giu, "взаимодействие элементов")
     .replace(/[\u3400-\u9FFF]+/g, "")
     .replace(/\(\s*\)/g, "")
-    .replace(/[ \t]+([;,:.])/g, "$1")
-    .replace(/[ \t]{2,}/g, " ");
+    .replace(/\s*[·]\s*(?=[,.;:]|$)/gu, "")
+    .replace(/\s+([;,:.])/g, "$1")
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/(?:соединение|столкновение|сочетание|вред|конфликт)\s*[–—-](?=\s*[,.;:]|\s|$)/giu, "взаимодействие элементов");
 }
 
 function addPageNumbers(doc) {
