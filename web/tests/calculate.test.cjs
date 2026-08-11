@@ -28,6 +28,29 @@ test("web-слой возвращает настоящий результат с
   assert.equal(result.body.metadata.calculationMethod, "TRUE_SOLAR_TIME_V1");
 });
 
+test("имя поддерживает кириллицу, латиницу и остаётся необязательным", () => {
+  const base = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+  assert.equal(calculateRequest({ ...base, name: "  Эдуард  " }).body.presentation.displayName, "Эдуард");
+  assert.equal(calculateRequest({ ...base, name: "Edward Stone" }).body.presentation.displayName, "Edward Stone");
+  assert.equal(calculateRequest(base).body.presentation.displayName, "");
+});
+
+test("опасная разметка и слишком длинное имя отклоняются понятной ошибкой", () => {
+  const base = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+  assert.match(calculateRequest({ ...base, name: "<script>alert(1)</script>" }).body.error, /В имени можно использовать/);
+  assert.match(calculateRequest({ ...base, name: "А".repeat(61) }).body.error, /не длиннее 60/);
+});
+
+test("изменение имени не меняет карту, солнечное время и периоды", () => {
+  const base = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+  const first = calculateRequest({ ...base, name: "Эдуард" }).body;
+  const second = calculateRequest({ ...base, name: "Edward" }).body;
+  assert.deepEqual(first.chart, second.chart);
+  assert.equal(first.metadata.trueSolarDateTime, second.metadata.trueSolarDateTime);
+  assert.deepEqual(first.chart.bazi.majorPeriods, second.chart.bazi.majorPeriods);
+  assert.deepEqual(first.chart.ziwei.majorPeriods, second.chart.ziwei.majorPeriods);
+});
+
 test("ошибка пользователя не содержит stack trace", () => {
   const result = calculateRequest({ date: "2000-02-30", time: "12:00", gender: "male", placeId: moscow.id });
   assert.equal(result.status, 400);
@@ -38,11 +61,14 @@ test("ошибка пользователя не содержит stack trace", 
 test("production build содержит форму и необходимые пояснения", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "dist", "index.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "..", "dist", "app.js"), "utf8");
-  assert.match(html, /Получить мой разбор/);
+  assert.match(html, /Получить свой разбор/);
+  assert.match(html, /name="name"/);
+  assert.match(html, /Ба-цзы \(八字\)/);
+  assert.match(html, /Цзы Вэй Доу Шу \(紫微斗数\)/);
   assert.match(html, /Место рождения/);
   assert.match(html, /исторические правила времени/);
   assert.match(html, /информационных, культурных и развлекательных целей/);
-  assert.match(html, /Персональный разбор/);
+  assert.match(html, /Персональная карта личности и жизненного пути/);
   assert.match(script, /Скачать полный отчёт PDF/);
   assert.match(script, /technical-chart/);
   assert.match(script, /Как учитывается место рождения/);

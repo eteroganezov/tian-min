@@ -30,11 +30,12 @@ async function submitCalculation(timeOccurrence) {
   const date = String(data.get("date") || "");
   const time = String(data.get("time") || "");
   const gender = String(data.get("gender") || "");
+  const name = String(data.get("name") || "").trim().replace(/\s+/g, " ");
   if (!date) return showError("Укажите дату рождения.");
   if (!time) return showError("Укажите время рождения.");
   if (!selectedPlace) return showError("Выберите место рождения из списка подсказок.");
   if (!gender) return showError("Выберите пол.");
-  currentInput = { date, time, gender, placeId: selectedPlace.id, ...(timeOccurrence ? { timeOccurrence } : {}) };
+  currentInput = { name, date, time, gender, placeId: selectedPlace.id, ...(timeOccurrence ? { timeOccurrence } : {}) };
   currentReport = null; currentHasFullReport = false;
   setLoading(true);
   try {
@@ -42,11 +43,12 @@ async function submitCalculation(timeOccurrence) {
     const payload = await response.json();
     if (response.status === 409 && payload.code === "AMBIGUOUS_LOCAL_TIME") return showAmbiguity(payload.options || []);
     if (!response.ok) throw new Error(payload.error || "Не удалось выполнить расчёт.");
-    resultRoot.innerHTML = renderBaseResult(payload.chart, payload.metadata);
+    currentInput.name = payload.presentation?.displayName || "";
+    resultRoot.innerHTML = renderBaseResult(payload.chart, payload.metadata, payload.presentation || { displayName: "" });
     bindResultActions();
     resultRoot.scrollIntoView({ behavior: "smooth", block: "start" });
     setLoading(false);
-    await loadPersonalReport(payload.chart, payload.metadata);
+    await loadPersonalReport(payload.chart, payload.metadata, payload.presentation || { displayName: "" });
   } catch (error) {
     resultRoot.innerHTML = "";
     showError(error instanceof Error ? error.message : "Не удалось выполнить расчёт. Попробуйте ещё раз.");
@@ -54,42 +56,46 @@ async function submitCalculation(timeOccurrence) {
   }
 }
 
-async function loadPersonalReport(chart, metadata) {
-  updateAiState("loading", "Готовим персональный разбор…", "Сопоставляем BaZi и Zi Wei, выделяем устойчивые выводы.");
+async function loadPersonalReport(chart, metadata, presentation) {
+  updateAiState("loading", "Готовим персональный разбор…", "Сопоставляем Ба-цзы и Цзы Вэй, выделяем устойчивые выводы.");
   try {
     const response = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(currentInput) });
     const payload = await response.json();
     if (!response.ok || payload.aiStatus === "error") throw new Error(payload.error || "Не удалось подготовить персональный разбор.");
-    if (payload.aiStatus === "unavailable") return updateAiState("unavailable", payload.message, "Техническая карта и PDF с расчётом уже доступны.");
+    if (payload.aiStatus === "unavailable") { updatePdfEntitlement(false, "technical"); return updateAiState("unavailable", payload.message, "Техническая карта и PDF с расчётом уже доступны."); }
     currentReport = payload.report;
     currentHasFullReport = payload.hasFullReport;
+    const normalizedPresentation = payload.presentation || presentation;
     const container = document.querySelector("#personal-report");
-    if (container) container.innerHTML = renderPersonalReport(payload.report, payload.hasFullReport, chart, metadata);
+    if (container) container.innerHTML = renderPersonalReport(payload.report, payload.hasFullReport, chart, metadata, normalizedPresentation);
+    updatePdfEntitlement(payload.hasFullReport);
     bindResultActions();
   } catch (error) {
     updateAiState("error", "Персональный разбор сейчас не удалось подготовить.", "Техническая карта остаётся доступна — расчёт не потерян.");
   }
 }
 
-function renderBaseResult(chart, metadata) {
+function renderBaseResult(chart, metadata, presentation) {
+  const name = presentation?.displayName || "";
   return `<section class="report-shell">
     <header class="report-cover shell">
-      <div class="cover-kicker"><span>Ваш персональный разбор</span><i></i><span>BaZi × Zi Wei</span></div>
-      <h2>Карта готова.<br><em>Теперь — к главному.</em></h2>
+      <div class="cover-kicker"><span>Ваш персональный разбор</span><i></i><span>Ба-цзы × Цзы Вэй</span></div>
+      <h2>${name ? `${e(name)}, карта готова.` : "Карта готова."}<br><em>Теперь — к главному.</em></h2>
       <p>${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(metadata.place.name)}</p>
-      <div class="cover-actions"><button class="pdf-button" data-action="pdf">Скачать полный отчёт PDF <span>↓</span></button><button class="text-button" data-action="technical">Техническая карта</button></div>
+      <div class="cover-actions"><button class="pdf-button" data-action="pdf">Скачать отчёт PDF <span>↓</span></button><button class="text-button" data-action="technical">Техническая карта</button></div>
     </header>
     <div id="personal-report" class="personal-report shell">${renderAiState("loading", "Готовим персональный разбор…", "Сопоставляем две системы и собираем понятную картину.")}</div>
     ${renderTechnical(chart, metadata)}
   </section>`;
 }
 
-function renderPersonalReport(report, full, chart, metadata) {
-  if (!full) return `<section class="archetype-block"><p class="section-label">Ваш архетип</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote></section>
+function renderPersonalReport(report, full, chart, metadata, presentation) {
+  const name = presentation?.displayName || "";
+  if (!full) return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote></section>
     <section class="report-section lead"><p class="section-label">Короткий портрет</p><p>${paragraphs(report.executiveSummary)}</p></section>
     ${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
-    <section class="locked-report"><span>Полный отчёт</span><h2>Карьера, деньги, отношения, периоды и план действий</h2><p>Архитектура полной версии уже готова. В текущем режиме открыт бесплатный preview.</p></section>`;
-  return `<section class="archetype-block"><p class="section-label">Ваш архетип</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote><div class="birth-caption">${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(metadata.birthPlace)}</div></section>
+    <section class="locked-report"><span>Полный отчёт</span><h2>Карьера, деньги, отношения, периоды и план действий</h2><p>Архитектура полной версии уже готова. В текущем режиме открыта бесплатная предварительная версия.</p></section>`;
+  return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote><div class="birth-caption">${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(metadata.birthPlace)}</div></section>
     <section class="report-section lead"><p class="section-label">В двух словах</p><h2>Главное о вас</h2><div class="prose">${paragraphs(report.executiveSummary)}</div></section>
     <section class="report-section"><p class="section-label">Внутренний портрет</p><h2>Как устроена ваша личность</h2><div class="prose narrow">${paragraphs(report.personality)}</div></section>
     ${renderTraits(report.keyTraits)}${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
@@ -117,21 +123,26 @@ function renderCurrentPeriod(data) { return `<section class="report-section peri
 function renderYears(items) { return `<section class="report-section"><p class="section-label">Ближайший горизонт</p><h2>Следующие три года</h2><div class="year-timeline">${items.map(item=>`<article><strong>${e(item.year)}</strong><div><h3>${e(item.theme)}</h3><p>${e(item.opportunities)}</p><small><b>Фокус:</b> ${e(item.focus)}</small><small><b>Не форсировать:</b> ${e(item.avoid)}</small></div></article>`).join("")}</div></section>`; }
 function renderTransitions(items) { return `<section class="report-section"><p class="section-label">Длинная перспектива</p><h2>Ключевые переходы</h2><div class="transitions">${items.map(item=>`<article><span>${e(item.age)}</span><div><small>${e(item.period)}</small><h3>${e(item.theme)}</h3><p>${e(item.change)}</p></div></article>`).join("")}</div></section>`; }
 function renderScenarios(items) { return `<section class="report-section tone-dark"><p class="section-label">Выбор, а не предсказание</p><h2>Три возможных сценария</h2><div class="scenario-grid">${items.map(item=>`<article><span>${e(item.type)}</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p><small>${e(item.decisions)}</small></article>`).join("")}</div></section>`; }
-function renderMatrix(items) { return `<section class="report-section"><p class="section-label">Две системы</p><h2>Матрица жизненных сфер</h2><div class="matrix">${items.map(item=>`<article><header><h3>${e(item.area)}</h3><span class="alignment">${e(item.alignment)}</span></header><p><b>BaZi</b>${e(item.bazi)}</p><p><b>Zi Wei</b>${e(item.ziwei)}</p><footer>${e(item.synthesis)}</footer></article>`).join("")}</div></section>`; }
-function renderCrossValidation(data) { return `<section class="report-section"><p class="section-label">Cross-validation</p><h2>Где выводы устойчивее</h2><div class="validation-grid"><article><span>Подтверждают</span>${list(data.agreements)}</article><article><span>Расходятся</span>${list(data.divergences)}</article><article><span>Устойчивые выводы</span>${list(data.stableConclusions)}</article><article><span>Требуют осторожности</span>${list(data.weakerConclusions)}</article></div></section>`; }
+function renderMatrix(items) { return `<section class="report-section"><p class="section-label">Две системы</p><h2>Матрица жизненных сфер</h2><div class="matrix">${items.map(item=>`<article><header><h3>${e(item.area)}</h3><span class="alignment">${e(item.alignment)}</span></header><p><b>Ба-цзы</b>${e(item.bazi)}</p><p><b>Цзы Вэй Доу Шу</b>${e(item.ziwei)}</p><footer>${e(item.synthesis)}</footer></article>`).join("")}</div></section>`; }
+function renderCrossValidation(data) { return `<section class="report-section"><p class="section-label">Сопоставление двух систем</p><h2>Где выводы устойчивее</h2><div class="validation-grid"><article><span>Подтверждают</span>${list(data.agreements)}</article><article><span>Расходятся</span>${list(data.divergences)}</article><article><span>Устойчивые выводы</span>${list(data.stableConclusions)}</article><article><span>Требуют осторожности</span>${list(data.weakerConclusions)}</article></div></section>`; }
 function renderConfidence(items) { return `<section class="report-section compact"><p class="section-label">Уверенность</p><div class="confidence-list">${items.map(item=>`<article><span class="confidence ${e(item.level.toLowerCase())}">${e(item.level)}</span><div><h3>${e(item.conclusion)}</h3><p>${e(item.reason)}</p></div></article>`).join("")}</div></section>`; }
 function renderActionPlan(data) { return `<section class="report-section action-plan"><p class="section-label">Практический итог</p><h2>План действий</h2><div class="action-columns"><article><h3>Делать чаще</h3>${ordered(data.doMore)}</article><article><h3>Избегать</h3>${ordered(data.avoid)}</article></div><div class="next-focus"><h3>Фокус на 12 месяцев</h3>${list(data.next12Months)}</div></section>`; }
 function renderSelfCheck(items) { return `<section class="report-section self-check"><p class="section-label">Проверьте на себе</p><h2>Насколько это про вас?</h2>${items.map((item,i)=>`<article><span>${String(i+1).padStart(2,"0")}</span><p>${e(item)}</p></article>`).join("")}</section>`; }
 
-function renderTechnical(chart, metadata) { const max = Math.max(...Object.values(chart.bazi.elements),1); return `<section class="technical shell" id="technical-chart"><details><summary><span>Техническая карта BaZi и Zi Wei</span><small>Для специалистов и проверки расчёта</small></summary><div class="technical-body">
-  <details class="method-details"><summary>Как учитывается место рождения</summary><p>Мы автоматически учитываем место рождения, исторический часовой пояс и положение города, чтобы корректно интерпретировать время рождения.</p>${metadata.calculationSensitivity === "HIGH" ? `<small>Время рождения находится близко к чувствительной границе расчёта.</small>` : ""}</details>
-  <h3>BaZi · четыре столпа</h3><div class="pillars-grid">${chart.bazi.pillars.map(p=>`<article><span>${e(p.label)}</span><strong>${e(p.gan)}${e(p.zhi)}</strong><small>${e(p.shiShen)}</small></article>`).join("")}</div>
-  <div class="technical-facts"><p><span>Дневной хозяин</span><b>${e(chart.bazi.dayMaster)}</b></p><p><span>Структура</span><b>${e(chart.bazi.structure)}</b></p><p><span>Сила</span><b>${e(chart.bazi.strength.verdict)}</b></p><p><span>Регулирующие</span><b>${e(chart.bazi.regulating.join(" · ") || "—")}</b></p></div>
-  <div class="elements-list">${Object.entries(chart.bazi.elements).map(([name,value])=>`<div><b>${e(name)}</b><i><span style="width:${Number(value)/max*100}%"></span></i><small>${e(value)}</small></div>`).join("")}</div>
-  <h3>Большие периоды BaZi</h3><div class="period-strip">${chart.bazi.majorPeriods.map(item=>`<article><b>${e(item.ganZhi)}</b><span>${e(item.range)}</span><small>${e(item.years)}</small></article>`).join("")}</div>
-  <h3>Zi Wei · двенадцать дворцов</h3><div class="technical-facts"><p><span>Лунная дата</span><b>${e(chart.ziwei.lunarDate)}</b></p><p><span>Дворец судьбы</span><b>${e(chart.ziwei.mingPalace)}</b></p><p><span>Дворец тела</span><b>${e(chart.ziwei.shenPalace)}</b></p><p><span>Пять элементов</span><b>${e(chart.ziwei.fiveElementBureau)}</b></p></div>
-  <div class="palaces-grid">${chart.ziwei.palaces.map(item=>`<article><header><b>${e(item.name)}</b><span>${e(item.ganZhi)}</span></header><p>${e(item.mainStars.join(" · ") || "Без главной звезды")}</p><small>${e(item.auxStars.join(" · ") || "—")}</small></article>`).join("")}</div>
-  </div></details></section>`; }
+function renderTechnical(chart, metadata) {
+  const max = Math.max(...chart.bazi.elementsDisplay.map(item => Number(item.value)), 1);
+  return `<section class="technical shell" id="technical-chart"><details><summary><span>Техническая карта Ба-цзы и Цзы Вэй</span><small>Подробные данные, на которых основан ваш персональный разбор</small></summary><div class="technical-body">
+    <details class="method-details"><summary>Как учитывается место рождения</summary><p>Вы вводите местное время рождения — то время, которое показывали часы в месте рождения. Система автоматически определяет исторический часовой пояс, учитывает действовавшее в тот момент летнее время и выполняет необходимую временную коррекцию для расчёта карты.</p><p>Вам не нужно самостоятельно определять UTC, часовой пояс или солнечное время.</p>${metadata.calculationSensitivity === "HIGH" ? `<small>Время рождения находится близко к чувствительной границе расчёта.</small>` : ""}</details>
+    <div class="technical-heading"><div><span>Ба-цзы</span><small>八字</small></div><h3>Четыре столпа</h3><p>Год, месяц, день и час образуют основу карты. Китайские знаки сохранены как исходные профессиональные обозначения.</p></div>
+    <div class="pillars-grid">${chart.bazi.pillars.map(p=>`<article><span>${e(p.label)}</span><strong>${e(p.gan)}${e(p.zhi)}</strong><b>${e(p.shiShenDisplay.name)}</b><small>${e(p.shiShenDisplay.original)}</small><em>${e(p.stemDisplay.name)} · ${e(p.branchDisplay.name)}</em></article>`).join("")}</div>
+    <div class="technical-facts explanatory"><p><span>Дневной хозяин</span><b>${e(chart.bazi.dayMaster)}</b><small>Центральный элемент дня рождения — точка отсчёта для чтения карты.</small></p><p><span>Структура карты</span><b>${e(chart.bazi.structureDisplay.name)}</b><small>${e(chart.bazi.structure)}</small></p><p><span>Сила и баланс</span><b>${e(chart.bazi.strength.display.name)}</b><small>Оценка: ${e(chart.bazi.strength.score)} · уверенность ${e(chart.bazi.strength.confidenceDisplay.name.toLowerCase())}</small></p><p><span>Регулирующие элементы</span><b>${chart.bazi.regulatingDisplay.map(item=>`${e(item.name)} <i>${e(item.original)}</i>`).join(" · ") || "—"}</b><small>Элементы, которые используются методологией для оценки баланса карты.</small></p></div>
+    <h4>Соотношение пяти элементов</h4><div class="elements-list">${chart.bazi.elementsDisplay.map(item=>`<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Number(item.value)/max*100}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div>
+    <h4>Большие жизненные периоды Ба-цзы</h4><p class="technical-note">Последовательные десятилетние этапы карты. Смысл текущего периода раскрывается выше в персональной интерпретации.</p><div class="period-strip">${chart.bazi.majorPeriods.map(item=>`<article><b>${e(item.ganZhi)}</b><span>${e(item.range)}</span><small>${e(item.years)}</small><em>${item.detailDisplay.map(value=>e(value.name)).join(" · ")}</em></article>`).join("")}</div>
+    <div class="technical-heading ziwei-heading"><div><span>Цзы Вэй Доу Шу</span><small>紫微斗数</small></div><h3>Двенадцать дворцов</h3><p>Каждый дворец обозначает отдельную жизненную сферу. Русское название показано первым, китайский оригинал — вторично.</p></div>
+    <div class="technical-facts"><p><span>Лунная дата</span><b>${e(chart.ziwei.lunarDate)}</b></p><p><span>Дворец судьбы</span><b>${e(chart.ziwei.mingPalace)}</b></p><p><span>Дворец тела</span><b>${e(chart.ziwei.shenPalace)}</b></p><p><span>Система пяти элементов</span><b>${e(chart.ziwei.fiveElementBureauDisplay.name)}</b><small>${e(chart.ziwei.fiveElementBureau)}</small></p></div>
+    <div class="palaces-grid">${chart.ziwei.palaces.map(item=>`<article class="${item.isCurrentPeriod ? "current-palace" : ""}"><header><div><b>${e(item.displayName.name)}</b><small>${e(item.name)}</small></div><span>${e(item.ganZhi)}</span></header><div class="main-stars">${item.mainStarsDisplay.length ? item.mainStarsDisplay.map(star=>`<p><b>${e(star.name)}</b><small>${e(star.original)}</small></p>`).join("") : `<p><b>Без главной звезды</b></p>`}</div><footer><span>Дополнительные звёзды</span><small>${e(item.auxStars.join(" · ") || "—")}</small></footer><em>${e(item.majorPeriod)} лет${item.isCurrentPeriod ? " · текущий период" : ""}</em></article>`).join("")}</div>
+  </div></details></section>`;
+}
 
 async function downloadPdf(button) {
   if (!currentInput) return;
@@ -147,11 +158,12 @@ async function downloadPdf(button) {
 }
 
 function bindResultActions() { document.querySelectorAll('[data-action="pdf"]').forEach(button=>button.onclick=()=>downloadPdf(button)); document.querySelectorAll('[data-action="technical"]').forEach(button=>button.onclick=()=>{const details=document.querySelector("#technical-chart details"); if(details){details.open=true;details.scrollIntoView({behavior:"smooth"});}}); }
+function updatePdfEntitlement(full, mode) { document.querySelectorAll('[data-action="pdf"]').forEach(button => { button.innerHTML = mode === "technical" ? "Скачать технический PDF <span>↓</span>" : full ? "Скачать полный отчёт PDF <span>↓</span>" : "Скачать доступную версию PDF <span>↓</span>"; }); }
 async function searchPlaces(query) { try { const response=await fetch(`/api/places?q=${encodeURIComponent(query)}`); const payload=await response.json(); if(placeInput.value.trim()===query) renderPlaceOptions(response.ok?payload.places:[]); } catch { renderPlaceOptions([]); } }
 function renderPlaceOptions(places) { placeOptions.innerHTML=places.map((place,index)=>`<button type="button" role="option" data-index="${index}"><strong>${e(place.city)}</strong><span>${e([place.region,place.country].filter(Boolean).join(", "))}</span></button>`).join(""); placeOptions.hidden=!places.length; placeInput.setAttribute("aria-expanded",String(Boolean(places.length))); placeOptions.querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{selectedPlace=places[index];placeInput.value=selectedPlace.label;renderPlaceOptions([]);showError("");})); }
 function showAmbiguity(options) { setLoading(false); ambiguityBox.innerHTML=`<p>В эту ночь указанное время наступало дважды. Выберите вариант:</p>${options.map(option=>`<button type="button" data-value="${e(option.value)}">${e(option.label)}</button>`).join("")}`; ambiguityBox.hidden=false; ambiguityBox.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>submitCalculation(button.dataset.value))); }
 function showError(message) { errorBox.textContent=message; errorBox.hidden=!message; }
-function setLoading(loading) { submitButton.disabled=loading; buttonLabel.textContent=loading?"Рассчитываем карту…":"Получить мой разбор"; }
+function setLoading(loading) { submitButton.disabled=loading; buttonLabel.textContent=loading?"Рассчитываем карту…":"Получить свой разбор"; }
 function paragraphs(value) { return String(value||"").split(/\n{2,}/).map(p=>`<p>${e(p)}</p>`).join(""); }
 function list(items) { return `<ul>${items.map(item=>`<li>${e(item)}</li>`).join("")}</ul>`; }
 function ordered(items) { return `<ol>${items.map(item=>`<li>${e(item)}</li>`).join("")}</ol>`; }

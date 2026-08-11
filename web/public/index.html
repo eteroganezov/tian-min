@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Персональный разбор характера, отношений, карьеры и жизненных периодов на основе BaZi и Zi Wei.">
-  <title>Тянь Мин — ваш персональный жизненный разбор</title>
+  <meta name="description" content="Персональная карта личности и жизненного пути на основе Ба-цзы и Цзы Вэй Доу Шу.">
+  <title>Тянь Мин — персональная карта личности и жизненного пути</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
@@ -12,20 +12,22 @@
   <main>
     <section class="hero" id="top">
       <nav class="nav shell" aria-label="Основная навигация">
-        <a class="brand" href="#top"><span class="brand-mark">命</span><span>ТЯНЬ МИН</span></a>
-        <span class="nav-note">Персональный разбор</span>
+        <a class="brand" href="#top"><span class="brand-mark">命</span><span><b>ТЯНЬ МИН</b><small>天命</small></span></a>
+        <span class="nav-note">Персональная карта личности и жизненного пути</span>
       </nav>
       <div class="hero-layout shell">
         <div class="hero-copy">
           <p class="eyebrow">Две традиции · один цельный портрет</p>
           <h1>Понять себя.<br><em>Увидеть свой ритм.</em></h1>
-          <p class="hero-intro">Глубокий персональный разбор характера, сильных сторон, карьеры, денег, отношений и жизненных периодов на основе BaZi и Zi Wei.</p>
+          <p class="hero-intro">Персональный разбор характера, сильных сторон, отношений, карьеры и жизненных периодов на основе Ба-цзы (八字) и Цзы Вэй Доу Шу (紫微斗数).</p>
+          <p class="brand-explainer">Тянь Мин (天命) — традиционное китайское понятие, связанное с судьбой и жизненным предназначением.</p>
           <div class="benefits" aria-label="Что входит в отчёт">
             <span>Характер</span><span>Карьера</span><span>Отношения</span><span>Периоды</span><span>PDF</span>
           </div>
         </div>
         <form class="birth-form" id="birth-form" novalidate>
           <div class="form-heading"><span>Ваши данные</span><h2>Начать персональный разбор</h2><p>Понадобится меньше минуты</p></div>
+          <label class="field"><span>Имя <small>необязательно</small></span><input id="display-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="Например, Эдуард"></label>
           <div class="form-row">
             <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31"></label>
             <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time"></label>
@@ -41,7 +43,7 @@
           </div></fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
           <div class="ambiguity-box" id="ambiguity-box" hidden></div>
-          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Получить мой разбор</span><span aria-hidden="true">↗</span></button>
+          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Получить свой разбор</span><span aria-hidden="true">↗</span></button>
           <p class="privacy-note">Расчёт выполняется конфиденциально. Мы автоматически учитываем место рождения и исторические правила времени.</p>
         </form>
       </div>

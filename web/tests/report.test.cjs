@@ -9,12 +9,37 @@ const moscow = locationProvider.search("Москва")[0];
 const input = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
 
 test("структурированный персональный отчёт проходит строгую схему", async () => {
-  const result = await generateReportRequest(input, { env: { AI_MODE: "mock" } });
+  const result = await generateReportRequest({ ...input, name: "  Эдуард  " }, { env: { AI_MODE: "mock" }, reportYears: [2026, 2027, 2028] });
   assert.equal(result.status, 200);
   assert.equal(result.body.aiStatus, "ready");
   assert.equal(validatePersonalReport(result.body.report).valid, true);
   assert.equal(result.body.report.keyTraits.length, 5);
   assert.equal(result.body.report.lifeAreaMatrix.length, 8);
+  assert.equal(result.body.presentation.displayName, "Эдуард");
+  assert.match(result.body.report.executiveSummary, /^Эдуард,/);
+  assert.match(result.body.reportId, /^tmr_[a-f0-9]{24}$/);
+  assert.match(result.body.chartId, /^tmc_[a-f0-9]{24}$/);
+});
+
+test("стабильный report ID повторяется для одинакового контекста", async () => {
+  const options = { env: { AI_MODE: "mock" }, reportYears: [2026, 2027, 2028] };
+  const first = await generateReportRequest({ ...input, name: "Эдуард" }, options);
+  const second = await generateReportRequest({ ...input, name: "Эдуард" }, options);
+  const renamed = await generateReportRequest({ ...input, name: "Edward" }, options);
+  assert.equal(first.body.reportId, second.body.reportId);
+  assert.equal(first.body.chartId, renamed.body.chartId);
+  assert.notEqual(first.body.reportId, renamed.body.reportId);
+});
+
+test("имя передаётся отдельно от неизменяемых расчётных данных", async () => {
+  const provider = { model: "test", async generate(context) {
+    assert.equal(context.presentation.displayName, "Эдуард");
+    assert.equal(Object.prototype.hasOwnProperty.call(context.calculationData, "displayName"), false);
+    assert.equal(Object.isFrozen(context.presentation), true);
+    return createMockReport(context);
+  } };
+  const result = await generateReportRequest({ ...input, name: "Эдуард" }, { provider, reportYears: [2026, 2027, 2028] });
+  assert.equal(result.status, 200);
 });
 
 test("без API-ключа технический расчёт остаётся доступен, а AI имеет честный статус", async () => {
@@ -79,4 +104,3 @@ test("бесплатный режим не отправляет закрытые
   assert.equal(result.body.report.career, undefined);
   assert.equal(result.internal.report.career.length > 100, true);
 });
-
