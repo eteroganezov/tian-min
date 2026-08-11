@@ -5,6 +5,9 @@ const { createMockReport } = require("../lib/mock-report.cjs");
 const { validatePersonalReport } = require("../lib/report-schema.cjs");
 const { generateReportRequest } = require("../lib/report-service.cjs");
 const { OpenAIReportProvider } = require("../lib/report-provider.cjs");
+const { buildEvidenceCatalog, localizeReportText, sanitizePersonalReport } = require("../lib/report-content.cjs");
+const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
+const { toChartView } = require("../lib/chart-view.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
@@ -31,7 +34,9 @@ test("структурированный персональный отчёт п�
   assert.equal(result.body.report.keyTraits.length, 5);
   assert.equal(result.body.report.lifeAreaMatrix.length, 8);
   assert.equal(result.body.presentation.displayName, "Эдуард");
-  assert.match(result.body.report.executiveSummary, /^Эдуард,/);
+  assert.match(result.body.report.executivePortrait.summary, /^Эдуард,/);
+  assert.equal(result.body.report.executivePortrait.keyFeatures.length, 3);
+  assert.deepEqual(Object.keys(result.body.report.career), ["title", "headline", "summary", "keyPoints", "strengths", "risks", "actions", "evidence", "confidenceNote"]);
   assert.match(result.body.reportId, /^tmr_[a-f0-9]{24}$/);
   assert.match(result.body.chartId, /^tmc_[a-f0-9]{24}$/);
 });
@@ -157,5 +162,33 @@ test("бесплатный режим не отправляет закрытые
   assert.equal(result.body.report.strengths.length, 3);
   assert.equal(result.body.report.challenges.length, 1);
   assert.equal(result.body.report.career, undefined);
-  assert.equal(result.internal.report.career.length > 100, true);
+  assert.equal(result.internal.report.career.summary.length > 100, true);
+});
+
+test("центральная локализация не выпускает английские названия систем", () => {
+  assert.equal(localizeReportText("BaZi + Zi Wei Dou Shu, Bazi и ZiWei"), "Ба-цзы + Цзы Вэй Доу Шу, Ба-цзы и Цзы Вэй");
+});
+
+test("очистка удаляет пустые основания и локализует остальной отчёт", () => {
+  const periods = Array.from({ length: 5 }, (_, index) => ({ range: `${index * 10 + 1}–${index * 10 + 10} лет`, ganZhi: "甲子", years: `${2020 + index * 10}–${2029 + index * 10}` }));
+  const report = createMockReport({ chartView: { bazi: { dayMaster: "丁", structure: "正官格", majorPeriods: periods }, ziwei: { mingPalace: "子" } }, sensitivity: { level: "LOW" }, evidenceCatalog: { bazi: [], ziwei: [] } });
+  report.career.evidence = ["BaZi: столкновение -.", "undefined", "Zi Wei: дворец судьбы 子."];
+  const cleaned = sanitizePersonalReport(report);
+  assert.deepEqual(cleaned.career.evidence, ["Цзы Вэй: дворец судьбы 子."]);
+  assert.equal(validatePersonalReport(cleaned).valid, true);
+  const userText = [];
+  JSON.stringify(cleaned, (_key, value) => { if (typeof value === "string") userText.push(value); return value; });
+  assert.doesNotMatch(userText.join("\n"), /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
+});
+
+test("регрессия Эдуарда: реальные связи становятся полными основаниями без прочерков", () => {
+  const reference = { date: "1995-09-03", time: "05:50", gender: "male", placeId: moscow.id };
+  const calculation = calculateBirthChart(reference);
+  const catalog = buildEvidenceCatalog(calculation, toChartView(calculation.chart));
+  const text = catalog.bazi.join("\n");
+  assert.match(text, /соединение небесных стволов Дин \(丁\) и Жэнь \(壬\)/);
+  assert.match(text, /столкновение земных ветвей Шэнь \(申\) и Инь \(寅\)/);
+  assert.match(text, /сочетание земных ветвей Хай \(亥\) и Инь \(寅\)/);
+  assert.match(text, /вред земных ветвей Хай \(亥\) и Шэнь \(申\)/);
+  assert.doesNotMatch(text, /(?:^|\s)[-–—](?:[\s.,;]|$)|undefined|null|NaN/);
 });

@@ -68,28 +68,54 @@ function cover(doc, chart, metadata, presentation, report) {
 }
 
 function fullReport(doc, report) {
-  section(doc, "Краткий портрет", report.executiveSummary);
-  section(doc, "Личность и внутренний мотив", report.personality);
+  executivePortrait(doc, report.executivePortrait);
+  editorialSection(doc, report.personality);
+  splitSection(doc, "Внешнее и внутреннее", [
+    ["Как видят", report.externalVsInternal.external], ["Что внутри", report.externalVsInternal.internal], ["Синтез", report.externalVsInternal.synthesis],
+    ["Реакция на стресс", report.stressPattern.reaction], ["Риск", report.stressPattern.mistakes], ["Восстановление", report.stressPattern.recovery],
+  ]);
   cards(doc, "5 главных черт", report.keyTraits, item => `${item.title}\n${item.explanation}\n\nВ ресурсе: ${item.positive}\nРиск: ${item.shadow}\nОснования: ${item.evidence.join("; ")}`, { continuePage: true });
   cards(doc, "Сильные стороны", report.strengths, item => `${item.title}\n${item.essence}\n\nКак проявляется: ${item.manifestation}\nГде полезно: ${item.usefulWhere}\nПрактика: ${item.practicalUse}`, { continuePage: true });
-  cards(doc, "Риски и слабые места", report.challenges, item => `${item.pattern}\nКогда: ${item.trigger}\nВозможное следствие: ${item.consequence}\nЧто помогает: ${item.compensation}`, { continuePage: true });
-  section(doc, "Карьера и профессиональный рост", report.career);
-  section(doc, "Деньги и финансовое поведение", report.money);
-  section(doc, "Отношения и близость", report.relationships);
+  cards(doc, "Риски и слабые места", report.challenges, item => `${item.pattern}\nКогда: ${item.trigger}\nВозможное следствие: ${item.consequence}\nЧто помогает: ${item.compensation}`);
+  editorialSection(doc, report.career);
+  editorialSection(doc, report.money);
+  editorialSection(doc, report.relationships);
   splitSection(doc, "Текущий большой период", Object.entries(report.currentPeriod).map(([key, value]) => [labelFor(key), value]));
   cards(doc, "Ближайшие 3 года", report.yearlyOutlook, item => `${item.year} - ${item.theme}\nВозможности: ${item.opportunities}\nРиски: ${item.risks}\nФокус: ${item.focus}\nНе форсировать: ${item.avoid}`);
   splitSection(doc, "План действий", [
     ["Делать чаще", report.actionPlan.doMore.join("\n• ")], ["Избегать", report.actionPlan.avoid.join("\n• ")],
     ["Фокус на 12 месяцев", report.actionPlan.next12Months.join("\n• ")], ["Вопросы себе", report.actionPlan.questions.join("\n• ")],
   ]);
-  section(doc, "Итог", report.finalSummary);
+  section(doc, report.finalSummary.headline, `${report.finalSummary.summary}\n\nПриоритеты:\n• ${report.finalSummary.priorities.join("\n• ")}`);
 }
 
 function previewReport(doc, report) {
-  section(doc, "Короткий портрет", report.executiveSummary);
+  executivePortrait(doc, report.executivePortrait);
   cards(doc, "Три сильные стороны", report.strengths.slice(0, 3), item => `${item.title}\n${item.essence}`);
   cards(doc, "Главная зона внимания", report.challenges.slice(0, 1), item => `${item.pattern}\n${item.compensation}`);
   section(doc, "Полная версия", "Расширенные разделы отчёта не входят в текущий доступ. Подробная карта приведена ниже.");
+}
+
+function executivePortrait(doc, data) {
+  page(doc, "Главное за минуту", "Компактный портрет: особенности, ресурс, риск и тема текущего периода.");
+  bodyText(doc, data.summary);
+  doc.moveDown(1);
+  cards(doc, "Три ключевые особенности", data.keyFeatures, (item, index) => `${index + 1}. ${item}`, { continuePage: true });
+  splitSectionContent(doc, [["Главный ресурс", data.mainResource], ["Главный риск", data.mainRisk], ["Тема периода", data.currentTheme]]);
+}
+
+function editorialSection(doc, data) {
+  page(doc, data.headline, data.title);
+  bodyText(doc, data.summary);
+  doc.moveDown(1);
+  splitSectionContent(doc, [
+    ["Ключевые мысли", data.keyPoints.join("\n• ")],
+    ["Сильные стороны", data.strengths.join("\n• ")],
+    ["Риски", data.risks.join("\n• ")],
+    ["Практические действия", data.actions.join("\n• ")],
+    ...(data.evidence.length ? [["Основания в карте", data.evidence.join("\n• ")]] : []),
+    ["Уверенность", data.confidenceNote],
+  ]);
 }
 
 function unavailablePage(doc) { section(doc, "Персональный разбор ещё не создан", "Карта уже рассчитана. Ниже приведены четыре столпа Ба-цзы, баланс пяти элементов, жизненные периоды и двенадцать дворцов Цзы Вэй Доу Шу."); }
@@ -184,8 +210,12 @@ function page(doc, title, intro) {
   doc.addPage();
   doc.fillColor(colors.gold).font(doc._tianMingBrandFont).fontSize(9).text("ТЯНЬ МИН · 天命", 52, 48, { characterSpacing: 1.1 });
   doc.fillColor(colors.ink).font("Bold").fontSize(27).text(clean(title), 52, 88, { width: 490 });
-  if (intro) doc.fillColor(colors.muted).font("Body").fontSize(10).text(clean(intro), 52, 135, { width: 490, lineGap: 4 });
-  doc.y = intro ? 188 : 145;
+  const titleBottom = doc.y;
+  if (intro) {
+    const introY = Math.max(148, titleBottom + 14);
+    doc.fillColor(colors.muted).font("Body").fontSize(10).text(clean(intro), 52, introY, { width: 490, lineGap: 4 });
+    doc.y = Math.max(188, doc.y + 22);
+  } else doc.y = Math.max(145, titleBottom + 24);
 }
 
 function section(doc, title, text) { page(doc, title); bodyText(doc, text); }
@@ -194,8 +224,9 @@ function cards(doc, title, items, formatter, { continuePage = false } = {}) {
   if (continuePage) subheading(doc, title); else page(doc, title);
   items.forEach((item, index) => {
     const text = cleanNarrative(formatter(item, index));
+    doc.font("Body").fontSize(9.5);
     const height = doc.heightOfString(text, { width: 459, lineGap: 2 }) + 22;
-    ensure(doc, height + 10);
+    if (doc.y + height + 10 > 770) page(doc, `${title} - продолжение`);
     const y = doc.y;
     doc.roundedRect(52, y, 491, height, 8).fill(index % 2 ? colors.sand : colors.sage);
     doc.fillColor(colors.ink).font("Body").fontSize(9.5).text(text, 68, y + 11, { width: 459, lineGap: 2 });
@@ -205,8 +236,13 @@ function cards(doc, title, items, formatter, { continuePage = false } = {}) {
 
 function splitSection(doc, title, entries) {
   page(doc, title);
+  splitSectionContent(doc, entries);
+}
+
+function splitSectionContent(doc, entries) {
   entries.forEach(([label, value]) => {
     const narrativeValue = cleanNarrative(value);
+    doc.font("Body").fontSize(10);
     const height = doc.heightOfString(narrativeValue, { width: 350, lineGap: 3 });
     ensure(doc, Math.max(54, height + 20));
     const y = doc.y;
@@ -239,8 +275,8 @@ function ensure(doc, height) { if (doc.y + height > 770) { doc.addPage(); doc.y 
 function cleanNarrative(value) {
   return clean(value)
     .replace(/[\u3400-\u9FFF]+/g, "")
-    .replace(/[ \t]+([;,:])/g, "$1")
     .replace(/\(\s*\)/g, "")
+    .replace(/[ \t]+([;,:.])/g, "$1")
     .replace(/[ \t]{2,}/g, " ");
 }
 

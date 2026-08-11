@@ -5,9 +5,11 @@ const { validatePersonalReport } = require("./report-schema.cjs");
 const { canonicalBirthInput, normalizeDisplayName } = require("./personalization.cjs");
 const { createFingerprints, INTERPRETATION_PROMPT_VERSION, REPORT_SCHEMA_VERSION } = require("./report-fingerprint.cjs");
 const { locationProvider } = require("./location-provider.cjs");
+const { buildEvidenceCatalog, sanitizePersonalReport } = require("./report-content.cjs");
 
 function buildReportContext(calculation, presentation = {}, options = {}) {
   const reportYears = options.reportYears || currentReportYears();
+  const chartView = structuredClone(toChartView(calculation.chart));
   const context = {
     presentation: { displayName: presentation.displayName || "", birthPlace: presentation.birthPlace || null },
     interpretation: {
@@ -24,7 +26,8 @@ function buildReportContext(calculation, presentation = {}, options = {}) {
       trueSolarDate: calculation.metadata.trueSolarDate,
       trueSolarTime: calculation.metadata.trueSolarTime,
     },
-    chartView: structuredClone(toChartView(calculation.chart)),
+    chartView,
+    evidenceCatalog: buildEvidenceCatalog(calculation, chartView),
     calculationData: structuredClone({
       bazi: calculation.chart.bazi,
       ziwei: calculation.chart.ziwei,
@@ -50,7 +53,7 @@ function createPreview(report) {
     archetype: report.archetype,
     subtitle: report.subtitle,
     oneLineFormula: report.oneLineFormula,
-    executiveSummary: report.executiveSummary.slice(0, 1100),
+    executivePortrait: report.executivePortrait,
     strengths: report.strengths.slice(0, 3),
     challenges: report.challenges.slice(0, 1),
   };
@@ -75,7 +78,7 @@ async function generateReportRequest(input, options = {}) {
   let validation;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      report = await provider.generate(context, attempt ? validation.errors.slice(0, 4).join("; ") : undefined);
+      report = sanitizePersonalReport(await provider.generate(context, attempt ? validation.errors.slice(0, 4).join("; ") : undefined));
     } catch (error) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
         return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints } };

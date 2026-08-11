@@ -73,10 +73,13 @@ test("production build содержит форму и необходимые п�
   assert.match(html, /Введите имя/);
   assert.doesNotMatch(html, /placeholder="Эдуард"/);
   assert.match(script, /Скачать полный отчёт/);
+  assert.match(script, /Отчёт готовится…/);
+  assert.match(script, /disabled aria-disabled="true"/);
   assert.match(script, /Посмотреть карту/);
   assert.match(script, /Карта Ба-цзы и Цзы Вэй/);
   assert.match(script, /Подробные данные, на которых основан персональный разбор/);
   assert.doesNotMatch(script, /Скачать технический PDF|Техническая карта|Скачать отчёт с картой/);
   assert.match(script, /technical-chart/);
   assert.match(script, /Как учитывается место рождения/);
+  assert.doesNotMatch(html, /Понадобится меньше минуты/);
 });

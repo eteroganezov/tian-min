@@ -14,21 +14,32 @@ const transition = object({ age: string, period: string, theme: string, change: 
 const scenario = object({ type: { type: "string", enum: ["Консервативный", "Рост", "Перегруз"] }, title: string, description: string, decisions: string });
 const matrixRow = object({ area: string, bazi: string, ziwei: string, alignment: { type: "string", enum: ["Согласие", "Дополнение", "Расхождение"] }, synthesis: string });
 const confidence = object({ conclusion: string, level: { type: "string", enum: confidenceLevels }, reason: string });
+const editorialSection = object({
+  title: string,
+  headline: string,
+  summary: string,
+  keyPoints: strings(3, 5),
+  strengths: strings(1, 4),
+  risks: strings(1, 3),
+  actions: strings(2, 4),
+  evidence: strings(0, 6),
+  confidenceNote: string,
+});
 
 const REPORT_JSON_SCHEMA = object({
   archetype: string,
   subtitle: string,
   oneLineFormula: string,
-  executiveSummary: string,
-  personality: string,
+  executivePortrait: object({ summary: string, keyFeatures: strings(3, 3), mainResource: string, mainRisk: string, currentTheme: string }),
+  personality: editorialSection,
   keyTraits: array(keyTrait, 5, 5),
   strengths: array(strength, 5, 7),
   challenges: array(challenge, 5, 7),
   externalVsInternal: object({ external: string, internal: string, synthesis: string }),
   stressPattern: object({ reaction: string, mistakes: string, decisions: string, recovery: string, avoid: string }),
-  career: string,
-  money: string,
-  relationships: string,
+  career: editorialSection,
+  money: editorialSection,
+  relationships: editorialSection,
   environment: object({ supports: string, drains: string, allies: string, toxicPatterns: string, communication: string }),
   leadership: object({ style: string, control: string, authority: string, conflict: string, negotiation: string, mistakes: string }),
   lifestyle: object({ rhythm: string, intensity: string, stabilityVsChange: string, rest: string, overload: string, recovery: string, environment: string }),
@@ -41,7 +52,7 @@ const REPORT_JSON_SCHEMA = object({
   confidence: array(confidence, 3, 12),
   actionPlan: object({ doMore: strings(5, 5), avoid: strings(5, 5), next12Months: strings(3, 3), questions: strings(3, 3) }),
   selfCheck: strings(5, 7),
-  finalSummary: string,
+  finalSummary: object({ headline: string, summary: string, priorities: strings(3, 5) }),
 });
 
 function validatePersonalReport(report) {
@@ -54,6 +65,8 @@ function validateNode(schema, value, path, errors) {
   if (schema.type === "string") {
     if (typeof value !== "string" || !value.trim()) errors.push(`${path}: ожидается непустой текст`);
     else if (schema.enum && !schema.enum.includes(value)) errors.push(`${path}: недопустимое значение`);
+    else if (hasBrokenPlaceholder(value)) errors.push(`${path}: обнаружен незаполненный шаблон`);
+    else if (hasEnglishSystemTerm(value)) errors.push(`${path}: название системы должно быть по-русски`);
     return;
   }
   if (schema.type === "integer") {
@@ -74,4 +87,15 @@ function validateNode(schema, value, path, errors) {
   }
 }
 
-module.exports = { REPORT_JSON_SCHEMA, validatePersonalReport };
+function hasEnglishSystemTerm(value) {
+  return /\b(?:BaZi|Bazi|Zi\s*Wei(?:\s*Dou\s*Shu)?|ZiWei)\b/i.test(String(value));
+}
+
+function hasBrokenPlaceholder(value) {
+  const text = String(value).trim();
+  return /^(?:-|–|—|undefined|null|nan)$/i.test(text)
+    || /(?:столкновени\p{L}*|сочетани\p{L}*|соединени\p{L}*|вред\p{L}*)\s*[-–—](?=[\s.,;]|$)/iu.test(text)
+    || /\b(?:undefined|null|nan)\b/i.test(text);
+}
+
+module.exports = { REPORT_JSON_SCHEMA, hasBrokenPlaceholder, hasEnglishSystemTerm, validatePersonalReport };

@@ -9,7 +9,7 @@ const { canonicalBirthInput } = require("../lib/personalization.cjs");
 
 async function main() {
   const moscow = locationProvider.search("Москва")[0];
-  const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+  const input = { name: "Эдуард", date: "1995-09-03", time: "05:50", gender: "male", placeId: moscow.id };
   const calculation = calculateBirthChart(canonicalBirthInput(input));
   const report = createMockReport(buildReportContext(calculation, { displayName: input.name }, { model: "mock-v1" }));
   const result = await createPdfRequest({ ...input, report }, { hasFullReport: true });

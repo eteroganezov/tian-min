@@ -21,8 +21,8 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /ТЯНЬ МИН/);
   assert.match(parsed.text, /Эдуард/);
   assert.match(parsed.text, /Персональная карта личности и жизненного пути/i);
-  assert.match(parsed.text, /Личность и внутренний мотив/);
-  assert.match(parsed.text, /Карьера и профессиональный рост/);
+  assert.match(parsed.text, /Внутренний портрет/);
+  assert.match(parsed.text, /Роль, где можно влиять на качество/);
   assert.match(parsed.text, /Ба-цзы: основа карты/);
   assert.match(parsed.text, /Цзы Вэй: двенадцать дворцов/);
   assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
@@ -30,7 +30,8 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Цзы Вэй[\s\S]*紫微/);
   assert.match(parsed.text, /Москва, Россия/);
   assert.match(parsed.text, /Время рождения учтено с поправкой/);
-  assert.equal(parsed.numpages >= 15 && parsed.numpages <= 25, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 14 && parsed.numpages <= 20, true, `Получилось ${parsed.numpages} страниц`);
+  assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|Техническое приложение|AI-интерпретация/);
 });
 
@@ -69,6 +70,21 @@ test("PDF-инфографика использует реальные стол�
   for (const period of chart.bazi.dayun.slice(0, 6)) assert.match(parsed.text, new RegExp(period.ganZhi));
   assert.match(parsed.text, /Дворец судьбы и личности/);
   assert.match(parsed.text, /Четыре трансформации/);
+});
+
+test("PDF-рендерер принимает короткие и длинные смысловые блоки без потери финала", async () => {
+  const calculation = calculateBirthChart(input);
+  const shortReport = createMockReport(buildReportContext(calculation, { displayName: input.name }, { model: "mock-v1" }));
+  shortReport.career.summary = "Короткий вывод.";
+  const shortPdf = await createPdfRequest({ ...input, report: shortReport }, { hasFullReport: true });
+  assert.equal(shortPdf.status, 200);
+  const longReport = structuredClone(shortReport);
+  longReport.relationships.summary = Array(35).fill("Развёрнутый абзац проверяет перенос текста и сохранение читаемой структуры страницы.").join(" ");
+  const longPdf = await createPdfRequest({ ...input, report: longReport }, { hasFullReport: true });
+  assert.equal(longPdf.status, 200);
+  const parsed = await pdfParse(longPdf.buffer);
+  assert.match(parsed.text, /Важное пояснение/);
+  assert.match(parsed.text, /Раньше проговаривать ожидания/);
 });
 
 test("имя PDF безопасно для macOS, Windows и не допускает путь к чужому файлу", () => {
