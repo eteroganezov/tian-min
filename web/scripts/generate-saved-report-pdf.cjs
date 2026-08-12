@@ -8,8 +8,8 @@ async function main() {
   if (!saved) throw new Error("Сохранённый отчёт не найден. Сначала создайте или импортируйте его локально.");
   const result = await createPdfFromSavedReport(saved);
   if (result.status !== 200) throw new Error(result.error);
-  const outputName = process.argv[3] || "sample-personal-report-v5.1.pdf";
-  if (!/^sample-personal-report-v\d+(?:\.\d+)?\.pdf$/.test(outputName)) throw new Error("Некорректное имя preview PDF.");
+  const outputName = process.argv[3] || "sample-personal-report-v5.2-FINAL.pdf";
+  if (!/^sample-personal-report-v\d+(?:\.\d+)?(?:-FINAL)?\.pdf$/.test(outputName)) throw new Error("Некорректное имя preview PDF.");
   const output = path.resolve(__dirname, "..", "..", "output", "pdf", outputName);
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, result.buffer);
