@@ -50,10 +50,11 @@ test("mobile landing переносит одну форму после объя�
   const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
   const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
   assert.equal((html.match(/id="birth-form"/g) || []).length, 1);
-  assert.match(html, /id="free-benefits-title">Что вы получите после расчёта/);
+  assert.doesNotMatch(html, /class="mobile-free-benefits"/);
+  assert.match(html, /id="learn-title">Что вы узнаете/);
   assert.match(html, /id="mobile-form-slot"/);
-  assert.ok(html.indexOf('id="how-it-works"') < html.indexOf('id="free-benefits-title"'));
-  assert.ok(html.indexOf('id="free-benefits-title"') < html.indexOf('id="mobile-form-slot"'));
+  assert.ok(html.indexOf('id="how-it-works"') < html.indexOf('id="what-you-learn"'));
+  assert.ok(html.indexOf('id="what-you-learn"') < html.indexOf('id="mobile-form-slot"'));
   assert.match(script, /mobileFormMedia\.matches \? mobileFormSlot : heroLayout/);
   assert.match(styles, /--site-header-height:76px;--anchor-gap:18px/);
   assert.match(styles, /main \[id\],\.checkout-panel\{scroll-margin-top:calc\(var\(--site-header-height\)/);
@@ -68,11 +69,14 @@ test("mobile landing переносит одну форму после объя�
 });
 
 test("final mobile rhythm сохраняет viewport sticky и editorial-композицию", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
   const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
   assert.match(styles, /html\{overflow-x:hidden\}body\{overflow-x:visible\}\s*@supports\(overflow:clip\)\{html,body\{overflow-x:clip\}\}/);
   assert.match(styles, /\.traditions article header b\{display:none\}/);
   assert.match(styles, /\.traditions h3\{order:1;[^}]*font-size:25px\}/);
-  assert.match(styles, /\.free-benefits-grid span:last-child\{grid-column:1\/-1;width:calc\(50% - 4px\);justify-self:center\}/);
+  assert.equal((html.match(/<article><b>0[1-8] \/ 08<\/b>/g) || []).length, 8);
+  assert.match(styles, /\.learn-grid\{display:flex;[^}]*overflow-x:auto;[^}]*scroll-snap-type:x mandatory/);
+  assert.match(styles, /\.learn-grid article\{display:flex;flex:0 0 calc\(100% - 52px\);[^}]*scroll-snap-align:start/);
   assert.match(styles, /\.preview-heading\{gap:12px;align-items:start\}/);
   assert.match(styles, /\.pillars-grid\{margin-top:28px\}/);
 });

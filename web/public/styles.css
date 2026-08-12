@@ -100,3 +100,22 @@ html{overflow-x:hidden}body{overflow-x:visible}
 @media(max-width:390px){
   .free-benefits-grid span{min-height:56px;font-size:13px}
 }
+
+/* Final WEB v1 selling story: desktop editorial grid, native mobile swipe. */
+.learn-grid article>b{color:#d9b77b;font-size:10px;letter-spacing:.12em}
+.learn-grid article>b+h3{margin-top:24px}
+@media(max-width:620px){
+  .explainer{padding:58px 0 42px}
+  .learn{display:block;padding:54px 0 58px}
+  .learn .section-heading>span{max-width:520px;margin-top:13px;line-height:1.65}
+  .learn-grid{display:flex;width:calc(100% + 14px);margin-top:30px;padding:1px 14px 1px 0;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-padding-left:0;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;background:transparent}
+  .learn-grid::-webkit-scrollbar{display:none}
+  .learn-grid article{display:flex;flex:0 0 calc(100% - 52px);flex-direction:column;min-width:0;min-height:300px;padding:28px 24px;border:1px solid rgba(255,255,255,.14)!important;background:rgba(255,255,255,.025);scroll-snap-align:start;scroll-snap-stop:always}
+  .learn-grid article>b{font-size:9px}
+  .learn-grid article>b+h3{margin:24px 0 15px;font-size:22px;line-height:1.22}
+  .learn-grid article>p{font-size:12px;line-height:1.7}
+}
+@media(max-width:390px){
+  .learn-grid{width:calc(100% + 12px);padding-right:12px}
+  .learn-grid article{padding-inline:22px}
+}
