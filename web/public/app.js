@@ -86,15 +86,16 @@ function renderFreePreview(data) {
 
       <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
+        <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны основные ориентиры карты: Дворец судьбы, Дворец тела, текущий возрастной дворец и ключевые звёздные акценты.</p></div>
         <div class="ziwei-facts">
           <article><span>Лунная дата</span><b>${e(data.ziwei.lunarDate)}</b></article>
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
-          <article><span>Дворец тела</span><b>${e(data.ziwei.shenPalace.displayName?.name || data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
+          <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
           <article class="current-palace"><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></article>
         </div>
-        <div class="transformations"><span>Четыре трансформации</span><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
-        <details class="technical-chart"><summary><span><b class="disclosure-open">Открыть 12 дворцов и звёзды</b><b class="disclosure-close">Скрыть 12 дворцов и звёзды</b><small>Подробные рассчитанные данные карты</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+        <div class="transformations"><header><span>Четыре трансформации</span><p>Четыре трансформации показывают, какие звёзды получают в карте дополнительные акценты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+        <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Все жизненные сферы и рассчитанные звёзды</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
       </section>
     </div>
 
@@ -174,6 +175,10 @@ function showError(message) {
 function formatDate(value) {
   const [year, month, day] = String(value).split("-");
   return day && month && year ? `${day}.${month}.${year}` : value;
+}
+
+function lowerFirst(value) {
+  return value ? value[0].toLowerCase() + value.slice(1) : value;
 }
 
 function e(value) {

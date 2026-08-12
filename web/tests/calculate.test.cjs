@@ -82,8 +82,14 @@ test("production build содержит бесплатную воронку и �
   assert.match(script, /Текущий большой период/);
   assert.match(script, /Получить полный персональный разбор/);
   assert.match(script, /Полный разбор скоро будет доступен/);
-  assert.match(script, /Открыть 12 дворцов и звёзды/);
+  assert.match(script, /Посмотреть полную карту 12 дворцов/);
+  assert.match(script, /Скрыть полную карту 12 дворцов/);
+  assert.match(script, /Все жизненные сферы и рассчитанные звёзды/);
+  assert.match(script, /Ключевые параметры карты Цзы Вэй/);
+  assert.match(script, /Четыре трансформации показывают/);
+  assert.match(script, /Находится во дворце/);
   assert.doesNotMatch(script, /◇|Посмотреть подробные данные карты/);
+  assert.doesNotMatch(html, /<article><b>0[1-8]<\/b><h3>/);
   assert.doesNotMatch(script, /\/api\/report|\/api\/pdf|loadPersonalReport/);
   assert.equal((html.match(/Две традиции — один цельный портрет/g) || []).length, 2);
   assert.doesNotMatch(html, /Две системы[.,—]/);
