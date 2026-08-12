@@ -61,6 +61,7 @@ test("ошибка пользователя не содержит stack trace", 
 test("production build содержит бесплатную воронку и нормализованную терминологию", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "dist", "index.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "..", "dist", "app.js"), "utf8");
+  const styles = fs.readFileSync(path.resolve(__dirname, "..", "dist", "styles.css"), "utf8");
   assert.match(html, /Рассчитать мою карту/);
   assert.match(html, /Базовая карта — без оплаты/);
   assert.match(html, /Полный персональный разбор доступен отдельно/);
@@ -95,4 +96,7 @@ test("production build содержит бесплатную воронку и �
   assert.equal((html.match(/Две традиции — один цельный портрет/g) || []).length, 2);
   assert.doesNotMatch(html, /Две системы[.,—]/);
   assert.doesNotMatch(html, /Понадобится меньше минуты/);
+  assert.match(styles, /\.section-signature\{padding-top:0;border-top:0\}/);
+  assert.match(styles, /\.transformations>div>p\{border-radius:8px\}/);
+  assert.match(styles, /\.locked-grid article\{border:[^}]+border-radius:10px\}/);
 });
