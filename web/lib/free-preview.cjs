@@ -1,5 +1,6 @@
 const { calculateRequest } = require("./calculate.cjs");
 const { formatDisplayNumber, splitLunarDateDisplay } = require("./display-format.cjs");
+const { branchDisplay, stemDisplay, strengthDisplay } = require("./astrology-localization.cjs");
 
 function createFreePreviewRequest(input, options = {}) {
   const calculate = options.calculate || calculateRequest;
@@ -12,6 +13,11 @@ function createFreePreviewRequest(input, options = {}) {
   const currentZiweiPalace = chart.ziwei.palaces.find(palace => palace.isCurrentPeriod) || null;
   const mingPalace = chart.ziwei.palaces.find(palace => palace.isMing) || null;
   const shenPalace = chart.ziwei.palaces.find(palace => palace.isShen) || null;
+  const pillars = chart.bazi.pillars.map(pillar => ({
+    ...pillar,
+    stemDisplay: stemDisplay(pillar.gan),
+    branchDisplay: branchDisplay(pillar.zhi),
+  }));
 
   return {
     status: 200,
@@ -25,12 +31,12 @@ function createFreePreviewRequest(input, options = {}) {
         gender: chart.input.gender,
       },
       bazi: {
-        pillars: chart.bazi.pillars,
+        pillars,
         dayMaster: chart.bazi.dayMaster,
-        dayMasterDisplay: chart.bazi.pillars.find(pillar => pillar.key === "day")?.stemDisplay || null,
+        dayMasterDisplay: pillars.find(pillar => pillar.key === "day")?.stemDisplay || null,
         elements: chart.bazi.elementsDisplay.map(item => ({ ...item, displayValue: formatDisplayNumber(item.value) })),
-        strength: chart.bazi.strength,
-        currentPeriod: currentBaziPeriod,
+        strength: { ...chart.bazi.strength, display: strengthDisplay(chart.bazi.strength.verdict) },
+        currentPeriod: currentBaziPeriod ? withPeriodDisplay(currentBaziPeriod) : null,
       },
       ziwei: {
         lunarDate: chart.ziwei.lunarDateDisplay,
@@ -44,6 +50,11 @@ function createFreePreviewRequest(input, options = {}) {
       },
     },
   };
+}
+
+function withPeriodDisplay(period) {
+  const [gan, zhi] = Array.from(String(period.ganZhi || ""));
+  return { ...period, gan, zhi, stemDisplay: stemDisplay(gan), branchDisplay: branchDisplay(zhi) };
 }
 
 function safePalaceIdentity(palace) {

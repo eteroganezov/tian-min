@@ -49,6 +49,21 @@ test("free BaZi payload готов для пользовательского UI 
   assert.doesNotMatch(userFacing, /undefined|null|NaN|Infinity|极旺|偏旺|中和|偏弱|极弱/);
 });
 
+test("free-preview boundary не пропускает stale raw strength и неполные pillar labels", () => {
+  const input = { ...eduard, date: "1940-04-15", time: "12:00" };
+  const stale = structuredClone(calculateRequest(input));
+  stale.body.chart.bazi.strength.display = { original: "极旺(可能从强)", name: "极旺(可能从强)" };
+  stale.body.chart.bazi.pillars = stale.body.chart.bazi.pillars.map(pillar => ({
+    ...pillar,
+    stemDisplay: { original: pillar.gan, name: "Технический ствол" },
+    branchDisplay: { original: pillar.zhi, name: "Земная ветвь" },
+  }));
+  const result = createFreePreviewRequest(input, { calculate: () => stale, currentYear: 1950 });
+  assert.equal(result.body.bazi.strength.display.name, "Очень сильная карта (возможна структура следования силе)");
+  assert.ok(result.body.bazi.pillars.every(pillar => /(?:Ян|Инь) · небесный ствол$/.test(pillar.stemDisplay.name)));
+  assert.ok(result.body.bazi.pillars.every(pillar => / · земная ветвь$/.test(pillar.branchDisplay.name)));
+});
+
 test("все пять реальных verdict проходят через end-to-end free preview с русской подписью", () => {
   const cases = [
     ["1940-01-15", "中和", "Сбалансированная карта"],
@@ -65,11 +80,34 @@ test("все пять реальных verdict проходят через end-t
   }
 });
 
-test("шаблон столпа отдельно показывает stem, branch и роль в структуре Ба-цзы", () => {
+test("compact pillar template отдельно показывает stem, branch и Ten God без повторяющегося label", () => {
   const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
   assert.match(script, /pillar\.gan[\s\S]*pillar\.stemDisplay\.name[\s\S]*pillar\.zhi[\s\S]*pillar\.branchDisplay\.name/);
-  assert.match(script, /Роль в структуре Ба-цзы/);
-  assert.doesNotMatch(script, /<b>\$\{e\(pillar\.stemDisplay\.name\)\}<\/b><small>/);
+  assert.match(script, /compactStemName\(pillar\.stemDisplay\.name\)/);
+  assert.match(script, /compactBranchName\(pillar\.branchDisplay\.name\)/);
+  assert.doesNotMatch(script, /Роль в структуре Ба-цзы/);
+  assert.match(script, /<small><b>\$\{e\(pillar\.shiShenDisplay\.name\)\}<\/b><\/small>/);
+});
+
+test("current big period получает русский stem/branch слой поверх calculated ganZhi", () => {
+  const result = createFreePreviewRequest(eduard, { currentYear: 2026 });
+  const period = result.body.bazi.currentPeriod;
+  assert.equal(period.ganZhi, period.gan + period.zhi);
+  assert.match(period.stemDisplay.name, /(?:Ян|Инь) · небесный ствол$/);
+  assert.match(period.branchDisplay.name, / · земная ветвь$/);
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  assert.match(script, /class="current-period-ganzhi"/);
+  assert.match(script, /current\.gan[\s\S]*current\.stemDisplay\.name[\s\S]*current\.zhi[\s\S]*current\.branchDisplay\.name/);
+});
+
+test("frontend balance primary layer скрывает raw verdict и принимает русское display name", () => {
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  assert.match(script, /primaryStrengthName\(data\.bazi\.strength\)/);
+  const source = script.match(/function primaryStrengthName\(strength\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(source);
+  const primaryStrengthName = require("node:vm").runInNewContext(`(${source})`);
+  assert.equal(primaryStrengthName({ verdict: "极旺(可能从强)", display: { name: "Очень сильная карта" } }), "Очень сильная карта");
+  assert.equal(primaryStrengthName({ verdict: "极旺(可能从强)", display: { name: "极旺(可能从强)" } }), "Статус требует уточнения");
 });
 
 test("free payload не содержит AI-отчёт, prompts, metadata или закрытый текст", () => {

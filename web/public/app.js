@@ -91,11 +91,11 @@ function renderFreePreview(data) {
     <div class="preview-body shell">
       <section class="preview-section" aria-labelledby="bazi-title">
         <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Ваша карта Ба-цзы</h2></div><p>Четыре столпа — это базовая структура карты рождения: год, месяц, день и час.</p></div>
-        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)}</i>${e(pillar.stemDisplay.name)}</b><b><i>${e(pillar.zhi)}</i>${e(pillar.branchDisplay.name)}</b></div><small><i>Роль в структуре Ба-цзы</i><b>${e(pillar.shiShenDisplay.name)}</b></small></article>`).join("")}</div>
+        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)} ·</i>${e(compactStemName(pillar.stemDisplay.name))}</b><b><i>${e(pillar.zhi)} ·</i>${e(compactBranchName(pillar.branchDisplay.name))}</b></div><small><b>${e(pillar.shiShenDisplay.name)}</b></small></article>`).join("")}</div>
         <div class="fact-grid">
           <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Дневной хозяин — центральный элемент карты Ба-цзы. Здесь показан рассчитанный параметр без психологической интерпретации.</p></article>
-          <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>
-          <article><span>Текущий большой период</span><h3>${current ? `${e(current.years)} · ${e(current.ganZhi)}` : "Не определён"}</h3><p>${current ? `${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}` : "Период не входит в первые рассчитанные циклы."}</p></article>
+          <article><span>Баланс карты</span><h3>${e(primaryStrengthName(data.bazi.strength))}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>
+          <article><span>Текущий большой период</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<div class="current-period-ganzhi"><b>${e(current.ganZhi)}</b><small>${e(current.gan)} · ${e(compactStemName(current.stemDisplay.name))}<br>${e(current.zhi)} · ${e(compactBranchName(current.branchDisplay.name))}</small></div><p>${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}</p>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
         </div>
         <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.displayValue ?? item.value)}</strong></div>`).join("")}</div></div>
       </section>
@@ -314,6 +314,20 @@ function lunarDateLines(ziwei) {
 
 function conciseBureauName(value) {
   return String(value || "—").replace(/^Система элемента\s+[«"]?/u, "").replace(/[»"]$/u, "");
+}
+
+function compactStemName(value) {
+  return String(value || "—").replace(/\s*·\s*небесный ствол$/u, " · ствол");
+}
+
+function compactBranchName(value) {
+  return String(value || "—").replace(/\s*·\s*земная ветвь$/u, " · ветвь");
+}
+
+function primaryStrengthName(strength) {
+  const name = String(strength?.display?.name || "").trim();
+  const verdict = String(strength?.verdict || "").trim();
+  return name && name !== verdict ? name : "Статус требует уточнения";
 }
 
 function lowerFirst(value) {

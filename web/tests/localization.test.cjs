@@ -61,8 +61,14 @@ test("неизвестный статус силы обнаруживается 
 });
 
 test("все небесные стволы и земные ветви получают отдельные понятные подписи", () => {
-  assert.equal(Object.keys(STEMS).length, 10);
-  assert.equal(Object.keys(BRANCHES).length, 12);
+  assert.deepEqual(STEMS, {
+    "甲": "Дерево Ян", "乙": "Дерево Инь", "丙": "Огонь Ян", "丁": "Огонь Инь", "戊": "Земля Ян",
+    "己": "Земля Инь", "庚": "Металл Ян", "辛": "Металл Инь", "壬": "Вода Ян", "癸": "Вода Инь",
+  });
+  assert.deepEqual(BRANCHES, {
+    "子": "Крыса", "丑": "Бык", "寅": "Тигр", "卯": "Кролик", "辰": "Дракон", "巳": "Змея",
+    "午": "Лошадь", "未": "Коза", "申": "Обезьяна", "酉": "Петух", "戌": "Собака", "亥": "Свинья",
+  });
   assert.deepEqual(stemDisplay("壬"), { original: "壬", name: "Вода Ян · небесный ствол" });
   assert.deepEqual(branchDisplay("申"), { original: "申", name: "Обезьяна · земная ветвь" });
   for (const stem of Object.keys(STEMS)) assert.match(stemDisplay(stem).name, /(?:Ян|Инь) · небесный ствол$/);
