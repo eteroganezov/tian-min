@@ -24,7 +24,7 @@
           <h1>Персональная карта личности и жизненного пути</h1>
           <p class="brand-line">Две традиции — один цельный портрет</p>
           <p class="hero-intro">Рассчитайте свою карту Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения. Сначала вы увидите реальные параметры обеих карт, а затем сможете перейти к отдельному полному разбору.</p>
-          <a class="hero-cta" href="#calculator">Рассчитать мою карту <span aria-hidden="true">→</span></a>
+          <a class="hero-cta" href="#calculator"><span class="cta-label">Рассчитать мою карту</span><span class="cta-arrow" aria-hidden="true">→</span></a>
           <p class="cta-note"><b>Базовая карта — без оплаты.</b> Полный персональный разбор доступен отдельно.</p>
         </div>
         <form class="birth-form" id="birth-form" novalidate aria-labelledby="form-title">
@@ -37,7 +37,7 @@
           </div>
           <div class="field place-field">
             <label for="birth-place">Место рождения</label>
-            <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false" required>
+            <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" role="combobox" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false" required>
             <div class="place-options" id="place-options" role="listbox" hidden></div>
           </div>
           <fieldset class="gender-field"><legend>Пол</legend><div class="gender-options">
@@ -46,7 +46,7 @@
           </div></fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
           <div class="ambiguity-box" id="ambiguity-box" hidden></div>
-          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту</span><span aria-hidden="true">→</span></button>
+          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту</span><span class="cta-arrow" aria-hidden="true">→</span></button>
           <p class="form-note">Расчёт базовой карты не требует оплаты. Полный персональный разбор — отдельный продукт.</p>
         </form>
       </div>

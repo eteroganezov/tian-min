@@ -17,7 +17,8 @@ test("free preview содержит только реальные canonical да
   assert.equal(result.body.person.time, "05:50");
   assert.deepEqual(result.body.bazi.pillars, canonical.bazi.pillars);
   assert.equal(result.body.bazi.dayMaster, canonical.bazi.dayMaster);
-  assert.deepEqual(result.body.bazi.elements, canonical.bazi.elementsDisplay);
+  assert.deepEqual(result.body.bazi.elements.map(({ displayValue, ...item }) => item), canonical.bazi.elementsDisplay);
+  assert.ok(result.body.bazi.elements.every(item => typeof item.displayValue === "string"));
   assert.deepEqual(result.body.ziwei.transformations, canonical.ziwei.transformationsDisplay);
   assert.equal(result.body.ziwei.palaces.length, 12);
   assert.equal(result.body.ziwei.mingPalace.displayName.name, "Дворец судьбы и личности");
@@ -25,6 +26,7 @@ test("free preview содержит только реальные canonical да
   assert.match(result.body.ziwei.shenPalace.displayName.name, /^Дворец /);
   assert.equal(result.body.bazi.currentPeriod.years, "2024–2033");
   assert.equal(result.body.ziwei.currentPalace.isCurrentPeriod, true);
+  assert.deepEqual(result.body.ziwei.lunarDateLines, result.body.ziwei.lunarDate.split(" · "));
 });
 
 test("free payload не содержит AI-отчёт, prompts, metadata или закрытый текст", () => {
@@ -59,4 +61,14 @@ test("адаптивные правила защищают desktop и 390px от
   assert.match(css, /@media\(max-width:390px\)/);
   assert.match(css, /\.pillars-grid\{grid-template-columns:1fr 1fr\}/);
   assert.match(css, /minmax\(0,1fr\)/);
+});
+
+test("frontend требует подтверждённое место и содержит доступную keyboard navigation", () => {
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
+  assert.match(script, /Выберите место из списка подсказок/);
+  assert.match(script, /\["ArrowDown", "ArrowUp", "Enter"\]/);
+  assert.match(script, /aria-selected/);
+  assert.match(html, /role="combobox"/);
+  assert.match(html, /aria-autocomplete="list"/);
 });

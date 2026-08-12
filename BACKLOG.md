@@ -1,19 +1,39 @@
 # Backlog
 
-## Premium PDF v5.2.1 — visual micro-fixes
+## Production / Payments
 
-Premium PDF v5.2 FINAL заморожен. Следующие задачи зафиксированы отдельно и не входят в текущую бесплатную web-воронку:
+- Выбрать российского payment provider и финальную production price вместо временных `100 RUB`.
+- Настроить production credentials/config, create payment и redirect/payment form.
+- Подключить callback/signed webhook с обязательной проверкой подписи или provider authentication.
+- Сохранить идемпотентность production payment events, добавить reconciliation и production persistence.
+- Провести production checkout QA: payment → `PAID` → разрешение report generation.
 
-- стр. 3: типографика заголовка «12 дворцов Цзы Вэй»;
-- стр. 3: уменьшить вертикальный воздух внутри блока четырёх трансформаций;
-- стр. 3: исправить декоративную полоску у «Дворца партнёрства и отношений»;
-- стр. 32: выровнять блок «Точность времени»;
-- стр. 34: убрать вертикальный divider между «Делать чаще» и «Чего избегать».
+## Premium Generation
 
-## Premium PDF — будущий visual refresh
+- Подключить реальную OpenAI generation только после server-confirmed `PAID`.
+- Сохранять готовый premium report и обеспечивать повторный доступ без повторной AI-generation.
+- Сохранить retry generation после ошибки без новой оплаты.
+- Измерить и контролировать реальную стоимость одного premium report.
 
-После фиксации финальной web design system провести отдельный visual refresh Premium PDF. Использовать free preview сайта как один из визуальных ориентиров: типографика, воздух, карточки, иерархия, цветовые отношения и более premium editorial presentation. Не копировать web буквально — адаптировать решения под A4/PDF.
+## Premium PDF
 
-## Production payment
+- После фиксации web design system провести отдельный visual refresh Premium PDF, приблизив его к финальной premium web design system без буквального копирования web.
+- Стр. 3: отполировать типографику и композицию блока «12 дворцов Цзы Вэй».
+- Стр. 3: уменьшить вертикальный воздух и проверить spacing блока четырёх трансформаций.
+- Стр. 3: исправить декоративную полоску у «Дворца партнёрства и отношений».
+- Стр. 32: выровнять блок «Точность времени».
+- Стр. 34: убрать или исправить vertical divider между «Делать чаще» и «Чего избегать».
+- При future PDF polish проверить оставшиеся clipping/alignment/spacing defects, сохранив calculation content и астрологические данные без изменений.
 
-Подключить production payment provider после выбора провайдера и финальной цены: create payment, redirect/payment form, signed webhook, reconciliation и production persistence.
+## Web Polish
+
+Выполнено и удалено из активного backlog: скругления карточек четырёх столпов Ба-цзы и compact metadata chips. В дальнейшем проверять только точечную consistency radius/padding free preview cards при обнаружении реального дефекта, без нового redesign.
+
+## Pre-launch QA
+
+- Desktop и mobile QA в production environment, включая horizontal overflow и browser console.
+- Sandbox/test payment и полный payment → report generation → PDF download сценарий.
+- Failed payment, failed generation, refresh/recovery, duplicate callback и duplicate click.
+- Защита direct API access и подтверждение production fail-closed.
+- Проверка русской терминологии, Unicode/replacement glyph scan.
+- До запуска принять решение по минимальным analytics и monitoring.

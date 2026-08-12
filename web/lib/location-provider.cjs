@@ -6,6 +6,8 @@ const SEARCH_ALIASES = new Map([
   ["москва", "Moscow Russia"], ["лондон", "London United Kingdom"],
   ["санкт-петербург", "St. Petersburg Russia"], ["санкт петербург", "St. Petersburg Russia"],
   ["петербург", "St. Petersburg Russia"], ["алматы", "Almaty Kazakhstan"],
+  ["екатеринбург", "Yekaterinburg Russia"], ["нижний новгород", "Nizhny Novgorod Russia"],
+  ["казань", "Kazan Russia"],
   ["нью-йорк", "New York New York"], ["нью йорк", "New York New York"],
   ["пекин", "Beijing China"], ["париж", "Paris France"],
   ["владивосток", "Vladivostok Russia"], ["калининград", "Kaliningrad Russia"],
@@ -17,13 +19,22 @@ const LOCALIZED_CITY_NAMES = new Map([
   ["Moscow|RU", "Москва"], ["St. Petersburg|RU", "Санкт-Петербург"],
   ["Almaty|KZ", "Алматы"], ["London|GB", "Лондон"], ["New York|US", "Нью-Йорк"],
   ["Beijing|CN", "Пекин"], ["Paris|FR", "Париж"], ["Vladivostok|RU", "Владивосток"],
-  ["Kaliningrad|RU", "Калининград"],
+  ["Kaliningrad|RU", "Калининград"], ["Yekaterinburg|RU", "Екатеринбург"],
+  ["Nizhny Novgorod|RU", "Нижний Новгород"], ["Kazan|RU", "Казань"],
 ]);
 
 const russianCountries = new Intl.DisplayNames(["ru"], { type: "region" });
 
 function normalize(value) {
   return String(value || "").trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
+}
+
+function translatedQuery(raw, original) {
+  if (SEARCH_ALIASES.has(raw)) return SEARCH_ALIASES.get(raw);
+  const partial = [...SEARCH_ALIASES.entries()]
+    .filter(([alias]) => alias.startsWith(raw))
+    .sort(([left], [right]) => left.length - right.length || left.localeCompare(right, "ru"))[0];
+  return partial?.[1] || String(original).trim();
 }
 
 function dataKey(city) {
@@ -58,7 +69,7 @@ class LocalLocationProvider {
   search(query, limit = 10) {
     const raw = normalize(query);
     if (raw.length < 2) return [];
-    const translated = SEARCH_ALIASES.get(raw) || String(query).trim();
+    const translated = translatedQuery(raw, query);
     const needle = normalize(translated);
     const firstToken = needle.split(" ")[0];
     return cityTimezones.findFromCityStateProvince(translated)

@@ -8,6 +8,9 @@ const placeOptions = document.querySelector("#place-options");
 const ambiguityBox = document.querySelector("#ambiguity-box");
 let selectedPlace = null;
 let searchTimer = null;
+let placeResults = [];
+let activePlaceIndex = -1;
+let placeSearchSequence = 0;
 let currentBirthInput = null;
 let premiumBusy = false;
 
@@ -16,10 +19,20 @@ placeInput.addEventListener("input", () => {
   ambiguityBox.hidden = true;
   clearTimeout(searchTimer);
   const query = placeInput.value.trim();
+  const sequence = ++placeSearchSequence;
   if (query.length < 2) return renderPlaceOptions([]);
-  searchTimer = setTimeout(() => searchPlaces(query), 180);
+  searchTimer = setTimeout(() => searchPlaces(query, sequence), 180);
 });
-placeInput.addEventListener("keydown", event => { if (event.key === "Escape") renderPlaceOptions([]); });
+placeInput.addEventListener("keydown", event => {
+  if (event.key === "Escape") return renderPlaceOptions([]);
+  if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key) || placeResults.length === 0) return;
+  if (event.key === "Enter" && activePlaceIndex < 0) return;
+  event.preventDefault();
+  if (event.key === "ArrowDown") activePlaceIndex = (activePlaceIndex + 1) % placeResults.length;
+  if (event.key === "ArrowUp") activePlaceIndex = (activePlaceIndex - 1 + placeResults.length) % placeResults.length;
+  if (event.key === "Enter") return selectPlace(activePlaceIndex);
+  updateActivePlaceOption();
+});
 document.addEventListener("click", event => { if (!event.target.closest(".place-field")) renderPlaceOptions([]); });
 form.addEventListener("submit", async event => { event.preventDefault(); await submitFreeCalculation(); });
 
@@ -37,11 +50,10 @@ async function submitFreeCalculation(timeOccurrence) {
   };
   if (!input.date) return showError("Укажите дату рождения.");
   if (!input.time) return showError("Укажите время рождения.");
-  if (!selectedPlace) return showError("Выберите место рождения из списка подсказок.");
+  if (!selectedPlace) return showError("Выберите место из списка подсказок");
   if (!input.gender) return showError("Выберите пол.");
 
   setState("CALCULATING");
-  currentBirthInput = input;
   try {
     const response = await fetch("/api/free-preview", {
       method: "POST",
@@ -51,6 +63,7 @@ async function submitFreeCalculation(timeOccurrence) {
     const payload = await response.json();
     if (response.status === 409 && payload.code === "AMBIGUOUS_LOCAL_TIME") return showAmbiguity(payload.options || []);
     if (!response.ok) throw new Error(payload.error || "Не удалось выполнить расчёт.");
+    currentBirthInput = input;
     resultRoot.innerHTML = renderFreePreview(payload);
     bindPreviewActions();
     setState("FREE_PREVIEW_READY");
@@ -84,20 +97,20 @@ function renderFreePreview(data) {
           <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>
           <article><span>Текущий большой период</span><h3>${current ? `${e(current.years)} · ${e(current.ganZhi)}` : "Не определён"}</h3><p>${current ? `${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}` : "Период не входит в первые рассчитанные циклы."}</p></article>
         </div>
-        <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div></div>
+        <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.displayValue ?? item.value)}</strong></div>`).join("")}</div></div>
       </section>
 
       <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
         <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны основные ориентиры карты: Дворец судьбы, Дворец тела, текущий возрастной дворец и ключевые звёздные акценты.</p></div>
         <div class="ziwei-facts">
-          <article><span>Лунная дата</span><b>${e(data.ziwei.lunarDate)}</b></article>
+          <article><span>Лунная дата</span><b class="lunar-date">${(data.ziwei.lunarDateLines || [data.ziwei.lunarDate]).map(line => `<i>${e(line)}</i>`).join("")}</b></article>
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
           <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
         </div>
         <div class="transformations"><header><span>Четыре трансформации</span><p>Четыре трансформации показывают, какие звёзды получают в карте дополнительные акценты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
-        <article class="current-palace"><div><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></div></article>
+        <article class="current-palace"><div><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small></div></article>
         <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Все жизненные сферы и рассчитанные звёзды</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
       </section>
     </div>
@@ -105,7 +118,7 @@ function renderFreePreview(data) {
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
       <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
         <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
-        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональная интерпретация · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
+        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>
   </section>`;
@@ -139,7 +152,7 @@ async function openPremiumOffer() {
   try {
     const config = await api("/api/premium/config");
     const host = document.querySelector(".premium-action");
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · персональная интерпретация · полный PDF-отчёт</p></section>`;
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · персональный разбор · полный PDF-отчёт</p></section>`;
     host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
     host.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) { showPremiumError(error.message); }
@@ -236,25 +249,37 @@ function showPremiumError(message) {
   host.insertAdjacentHTML("beforeend", `<div class="payment-notice error" role="alert">${e(message || "Не удалось продолжить. Бесплатная карта остаётся доступной.")}</div>`);
 }
 function formatPrice(amount, currency) { return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency === "RUB" ? "₽" : currency}`; }
-function premiumOfferItems() { return ["Характер и внутренние мотивы", "Сильные стороны и точки роста", "Карьера и реализация", "Деньги", "Отношения", "Текущий жизненный период", "Ближайшие годы", "Персональный план действий", "Интерпретация Ба-цзы и Цзы Вэй", "Полный PDF-отчёт"]; }
+function premiumOfferItems() { return ["Характер и внутренние мотивы", "Сильные стороны и точки роста", "Карьера и реализация", "Деньги", "Отношения", "Текущий жизненный период", "Ближайшие годы", "Персональный план действий", "Объединённый разбор Ба-цзы и Цзы Вэй", "Полный PDF-отчёт"]; }
 
-async function searchPlaces(query) {
+async function searchPlaces(query, sequence) {
   try {
     const response = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
     const payload = await response.json();
+    if (sequence !== placeSearchSequence) return;
     renderPlaceOptions(response.ok ? payload.places : []);
-  } catch { renderPlaceOptions([]); }
+  } catch { if (sequence === placeSearchSequence) renderPlaceOptions([]); }
 }
 
 function renderPlaceOptions(places) {
-  placeOptions.innerHTML = places.map((place, index) => `<button type="button" role="option" data-index="${index}">${e(place.display.label)}</button>`).join("");
+  placeResults = places;
+  activePlaceIndex = -1;
+  placeOptions.innerHTML = places.map((place, index) => `<button id="place-option-${index}" type="button" role="option" aria-selected="false" data-index="${index}">${e(place.display.label)}</button>`).join("");
   placeOptions.hidden = places.length === 0;
   placeInput.setAttribute("aria-expanded", String(places.length > 0));
-  placeOptions.querySelectorAll("button").forEach((button, index) => button.addEventListener("click", () => {
-    selectedPlace = places[index];
-    placeInput.value = selectedPlace.display.label;
-    renderPlaceOptions([]);
-  }));
+  placeInput.removeAttribute("aria-activedescendant");
+  placeOptions.querySelectorAll("button").forEach((button, index) => button.addEventListener("click", () => selectPlace(index)));
+}
+
+function updateActivePlaceOption() {
+  placeOptions.querySelectorAll("button").forEach((button, index) => button.setAttribute("aria-selected", String(index === activePlaceIndex)));
+  placeInput.setAttribute("aria-activedescendant", `place-option-${activePlaceIndex}`);
+}
+
+function selectPlace(index) {
+  selectedPlace = placeResults[index] || null;
+  if (!selectedPlace) return;
+  placeInput.value = selectedPlace.display.label;
+  renderPlaceOptions([]);
 }
 
 function showAmbiguity(options) {

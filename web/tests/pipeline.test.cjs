@@ -18,6 +18,22 @@ test("русский запрос города возвращает провер
   assert.equal(locationProvider.resolve(Buffer.from("fake|place").toString("base64url")), null);
 });
 
+test("autocomplete ищет русские города по неполному запросу без учёта регистра", () => {
+  for (const [query, expected] of [["моск", "Москва, Россия"], ["санкт", "Санкт-Петербург, Россия"], ["екат", "Екатеринбург, Россия"], ["ниж", "Нижний Новгород, Россия"], ["каз", "Казань, Россия"]]) {
+    assert.equal(place(query).display.label, expected, query);
+  }
+  assert.equal(place("москва").id, place("МОСКВА").id);
+  assert.equal(place("Москва").id, place("МОСКВА").id);
+});
+
+test("русская локализация остаётся display-слоем над canonical location data", () => {
+  const selected = place("екат");
+  assert.equal(selected.city, "Yekaterinburg");
+  assert.equal(selected.display.city, "Екатеринбург");
+  assert.equal(selected.display.country, "Россия");
+  assert.equal(locationProvider.resolve(selected.id).timeZone, "Asia/Yekaterinburg");
+});
+
 test("русская подпись места не меняет канонические координаты, id и часовой пояс", () => {
   for (const [query, expected] of [["Москва", "Москва, Россия"], ["Санкт-Петербург", "Санкт-Петербург, Россия"], ["Алматы", "Алматы, Казахстан"], ["London United Kingdom", "Лондон, Великобритания"], ["New York New York", "Нью-Йорк, Соединенные Штаты"]]) {
     const selected = place(query);

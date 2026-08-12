@@ -1,4 +1,5 @@
 const { calculateRequest } = require("./calculate.cjs");
+const { formatDisplayNumber, splitLunarDateDisplay } = require("./display-format.cjs");
 
 function createFreePreviewRequest(input, options = {}) {
   const calculate = options.calculate || calculateRequest;
@@ -27,12 +28,13 @@ function createFreePreviewRequest(input, options = {}) {
         pillars: chart.bazi.pillars,
         dayMaster: chart.bazi.dayMaster,
         dayMasterDisplay: chart.bazi.pillars.find(pillar => pillar.key === "day")?.stemDisplay || null,
-        elements: chart.bazi.elementsDisplay,
+        elements: chart.bazi.elementsDisplay.map(item => ({ ...item, displayValue: formatDisplayNumber(item.value) })),
         strength: chart.bazi.strength,
         currentPeriod: currentBaziPeriod,
       },
       ziwei: {
         lunarDate: chart.ziwei.lunarDateDisplay,
+        lunarDateLines: splitLunarDateDisplay(chart.ziwei.lunarDateDisplay),
         mingPalace: mingPalace ? safePalaceIdentity(mingPalace) : { branch: chart.ziwei.mingPalace, displayName: null },
         shenPalace: shenPalace ? safePalaceIdentity(shenPalace) : { branch: chart.ziwei.shenPalace, displayName: null },
         fiveElementBureau: chart.ziwei.fiveElementBureauDisplay,
