@@ -176,14 +176,14 @@ function serviceSetup(statuses, options = {}) {
 }
 const validConsent = { email: "payer@example.test", termsAccepted: true, autoRedemptionAccepted: true };
 
-test("production checkout хранит 39900 minor units, exact consent schema и server-side amount", async () => {
+test("production checkout хранит 59900 minor units, exact consent schema и server-side amount", async () => {
   const ctx = serviceSetup(["preparing"]);
   const order = (await ctx.service.createCheckout({ ...birthInput, amount: 1 })).body.order;
-  assert.equal(order.amount, 399);
+  assert.equal(order.amount, 599);
   const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(started.body.order.status, "PAYMENT_PENDING");
   const attempt = ctx.provider.createCalls[0];
-  assert.equal(attempt.requestBody.customer_amount_minor, 39900);
+  assert.equal(attempt.requestBody.customer_amount_minor, 59900);
   assert.equal(attempt.requestBody.customer_currency, "RUB");
   assert.equal(attempt.requestBody.consent_version, "certificate_purchase_terms_v1");
   assert.equal(attempt.requestBody.auto_redemption_consent_version, "partner_auto_redemption_consent_v1");

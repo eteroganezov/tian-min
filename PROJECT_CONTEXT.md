@@ -26,7 +26,7 @@ The paid one-time product is a combined personal interpretation: character and m
 
 Preferred microcopy: **«Ба-цзы + Цзы Вэй · Персональный разбор · Полный PDF-отчёт»**.
 
-Planned launch price: **399 RUB**. The current **100 RUB** is only a DEV/mock-flow placeholder (`PREMIUM_REPORT_PRICE_RUB` is the server-side configuration point) and is not the production price.
+Launch price: **599 RUB**. The current **100 RUB** is only a DEV/mock-flow placeholder (`PREMIUM_REPORT_PRICE_RUB` is the server-side configuration point) and is not the production price. The production amount is owned by server configuration; the frontend only displays the value returned by the server.
 
 ## Current architecture
 
@@ -94,7 +94,7 @@ Do not rewrite this foundation merely to add a production provider.
 
 Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented. The production connection and webhook configuration were reported active on 2026-08-12; provider reachability delivery must be rechecked after the deferred-reconciliation fix is deployed. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
 
-The first production create attempt was rejected with HTTP `422`. Its persisted request contained every documented field and the expected amount/currency/consent versions, but the old provider adapter discarded Lorentsen's response details and no `trace_id` was returned. Safe redacted diagnostics now preserve provider code/type/message and invalid field names for the next manually initiated attempt; do not alter the contract until that evidence is available.
+The first production create attempt was rejected with HTTP `422`, provider code `amount_out_of_range`, because the former `399 RUB` launch price was below Lorentsen's `500 RUB` minimum. The amount format was correct (`39900` minor units). The launch price is now `599 RUB` (`59900` minor units). Safe redacted diagnostics preserve provider code/type/message and invalid field names without secrets or payer data.
 
 ### Create and retrieve payment
 

@@ -2,6 +2,7 @@
 
 ## Production / Payments
 
+- Production launch price is fixed at **599 RUB** (`59900` minor units), above Lorentsen's confirmed `500 RUB` minimum; keep the server as the price source of truth.
 - Подготовить production deployment architecture и публичный HTTPS backend.
 - Подключить Railway PostgreSQL и добавить production Lorentsen variables/secrets по `web/LORENTSEN_DEPLOYMENT.md`.
 - Создать production client, проверить `GET /connection`, зарегистрировать webhook endpoint и выполнить reachability/signature test.
