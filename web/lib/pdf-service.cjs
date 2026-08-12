@@ -2,6 +2,7 @@ const { calculateBirthChart } = require("./birth-chart-pipeline.cjs");
 const { toChartView } = require("./chart-view.cjs");
 const { createReportPdf } = require("./pdf-template.cjs");
 const { validatePersonalReport } = require("./report-schema.cjs");
+const { buildEvidenceCatalog } = require("./report-content.cjs");
 const { hasFullReport } = require("./report-service.cjs");
 const { canonicalBirthInput, normalizeDisplayName } = require("./personalization.cjs");
 const { locationProvider } = require("./location-provider.cjs");
@@ -15,14 +16,17 @@ async function createPdfRequest(input, options = {}) {
   }
   catch (error) { return { status: 400, error: safeMessage(error) }; }
   let report = input.report || null;
+  const chart = toChartView(calculation.chart);
+  const reportYears = (report?.yearlyOutlook || []).map(item => item.year).filter(Number.isInteger);
+  const evidenceCatalog = buildEvidenceCatalog(calculation, chart, { reportYears });
   if (report) {
-    const validation = validatePersonalReport(report);
+    const validation = validatePersonalReport(report, { evidenceCatalog });
     if (!validation.valid) return { status: 400, error: "Структура персонального отчёта некорректна." };
   }
   const full = options.hasFullReport ?? hasFullReport(options.env);
   const place = locationProvider.resolve(input.placeId);
   const presentation = { displayName, birthPlace: place?.display || null };
-  const buffer = await createReportPdf({ chart: toChartView(calculation.chart), metadata: calculation.metadata, presentation, report, hasFullReport: full });
+  const buffer = await createReportPdf({ chart, metadata: calculation.metadata, presentation, report, evidenceCatalog, hasFullReport: full });
   return { status: 200, buffer, filename: createPdfFilename({ displayName, date: calculation.metadata.originalBirthDate, time: calculation.metadata.originalBirthTime }) };
 }
 

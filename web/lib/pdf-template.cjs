@@ -1,6 +1,7 @@
 const fs = require("node:fs");
 const PDFDocument = require("pdfkit");
 const { russianTypography } = require("./report-content.cjs");
+const { createPremiumReportV4Pdf } = require("./pdf-template-v4.cjs");
 
 const colors = { ink: "#18231f", muted: "#66736d", jade: "#173f36", sage: "#dfe8e2", sand: "#f4f0e7", gold: "#b5955d", red: "#9c4938", white: "#ffffff" };
 const spacing = Object.freeze({ pageX: 52, top: 48, contentTop: 178, bottom: 756, cardPadding: 18, cardGap: 12, paragraphGap: 12 });
@@ -21,7 +22,10 @@ function clean(value) {
     .replace(/[ \t]{2,}/gu, " "));
 }
 
-function createReportPdf({ chart, metadata, presentation = {}, report, legacyReport, hasFullReport = true }) {
+function createReportPdf({ chart, metadata, presentation = {}, report, evidenceCatalog, legacyReport, hasFullReport = true }) {
+  if (report?.schemaVersion === "personal-report-v4" && hasFullReport) {
+    return createPremiumReportV4Pdf({ chart, metadata, presentation, report, evidenceCatalog });
+  }
   return new Promise((resolve, reject) => {
     const person = presentation.displayName ? `${presentation.displayName} - ` : "";
     const doc = new PDFDocument({ size: "A4", margin: 52, bufferPages: true, info: { Title: `${person}персональная карта личности и жизненного пути`, Author: "Тянь Мин", Subject: "Персональный информационно-развлекательный отчёт" } });

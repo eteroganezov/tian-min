@@ -7,18 +7,43 @@ const { createMockReport } = require("../lib/mock-report.cjs");
 const { createPdfRequest } = require("../lib/pdf-service.cjs");
 const { canonicalBirthInput } = require("../lib/personalization.cjs");
 
-async function main() {
-  const moscow = locationProvider.search("Москва")[0];
-  const input = { name: "Эдуард", date: "1995-09-03", time: "05:50", gender: "male", placeId: moscow.id };
+const moscow = locationProvider.search("Москва")[0];
+
+function buildVariant({ input, reportYears, mutate }) {
   const calculation = calculateBirthChart(canonicalBirthInput(input));
-  const report = createMockReport(buildReportContext(calculation, { displayName: input.name }, { model: "mock-v1" }));
-  const result = await createPdfRequest({ ...input, report }, { hasFullReport: true });
-  if (result.status !== 200) throw new Error(result.error || "Не удалось создать PDF");
-  const outputDir = path.resolve(__dirname, "..", "..", "output", "pdf");
-  const outputPath = path.join(outputDir, "sample-personal-report.pdf");
-  await fs.mkdir(outputDir, { recursive: true });
-  await fs.writeFile(outputPath, result.buffer);
-  process.stdout.write(`${outputPath}\n`);
+  const report = createMockReport(buildReportContext(calculation,{ displayName:input.name },{ model:"mock-v1",reportYears }));
+  if(mutate) mutate(report);
+  return { input, report };
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+function buildSampleVariants() {
+  const standardInput={ name:"Эдуард",date:"2000-01-01",time:"12:00",gender:"male",placeId:moscow.id };
+  const sensitiveInput={ name:"Александра-Мария Константиновна Мирославская",date:"1995-09-03",time:"05:50",gender:"female",placeId:moscow.id };
+  return [
+    { key:"standard",filename:"sample-personal-report-v4-standard.pdf",...buildVariant({ input:standardInput,reportYears:[2026,2027,2028] }) },
+    { key:"long",filename:"sample-personal-report-v4-long.pdf",...buildVariant({ input:standardInput,reportYears:[2026,2027,2028],mutate:report=>{
+      report.executiveInsights[0].title="Сначала собрать разрозненные факты в единую проверяемую систему, затем определить достаточный критерий и перейти к действию";
+      report.career.headline="Роль, в которой можно не только отвечать за качество результата, но и влиять на правила, критерии и способ совместного исполнения";
+      report.relationships.summary+=` ${report.relationships.insights[3].text}`;
+      report.environment.communication+=` ${report.leadership.negotiation}`;
+    } }) },
+    { key:"sensitivity",filename:"sample-personal-report-v4-sensitivity.pdf",...buildVariant({ input:sensitiveInput,reportYears:[2036,2037,2038],mutate:report=>{
+      report.executivePortrait.summary="Главная линия карты — превращать наблюдение в ясное решение и заранее называть условия ответственности.";
+      report.personality.summary="Внутренняя опора усиливается, когда критерий достаточного решения определён до начала анализа.";
+      report.currentPeriod.confidenceNote="Некоторые детали расчёта зависят от точности времени рождения, поэтому временные акценты следует сверять с биографией.";
+    } }) },
+  ];
+}
+
+async function main() {
+  const outputDir=path.resolve(__dirname,"..","..","output","pdf");await fs.mkdir(outputDir,{recursive:true});
+  for(const variant of buildSampleVariants()){
+    const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
+    if(result.status!==200)throw new Error(result.error||`Не удалось создать PDF ${variant.key}`);
+    const outputPath=path.join(outputDir,variant.filename);await fs.writeFile(outputPath,result.buffer);process.stdout.write(`${variant.key}: ${outputPath}\n`);
+  }
+}
+
+if(require.main===module)main().catch(error=>{console.error(error);process.exitCode=1;});
+
+module.exports={ buildSampleVariants };

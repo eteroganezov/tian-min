@@ -7,11 +7,12 @@ const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { toChartView } = require("../lib/chart-view.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
 const { createPdfFilename, createPdfFromSavedReport, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
+const { buildSampleVariants } = require("../scripts/generate-sample-pdf.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
 
-test("полный PDF является настоящим документом и содержит главные разделы", async () => {
+test("v4 PDF является самостоятельным premium-документом с TOC, metadata и всеми разделами", async () => {
   const calculation = calculateBirthChart(input);
   const report = createMockReport(buildReportContext(calculation, { displayName: input.name }, { model: "mock-v1", reportYears: [2026, 2027, 2028] }));
   const result = await createPdfRequest({ ...input, report }, { hasFullReport: true });
@@ -21,35 +22,37 @@ test("полный PDF является настоящим документом 
   const parsed = await pdfParse(result.buffer);
   assert.match(parsed.text, /ТЯНЬ МИН/);
   assert.match(parsed.text, /Эдуард/);
-  assert.match(parsed.text, /Персональная карта личности и жизненного пути/i);
-  assert.match(parsed.text, /Внутренний портрет/);
+  assert.match(parsed.text, /ПЕРСОНАЛЬНЫЙ РАЗБОР/i);
+  assert.match(parsed.text, /Содержание/);
+  assert.match(parsed.text, /Ваш портрет в двух минутах/);
+  assert.match(parsed.text, /Как читать отчёт/);
+  assert.match(parsed.text, /Доказательная база Ба-цзы/);
+  assert.match(parsed.text, /Доказательная база Цзы Вэй/);
+  assert.match(parsed.text, /Общая временная шкала/);
+  assert.match(parsed.text, /Характер и внутренние мотивы/);
+  assert.match(parsed.text, /Сильные стороны/);
+  assert.match(parsed.text, /Точки роста/);
   assert.match(parsed.text, /Роль, где можно влиять на качество/);
-  assert.match(parsed.text, /Ваша карта в одном взгляде/);
-  assert.match(parsed.text, /Янская Земля[\s\S]{0,40}戊\s*·\s*ваш основной элемент/);
-  assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
-  assert.match(parsed.text, /12 ДВОРЦОВ ЦЗЫ ВЭЙ/);
-  assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
-  assert.match(parsed.text, /Дерево[\s\S]*木[\s\S]*1/);
-  assert.match(parsed.text, /Цзы Вэй[\s\S]*紫微/);
+  assert.match(parsed.text, /Деньги и управление ресурсами/);
+  assert.match(parsed.text, /Отношения и границы/);
+  assert.match(parsed.text, /Ближайшие три года/);
+  assert.match(parsed.text, /Персональный план на 12 месяцев/);
+  assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.match(parsed.text, /Время рождения учтено с поправкой/);
-  assert.equal(parsed.numpages >= 19 && parsed.numpages <= 27, true, `Получилось ${parsed.numpages} страниц`);
-  assert.equal((parsed.text.match(/Материалы предназначены для информационных, культурных/g) || []).length, 1);
-  assert.equal(parsed.text.indexOf("Двенадцать дворцов Цзы Вэй") < parsed.text.indexOf("Главное о вас"), true);
-  assert.equal(parsed.text.indexOf("Двенадцать дворцов Цзы Вэй") < parsed.text.indexOf("Большие жизненные периоды"), true);
-  assert.equal(parsed.text.indexOf("Большие жизненные периоды") < parsed.text.indexOf("Внутренний портрет"), true);
-  assert.match(parsed.text, /Дворец судьбы[\s\S]{0,50}У\s*·\s*午/i);
-  assert.match(parsed.text, /Дворец тела[\s\S]{0,50}У\s*·\s*午/i);
-  assert.equal((parsed.text.match(/Главное о вас/g) || []).length, 1);
-  assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
-  assert.match(parsed.text, /Основному элементу требуется больше\s+поддержки со стороны карты/);
-  assert.match(parsed.text, /Хуа Лу[\s\S]{0,30}化禄[\s\S]{0,80}Возможности и ресурс/i);
-  assert.match(parsed.text, /Хуа Цюань[\s\S]{0,30}化权[\s\S]{0,80}Влияние и ответственность/i);
+  assert.equal(parsed.numpages >= 26 && parsed.numpages <= 32, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.info.Title,"Эдуард — Ба-цзы + Цзы Вэй · Персональный разбор");
+  assert.equal(parsed.info.Author,"Тянь Мин");
+  assert.match(parsed.info.Keywords,/personal-report-v4/);
+  assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
+  assert.equal(parsed.text.indexOf("Содержание") < parsed.text.indexOf("Ваш портрет в двух минутах"),true);
+  assert.equal(parsed.text.indexOf("Доказательная база Ба-цзы") < parsed.text.indexOf("Характер и внутренние мотивы"),true);
+  assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
+  assert.match(parsed.text,/Хуа Лу[\s\S]{0,80}Возможности и ресурс/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
-  assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ/iu);
-  assert.doesNotMatch(parsed.text, /Цзы Вэй в одном взгляде/i);
-  assert.doesNotMatch(parsed.text, /(?:соединение|столкновение|сочетание|вред)\s*[-–—](?:\s|$)/i);
-  assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|Техническое приложение|AI-интерпретация/);
+  assert.doesNotMatch(parsed.text, /(?:bazi|ziwei|time)\.[a-z0-9_.-]+/i);
+  assert.doesNotMatch(parsed.text, /[\u0000\uFFFD\uFFFE\uFFFF]/u);
+  assert.doesNotMatch(parsed.text, /\b(?:произойдёт|вас ждёт|точно случится)\b/iu);
+  assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI-интерпретация/);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -200,8 +203,29 @@ test("PDF-рендерер принимает короткие и длинные
   const longPdf = await createPdfRequest({ ...input, report: longReport }, { hasFullReport: true });
   assert.equal(longPdf.status, 200);
   const parsed = await pdfParse(longPdf.buffer);
-  assert.match(parsed.text, /Материалы предназначены для информационных, культурных/);
+  assert.match(parsed.text, /Персональный информационно-развлекательный отчёт/);
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
+});
+
+test("v4 renderer выдерживает standard, long и sensitivity fixtures без пустых страниц", async () => {
+  const variants=buildSampleVariants();
+  assert.equal(variants.length,3);
+  const sensitive=variants.find(value=>value.key==="sensitivity");
+  assert.equal(sensitive.report.yearlyOutlook.every(year=>year.evidence.every(id=>!id.startsWith("ziwei.annual."))),true);
+  for(const variant of variants){
+    const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
+    assert.equal(result.status,200,variant.key);
+    const pages=[];
+    const parsed=await pdfParse(result.buffer,{ pagerender:async page=>{
+      const content=await page.getTextContent({ normalizeWhitespace:true });
+      const text=content.items.map(item=>item.str).filter(Boolean).join(" ");pages.push(text);return text;
+    }});
+    assert.equal(pages.length,parsed.numpages,variant.key);
+    assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
+    assert.match(parsed.text,/Итоговая персональная линия/i);
+    assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
+    assert.equal(parsed.numpages>=26&&parsed.numpages<=40,true,`${variant.key}: ${parsed.numpages} страниц`);
+  }
 });
 
 test("сохранённый отчёт повторно создаёт PDF без обращения к AI-провайдеру", async () => {
