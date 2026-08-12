@@ -25,8 +25,7 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Внутренний портрет/);
   assert.match(parsed.text, /Роль, где можно влиять на качество/);
   assert.match(parsed.text, /Ваша карта в одном взгляде/);
-  assert.match(parsed.text, /Янская Земля\s*·\s*戊/);
-  assert.match(parsed.text, /Цзы Вэй в одном взгляде/);
+  assert.match(parsed.text, /Янская Земля[\s\S]{0,40}戊\s*·\s*основной элемент человека/);
   assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
   assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
   assert.match(parsed.text, /Дерево[\s\S]*木[\s\S]*1/);
@@ -34,10 +33,15 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Москва, Россия/);
   assert.match(parsed.text, /Время рождения учтено с поправкой/);
   assert.equal(parsed.numpages >= 19 && parsed.numpages <= 27, true, `Получилось ${parsed.numpages} страниц`);
-  assert.equal((parsed.text.match(/Материал носит информационный, культурный/g) || []).length, 1);
+  assert.equal((parsed.text.match(/Материалы предназначены для информационных, культурных/g) || []).length, 1);
+  assert.equal(parsed.text.indexOf("Двенадцать дворцов Цзы Вэй") < parsed.text.indexOf("Главное о вас"), true);
+  assert.match(parsed.text, /Дворец судьбы[\s\S]{0,50}У\s*·\s*午/i);
+  assert.match(parsed.text, /Дворец тела[\s\S]{0,50}У\s*·\s*午/i);
   assert.equal((parsed.text.match(/Главное о вас/g) || []).length, 1);
   assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
+  assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ/iu);
+  assert.doesNotMatch(parsed.text, /Цзы Вэй в одном взгляде/i);
   assert.doesNotMatch(parsed.text, /(?:соединение|столкновение|сочетание|вред)\s*[-–—](?:\s|$)/i);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|Техническое приложение|AI-интерпретация/);
 });
@@ -79,7 +83,7 @@ test("PDF-инфографика использует реальные стол�
     const pattern = palace.displayName.name.split(/\s+/u).map(part => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s+");
     assert.match(parsed.text, new RegExp(pattern));
   }
-  assert.match(parsed.text, /Четыре трансформации/);
+  assert.match(parsed.text, /Четыре трансформации/i);
 });
 
 test("consumer PDF удаляет пустые evidence-значения целиком", async () => {
@@ -122,8 +126,13 @@ test("редакционный PDF очищает внутренние форм�
         "Высокая чувствительность расчёта к часу рождения требует снизить уверенность.",
         "Шестой исходный, но пятый отображаемый смысловой пункт.",
       ] },
-      { key: "matrix", title: "Матрица жизненных сфер", items: ["Окружение Согласие Ба-цзы Конфликт 申–寅 может отражать напряжение. Экспертно\uFFFEструктурные роли поддерживают результат."] },
+      { key: "environment", title: "", items: ["ЧТО УСИЛИВАЕТ Уникальная проверочная фраза о подходящей среде."] },
+      { key: "leadership", title: "", items: ["СТИЛЬ Уникальная проверочная фраза о стиле лидерства."] },
+      { key: "lifestyle", title: "", items: ["РИТМ Уникальная проверочная фраза о жизненном ритме."] },
+      { key: "matrix", title: "Матрица жизненных сфер", items: ["Окружение Согласие Ба-цзы Конфликт 申–寅 может отражать напряжение. Экспертно\uFFFEструктурные роли поддерживают результат.", "Цзы Вэй Доу Шу Тань Лан во дворце уязвимостей напоминает о режиме."] },
+      { key: "cross-validation", title: "Где выводы устойчивее", items: ["Подтверждают Уникальная проверочная фраза о согласовании систем."] },
       { key: "confidence", title: "Насколько устойчивы выводы", items: ["Хорошо подтверждается картой — Основная линия.", "Требует дополнительного контекста — Детали периода.", "Не стоит воспринимать буквально — Конкретные события."] },
+      { key: "manifestations", title: "Как это проявляется в жизни", items: ["Уникальная проверочная фраза о проявлении в жизни."] },
       { key: "final", title: "Ваша главная линия", paragraphs: ["В рамках этой символической интерпретации ваша опора — ясность."] },
     ],
   };
@@ -138,8 +147,13 @@ test("редакционный PDF очищает внутренние форм�
   const relationships = parsed.text.slice(parsed.text.indexOf("Близость, выбор и конфликты"), parsed.text.indexOf("Матрица жизненных сфер"));
   for (const number of ["01", "02", "03", "04", "05"]) assert.match(relationships, new RegExp(`${number}\\s*·`));
   assert.doesNotMatch(relationships, /06\s*·/);
-  assert.equal((parsed.text.match(/Материал носит информационный, культурный/g) || []).length, 1);
+  assert.equal((parsed.text.match(/Материалы предназначены для информационных, культурных/g) || []).length, 1);
+  assert.match(parsed.text, /Здоровье[\s\S]{0,120}Тань Лан/);
+  assert.doesNotMatch(parsed.text, /взаимодействие элементов,\s*взаимодействие элементов/i);
+  assert.doesNotMatch(parsed.text, /не буквальный событийный прогноз|сохран[её]нн\p{L}* отч[её]т/iu);
   assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
+  for (const phrase of ["подходящей среде", "стиле лидерства", "жизненном ритме", "согласовании систем", "проявлении в жизни"]) assert.match(parsed.text, new RegExp(phrase, "i"));
+  assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ|Требуют осторожности|высокая чувствительность расчёта/iu);
 });
 
 test("PDF-рендерер принимает короткие и длинные смысловые блоки без потери финала", async () => {
@@ -153,7 +167,7 @@ test("PDF-рендерер принимает короткие и длинные
   const longPdf = await createPdfRequest({ ...input, report: longReport }, { hasFullReport: true });
   assert.equal(longPdf.status, 200);
   const parsed = await pdfParse(longPdf.buffer);
-  assert.match(parsed.text, /Материал носит информационный, культурный/);
+  assert.match(parsed.text, /Материалы предназначены для информационных, культурных/);
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
 });
 
