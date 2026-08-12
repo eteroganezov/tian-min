@@ -44,3 +44,18 @@ test("верхняя группа Zi Wei сохраняет три строки 
     ["Дерево", "Огонь", "Земля", "Металл", "Вода"],
   );
 });
+
+test("mobile conversion flow сохраняет safe-width controls и компактный premium disclosure", () => {
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
+  assert.match(styles, /--site-header-height:76px;--anchor-gap:18px/);
+  assert.match(styles, /main \[id\]\{scroll-margin-top:calc\(var\(--site-header-height\)/);
+  assert.match(styles, /\.field input,\.place-field>input,\.checkout-field input\{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box\}/);
+  assert.match(styles, /@media\(max-width:620px\)[\s\S]*\.field input,\.place-field>input,\.checkout-field input,select,textarea\{font-size:16px\}/);
+  assert.match(styles, /\.locked-grid article:nth-of-type\(n\+5\)\{display:none\}/);
+  assert.match(styles, /\.offer-list span:nth-child\(n\+5\):not\(\.offer-more\)\{display:none\}/);
+  assert.match(script, /class="locked-more">И другие темы полного разбора/);
+  assert.match(script, /class="offer-more">И другие темы полного разбора/);
+  assert.match(script, /input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done"/);
+  assert.match(script, /if \(event\.key !== "Enter"\) return;[\s\S]*event\.preventDefault\(\);[\s\S]*email\.blur\(\)/);
+});

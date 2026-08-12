@@ -119,7 +119,7 @@ function renderFreePreview(data) {
 
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
       <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
-        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
+        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}<p class="locked-more">И другие темы полного разбора</p></div>
         <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>
@@ -158,7 +158,7 @@ async function openPremiumOffer() {
       host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
       return;
     }
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}<span class="offer-more">И другие темы полного разбора</span></div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
     host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
     host.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) { showPremiumError(error.message); }
@@ -206,7 +206,7 @@ function renderConsentCheckout(order) {
   if (!config?.consent) return showPremiumError("Платёжная форма пока не настроена.");
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="CONSENT">
     <p class="section-label">Оплата полного разбора</p><h3>${e(formatPrice(order.amount, order.currency))}</h3>
-    <label class="checkout-field">Email для получения сертификата<input type="email" name="payerEmail" autocomplete="email" inputmode="email" required></label>
+    <label class="checkout-field">Email для получения сертификата<input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done" required></label>
     <label class="consent-check"><input type="checkbox" name="termsAccepted"><span>Я принимаю <a href="${e(config.consent.termsUrl)}" target="_blank" rel="noopener noreferrer">условия покупки сертификата Lorentsen</a> и <a href="${e(config.consent.privacyUrl)}" target="_blank" rel="noopener noreferrer">политику конфиденциальности</a></span></label>
     <label class="consent-check"><input type="checkbox" name="autoRedemptionAccepted"><span>Я согласен, что сертификат, приобретаемый этой оплатой, будет немедленно погашен у партнёра ${e(config.partnerPublicName)}. <a href="${e(config.consent.autoRedemptionTermsUrl)}" target="_blank" rel="noopener noreferrer">Подробнее</a></span></label>
     <button type="button" class="premium-button" data-action="confirm-payment" disabled>Перейти к оплате</button>
@@ -219,6 +219,11 @@ function renderConsentCheckout(order) {
   const update = () => { button.disabled = !(email.validity.valid && email.value.trim() && terms.checked && redemption.checked); };
   [email, terms, redemption].forEach(control => control.addEventListener("input", update));
   [terms, redemption].forEach(control => control.addEventListener("change", update));
+  email.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    email.blur();
+  });
   button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }));
 }
 
