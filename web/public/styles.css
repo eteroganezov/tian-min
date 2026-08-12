@@ -52,5 +52,5 @@
 
 /* Focused form and result presentation cleanup. */
 .hero-cta,.primary-button{position:relative;justify-content:center;text-align:center}.hero-cta .cta-arrow,.primary-button .cta-arrow{position:absolute;right:18px}.hero-cta .cta-label,.primary-button .button-label{margin-inline:auto}.place-options button[aria-selected="true"]{background:var(--paper);color:var(--jade);font-weight:750}
-.ziwei-facts article{display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:20px 16px;text-align:left;border-radius:8px}.ziwei-facts b{margin-top:12px}.ziwei-facts small{margin-top:7px}.lunar-date-line{display:block;font-style:normal}.lunar-date-line+.lunar-date-line{margin-top:4px}
+.ziwei-facts article{display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;padding:20px 16px;text-align:left;border-radius:8px}.ziwei-facts b{margin-top:12px}.ziwei-facts small{margin-top:7px}.lunar-date-line{display:block;font-style:normal}.lunar-date-line+.lunar-date-line{margin-top:4px}
 .ziwei-section>.current-palace{text-align:left;border-radius:8px}.ziwei-section>.current-palace>div{margin-inline:0}.offer-list{gap:8px;background:transparent}.offer-list span{padding:13px 14px;border:1px solid rgba(24,34,31,.09);border-radius:8px;background:var(--white);line-height:1.45}

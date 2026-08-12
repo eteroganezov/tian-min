@@ -2,6 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
+const vm = require("node:vm");
 const { formatDisplayNumber, splitLunarDateDisplay } = require("../lib/display-format.cjs");
 
 test("presentation formatting не показывает floating-point artifacts", () => {
@@ -23,8 +24,23 @@ test("CTA и calculated Zi Wei cards используют точечные align
   assert.match(script, /class="lunar-date-line"/);
   assert.match(script, /split\(\/\\s\*·\\s\*\/u\)/);
   assert.match(styles, /\.lunar-date-line\{display:block/);
-  assert.match(styles, /\.ziwei-facts article\{[^}]*align-items:flex-start;justify-content:center[^}]*text-align:left/);
+  assert.match(styles, /\.ziwei-facts article\{[^}]*align-items:flex-start;justify-content:flex-start;[^}]*padding:20px 16px;[^}]*text-align:left/);
   assert.match(styles, /\.ziwei-section>\.current-palace\{text-align:left/);
   assert.match(styles, /\.transformations>header p\{[^}]*padding:0;border:0;background:transparent/);
   assert.match(styles, /\.locked-grid article\{[^}]*border-radius:10px/);
+});
+
+test("верхняя группа Zi Wei сохраняет три строки даты и лаконичную систему элементов", () => {
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  assert.match(script, /lunarDateLines\(data\.ziwei\)\.map\(line => `<i class="lunar-date-line">/);
+  assert.match(script, /conciseBureauName\(data\.ziwei\.fiveElementBureau\.name\)/);
+  assert.match(script, /Здесь собраны ключевые рассчитанные параметры карты Цзы Вэй\./);
+  assert.doesNotMatch(script, /Здесь собраны основные ориентиры карты:/);
+  const source = script.match(/function conciseBureauName\(value\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(source);
+  const conciseBureauName = vm.runInNewContext(`(${source})`);
+  assert.deepEqual(
+    ["Дерево", "Огонь", "Земля", "Металл", "Вода"].map(element => conciseBureauName(`Система элемента «${element}»`)),
+    ["Дерево", "Огонь", "Земля", "Металл", "Вода"],
+  );
 });

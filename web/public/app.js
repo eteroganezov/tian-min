@@ -102,12 +102,12 @@ function renderFreePreview(data) {
 
       <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
-        <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны основные ориентиры карты: Дворец судьбы, Дворец тела, текущий возрастной дворец и ключевые звёздные акценты.</p></div>
+        <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны ключевые рассчитанные параметры карты Цзы Вэй.</p></div>
         <div class="ziwei-facts">
           <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
           <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
-          <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
+          <article><span>Система элементов</span><b>${e(conciseBureauName(data.ziwei.fiveElementBureau.name))}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
         </div>
         <div class="transformations"><header><span>Четыре трансформации</span><p>Четыре трансформации показывают, какие звёзды получают в карте дополнительные акценты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
         <article class="current-palace"><div><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small></div></article>
@@ -310,6 +310,10 @@ function lunarDateLines(ziwei) {
   if (Array.isArray(ziwei?.lunarDateLines) && ziwei.lunarDateLines.length === 3) return ziwei.lunarDateLines;
   const parts = String(ziwei?.lunarDate || "—").split(/\s*·\s*/u).filter(Boolean);
   return parts.length === 3 ? parts : [String(ziwei?.lunarDate || "—")];
+}
+
+function conciseBureauName(value) {
+  return String(value || "—").replace(/^Система элемента\s+[«"]?/u, "").replace(/[»"]$/u, "");
 }
 
 function lowerFirst(value) {
