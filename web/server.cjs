@@ -164,10 +164,16 @@ function sendJson(response, status, body) {
   response.end(JSON.stringify(body));
 }
 
-if (require.main === module) {
-  const port = Number(process.env.PORT || 3000);
-  const server = createServer();
-  server.listen(port, "127.0.0.1", () => console.log(`Тянь Мин запущен: http://localhost:${port}`));
+function resolveServerBinding(env = process.env) {
+  const port = Number(env.PORT || 3000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("PORT должен быть целым числом от 1 до 65535.");
+  return { host: env.HOST || "0.0.0.0", port };
 }
 
-module.exports = { createServer };
+if (require.main === module) {
+  const { host, port } = resolveServerBinding();
+  const server = createServer();
+  server.listen(port, host, () => console.log(`Тянь Мин запущен: http://localhost:${port} (bind ${host})`));
+}
+
+module.exports = { createServer, resolveServerBinding };
