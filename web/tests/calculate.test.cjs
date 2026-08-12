@@ -98,5 +98,6 @@ test("production build содержит бесплатную воронку и �
   assert.doesNotMatch(html, /Понадобится меньше минуты/);
   assert.match(styles, /\.section-signature\{padding-top:0;border-top:0\}/);
   assert.match(styles, /\.transformations>div>p\{border-radius:8px\}/);
+  assert.match(styles, /\.transformations>header p\{[^}]*padding:0;border:0;background:transparent\}/);
   assert.match(styles, /\.locked-grid article\{border:[^}]+border-radius:10px\}/);
 });
