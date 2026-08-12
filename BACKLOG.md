@@ -2,15 +2,16 @@
 
 ## Production / Payments
 
-- Выбрать российского payment provider и финальную production price вместо временных `100 RUB`.
-- Настроить production credentials/config, create payment и redirect/payment form.
-- Подключить callback/signed webhook с обязательной проверкой подписи или provider authentication.
-- Сохранить идемпотентность production payment events, добавить reconciliation и production persistence.
-- Провести production checkout QA: payment → `PAID` → разрешение report generation.
+- Подготовить production deployment architecture и публичный HTTPS backend.
+- Интегрировать выбранный provider Lorentsen; заменить временные DEV `100 RUB` на launch price `399 RUB` только в production configuration.
+- Настроить production credentials, `GET /connection`, create/get payment и QR/payment-link flow.
+- Зарегистрировать webhook и реализовать raw-body HMAC verification, durable inbox, event/body-hash deduplication и обработку out-of-order events.
+- Сохранить идемпотентность logical payment attempts, polling/reconciliation и production persistence; fulfillment разрешать только после Lorentsen `settled`.
+- Провести production checkout QA: payment → server-confirmed `settled` → `PAID` → разрешение report generation.
 
 ## Premium Generation
 
-- Подключить реальную OpenAI generation только после server-confirmed `PAID`.
+- Подключить реальную OpenAI generation только после server-confirmed Lorentsen `settled` / внутреннего `PAID`.
 - Сохранять готовый premium report и обеспечивать повторный доступ без повторной AI-generation.
 - Сохранить retry generation после ошибки без новой оплаты.
 - Измерить и контролировать реальную стоимость одного premium report.
