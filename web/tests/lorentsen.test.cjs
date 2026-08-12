@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { LorentsenPaymentProvider, PROVIDER_STATUSES, parseRetryAfter } = require("../lib/lorentsen-provider.cjs");
+const { LorentsenPaymentProvider, PROVIDER_STATUSES, describePaymentPayload, parseRetryAfter } = require("../lib/lorentsen-provider.cjs");
 const { verifyLorentsenWebhook } = require("../lib/lorentsen-webhook.cjs");
 const { MemoryOrderStore } = require("../lib/order-store.cjs");
 const { PremiumService } = require("../lib/premium-service.cjs");
@@ -16,6 +16,7 @@ const providerConfig = {
   autoRedemptionTermsUrl: "https://example.test/redemption", consentVersion: "certificate_purchase_terms_v1",
   autoRedemptionConsentVersion: "partner_auto_redemption_consent_v1", requestTimeoutMs: 1_000,
 };
+const silentLogger = { info() {}, error() {} };
 
 function lorentsenEnv(overrides = {}) {
   return {
@@ -32,11 +33,11 @@ function response(status, body, headers = {}) { return new Response(JSON.stringi
 
 test("Lorentsen create использует exact endpoint, bearer и stable idempotency body", async () => {
   const calls = [];
-  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async (url, options) => {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async (url, options) => {
     calls.push({ url: String(url), options });
-    return response(201, { payment_public_id: "pay_1", external_order_id: "ext_1", status: "preparing", payment_method: null, retry_after_seconds: 7, trace_id: "trace_1" });
+    return response(201, { payment_public_id: "pay_1", external_order_id: "ext_1", payment_status: "preparing", payment_method: null, retry_after_seconds: 7, trace_id: "trace_1" });
   } });
-  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 39900 };
+  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 59900 };
   const result = await provider.createPayment({ requestBody, idempotencyKey: "idem_1" });
   assert.equal(calls[0].url, "https://api.lorentsen.pro/api/v1/integration/payments");
   assert.equal(calls[0].options.headers.Authorization, "Bearer test-token");
@@ -47,28 +48,41 @@ test("Lorentsen create использует exact endpoint, bearer и stable ide
   assert.equal(result.retryAfterSeconds, 7);
 });
 
-test("provider принимает 200 idempotent result и нормализует requires_action без декодирования QR", async () => {
-  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(200, {
-    payment_public_id: "pay_2", external_order_id: "ext_2", status: "requires_action",
-    payment_method: { image: "https://cdn.example.test/qr.png", link: "https://pay.example.test/exact", expires_at: "2026-09-01T10:00:00Z" },
+test("provider принимает фактический nested create contract и 200 idempotent requires_action", async () => {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, {
+    data: { payment: {
+      payment_public_id: "pay_2", external_order_id: "ext_2", payment_status: "requires_action",
+      payment_method: { image: "https://cdn.example.test/qr.png", link: "https://pay.example.test/exact", expires_at: "2026-09-01T10:00:00Z" },
+      retry_after_seconds: 8,
+    } },
+    trace_id: "trace_2",
   }) });
   const result = await provider.createPayment({ requestBody: {}, idempotencyKey: "idem_2" });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.paymentMethod.link, "https://pay.example.test/exact");
   assert.equal(result.paymentMethod.image, "https://cdn.example.test/qr.png");
   assert.equal(result.paymentMethod.expiresAt, "2026-09-01T10:00:00.000Z");
+  assert.equal(result.status, "requires_action");
+  assert.equal(result.retryAfterSeconds, 8);
+  assert.equal(result.traceId, "trace_2");
+});
+
+test("structural diagnostics содержит только имена полей, а не provider values", () => {
+  const shape = describePaymentPayload({ data: { payment: { payment_public_id: "pay_private", payer_email: "private@example.test", payment_status: "preparing" } } });
+  assert.deepEqual(shape.fields, ["$.data", "$.data.payment", "$.data.payment.payment_public_id", "$.data.payment.payer_email", "$.data.payment.payment_status"]);
+  assert.doesNotMatch(JSON.stringify(shape), /pay_private|private@example/);
 });
 
 test("409/422 не retry, 429/5xx retry и Retry-After сохраняется", async () => {
   for (const [status, retryable] of [[409, false], [422, false], [429, true], [503, true]]) {
-    const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(status, { trace_id: "safe" }, { "Retry-After": "9" }) });
+    const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(status, { trace_id: "safe" }, { "Retry-After": "9" }) });
     await assert.rejects(provider.createPayment({ requestBody: {}, idempotencyKey: "idem" }), error => error.status === status && error.retryable === retryable && error.retryAfterSeconds === 9);
   }
   assert.equal(parseRetryAfter("6"), 6);
 });
 
 test("422 сохраняет безопасную provider-диагностику без email и request values", async () => {
-  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(422, {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(422, {
     error: {
       code: "validation_error",
       type: "request_validation",
@@ -91,7 +105,7 @@ test("422 сохраняет безопасную provider-диагностик�
 
 test("все документированные provider statuses поддержаны, неизвестный становится provider_result_unknown", async () => {
   assert.deepEqual(PROVIDER_STATUSES, ["preparing", "processing", "requires_action", "succeeded_pending", "settled", "manual_review", "failed", "expired", "provider_result_unknown"]);
-  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(200, { payment_public_id: "pay_unknown", external_order_id: "ext_unknown", status: "invented" }) });
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { payment_public_id: "pay_unknown", external_order_id: "ext_unknown", payment_status: "invented" }) });
   assert.equal((await provider.getPaymentStatus("pay_unknown")).status, "provider_result_unknown");
 });
 
@@ -235,6 +249,70 @@ test("retryable create failure повторяет тот же attempt, idempoten
   assert.equal(provider.createCalls[0].attemptId, provider.createCalls[1].attemptId);
   assert.equal(provider.createCalls[0].idempotencyKey, provider.createCalls[1].idempotencyKey);
   assert.deepEqual(provider.createCalls[0].requestBody, provider.createCalls[1].requestBody);
+});
+
+test("reload восстанавливает active attempt через тот же idempotent create и сохраняет payment method", async () => {
+  const store = new MemoryOrderStore();
+  const provider = new FakeLorentsenProvider();
+  let calls = 0;
+  provider.createPayment = async attempt => {
+    provider.createCalls.push(structuredClone(attempt));
+    calls += 1;
+    if (calls === 1) {
+      const error = new Error("provider response mapping failed");
+      error.retryable = true;
+      error.status = 502;
+      error.code = "INVALID_PROVIDER_RESPONSE";
+      throw error;
+    }
+    return payment("pay_recovered", "requires_action");
+  };
+  let current = new Date("2026-08-12T10:00:01Z");
+  const ctx = serviceSetup([], { orderStore: store, provider, now: () => current });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  assert.equal((await ctx.service.startPayment({ orderId: order.orderId, ...validConsent })).status, 503);
+  current = new Date("2026-08-12T10:00:07Z");
+  const recovered = await ctx.service.getOrder(order.orderId);
+  assert.equal(recovered.status, 200);
+  assert.equal(recovered.body.order.providerStatus, "requires_action");
+  assert.equal(recovered.body.order.paymentId, "pay_recovered");
+  assert.equal(recovered.body.order.paymentMethod.link, "https://pay.example/exact");
+  assert.equal(provider.createCalls.length, 2);
+  assert.equal(provider.createCalls[0].attemptId, provider.createCalls[1].attemptId);
+  assert.equal(provider.createCalls[0].idempotencyKey, provider.createCalls[1].idempotencyKey);
+  assert.deepEqual(provider.createCalls[0].requestBody, provider.createCalls[1].requestBody);
+});
+
+test("temporary GET error сохраняет ранее полученный QR/link для reload recovery", async () => {
+  const provider = new FakeLorentsenProvider(["requires_action"]);
+  const ctx = serviceSetup([], { provider });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  provider.getPaymentStatus = async paymentId => {
+    provider.getCalls.push(paymentId);
+    const error = new Error("network");
+    error.status = 503;
+    error.retryable = true;
+    error.code = "PROVIDER_NETWORK_ERROR";
+    throw error;
+  };
+  const result = await ctx.service.reconcilePayment(started.body.order.paymentId);
+  assert.equal(result.status, 503);
+  assert.equal(result.body.order.paymentMethod.link, "https://pay.example/exact");
+});
+
+test("reload использует payment_public_id из durable attempt, если order update был прерван", async () => {
+  let current = new Date("2026-08-12T10:00:01Z");
+  const ctx = serviceSetup(["requires_action", "requires_action"], { now: () => current });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  await ctx.orderStore.save({ ...await ctx.orderStore.load(order.orderId), paymentId: null, paymentMethod: null });
+  current = new Date("2026-08-12T10:00:07Z");
+  const recovered = await ctx.service.getOrder(order.orderId);
+  assert.equal(recovered.body.order.paymentId, started.body.order.paymentId);
+  assert.equal(recovered.body.order.paymentMethod.link, "https://pay.example/exact");
+  assert.equal(ctx.provider.createCalls.length, 1);
+  assert.deepEqual(ctx.provider.getCalls, [started.body.order.paymentId]);
 });
 
 test("create failure пишет только redacted structural diagnostics", async () => {

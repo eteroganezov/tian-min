@@ -266,7 +266,14 @@ class PremiumService {
   async getOrder(orderId) {
     const order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
-    if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && order.paymentId && (!order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) return this.reconcilePayment(order.paymentId);
+    if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && (!order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) {
+      if (order.paymentId) return this.reconcilePayment(order.paymentId);
+      const attempt = order.currentAttemptId ? await this.orderStore.loadAttempt(order.currentAttemptId) : null;
+      if (attempt && ACTIVE_PROVIDER_STATUSES.has(attempt.providerStatus)) {
+        if (attempt.paymentPublicId) return this.reconcilePayment(attempt.paymentPublicId);
+        return this.createProviderPayment(order, attempt);
+      }
+    }
     return success(200, order);
   }
 

@@ -266,7 +266,9 @@ function renderLorentsenState(host, order) {
     return;
   }
   const method = order.paymentMethod;
-  if (order.providerStatus === "requires_action" && method) {
+  const methodExpiresAt = Date.parse(method?.expiresAt || "");
+  const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
+  if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
     host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата через Lorentsen</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или точную ссылку, полученную от платёжного провайдера.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>Оплатить до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Ожидаем подтверждение Lorentsen…</div></section>`;
   } else {
     const copy = { preparing: ["Платёж создаётся", "QR-код появится после подготовки Lorentsen."], processing: ["Платёж обрабатывается", "Ожидаем подтверждение платёжного провайдера."], succeeded_pending: ["Оплата принята в обработку", "Отчёт станет доступен только после окончательного статуса settled."], manual_review: ["Платёж проверяется", "Lorentsen выполняет ручную проверку. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];

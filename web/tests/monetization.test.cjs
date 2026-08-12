@@ -208,6 +208,8 @@ test("frontend monetization не вызывает OpenAI/report API", () => {
   assert.match(script, /name="autoRedemptionAccepted"/);
   assert.match(script, /button\.disabled.*email\.validity\.valid/);
   assert.match(script, /paymentMethod\.link|method\.link/);
+  assert.match(script, /methodIsUsable/);
+  assert.match(script, /provider_result_unknown.*methodIsUsable|methodIsUsable[\s\S]*provider_result_unknown/);
   assert.doesNotMatch(script, /decode.*QR|status\s*:\s*["']PAID/);
   assert.doesNotMatch(script, /\/api\/report|OPENAI_API_KEY|paid\s*:\s*true/);
 });

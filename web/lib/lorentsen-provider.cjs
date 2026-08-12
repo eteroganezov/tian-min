@@ -8,6 +8,7 @@ class LorentsenPaymentProvider {
   constructor(options = {}) {
     this.env = options.env || process.env;
     this.fetch = options.fetch || globalThis.fetch;
+    this.logger = options.logger || console;
     this.config = resolveLorentsenConfig(this.env);
     this.name = "lorentsen";
   }
@@ -43,6 +44,11 @@ class LorentsenPaymentProvider {
     }
     const retryAfterSeconds = parseRetryAfter(response.headers?.get?.("retry-after"));
     const payload = await readSafeJson(response);
+    this.logger.info?.("[PAYMENT_PROVIDER_RESPONSE]", JSON.stringify({
+      stage: method === "POST" ? "create_payment" : "get_payment",
+      httpStatus: response.status,
+      responseShape: describePaymentPayload(payload),
+    }));
     if (!options.acceptedStatuses.includes(response.status)) {
       const retryable = response.status === 429 || response.status >= 500;
       const code = response.status === 409 ? "IDEMPOTENCY_CONFLICT" : response.status === 422 ? "PROVIDER_VALIDATION_ERROR" : response.status === 429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_HTTP_ERROR";
@@ -91,9 +97,11 @@ function resolveLorentsenConfig(env = process.env) {
 
 function normalizePayment(payload, httpStatus, headerRetryAfter) {
   if (!payload || typeof payload !== "object") throw providerError("Lorentsen вернул некорректный JSON.", 502, true, "INVALID_PROVIDER_RESPONSE");
-  const status = PROVIDER_STATUSES.includes(payload.status) ? payload.status : "provider_result_unknown";
-  const paymentPublicId = safeString(payload.payment_public_id, 200);
-  const externalOrderId = safeString(payload.external_order_id, 200);
+  const payment = findPaymentRecord(payload);
+  const statusValue = payment?.payment_status ?? payment?.status;
+  const status = PROVIDER_STATUSES.includes(statusValue) ? statusValue : "provider_result_unknown";
+  const paymentPublicId = safeString(payment?.payment_public_id, 200);
+  const externalOrderId = safeString(payment?.external_order_id, 200);
   if (!paymentPublicId) throw providerError("Lorentsen не вернул payment_public_id.", 502, true, "INVALID_PROVIDER_RESPONSE");
   if (!externalOrderId) throw providerError("Lorentsen не вернул external_order_id.", 502, true, "INVALID_PROVIDER_RESPONSE");
   return {
@@ -101,11 +109,43 @@ function normalizePayment(payload, httpStatus, headerRetryAfter) {
     paymentPublicId,
     externalOrderId,
     status,
-    paymentMethod: normalizePaymentMethod(payload.payment_method),
-    retryAfterSeconds: positiveInteger(payload.retry_after_seconds, headerRetryAfter || 5),
-    traceId: safeString(payload.trace_id, 160),
+    paymentMethod: normalizePaymentMethod(payment.payment_method),
+    retryAfterSeconds: positiveInteger(payment.retry_after_seconds ?? payload.retry_after_seconds, headerRetryAfter || 5),
+    traceId: safeString(payment.trace_id, 160) || safeString(payload.trace_id, 160),
     httpStatus,
   };
+}
+
+function findPaymentRecord(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const queue = [{ value: payload, depth: 0 }];
+  const matches = [];
+  while (queue.length) {
+    const { value, depth } = queue.shift();
+    if (Object.hasOwn(value, "payment_public_id")) matches.push(value);
+    if (depth >= 3) continue;
+    for (const child of Object.values(value)) {
+      if (child && typeof child === "object" && !Array.isArray(child)) queue.push({ value: child, depth: depth + 1 });
+    }
+  }
+  if (matches.length !== 1) return null;
+  return matches[0];
+}
+
+function describePaymentPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return { kind: "invalid" };
+  const fields = [];
+  const queue = [{ value: payload, path: "$", depth: 0 }];
+  while (queue.length && fields.length < 80) {
+    const { value, path, depth } = queue.shift();
+    for (const [key, child] of Object.entries(value)) {
+      if (!/^[A-Za-z0-9_.-]{1,120}$/.test(key)) continue;
+      const childPath = `${path}.${key}`;
+      fields.push(childPath);
+      if (depth < 2 && child && typeof child === "object" && !Array.isArray(child)) queue.push({ value: child, path: childPath, depth: depth + 1 });
+    }
+  }
+  return { kind: "object", fields };
 }
 
 function normalizePaymentMethod(value) {
@@ -192,4 +232,4 @@ function safeDiagnosticText(value) {
 function providerError(message, status, retryable, code) { const error = new Error(message); error.status = status; error.retryable = retryable; error.code = code; return error; }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
 
-module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };
+module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, describePaymentPayload, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };

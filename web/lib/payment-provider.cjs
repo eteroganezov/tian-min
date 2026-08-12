@@ -35,7 +35,7 @@ function createPaymentProvider(env = process.env, options = {}) {
   if (mode === "mock") return new MockPaymentProvider({ env });
   if (mode === "lorentsen") {
     if (env.NODE_ENV !== "production") throw configurationError("Lorentsen provider разрешён только в production.");
-    return new LorentsenPaymentProvider({ env, fetch: options.fetch });
+    return new LorentsenPaymentProvider({ env, fetch: options.fetch, logger: options.logger });
   }
   return new UnavailablePaymentProvider();
 }
