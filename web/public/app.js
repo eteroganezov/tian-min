@@ -104,7 +104,7 @@ function renderFreePreview(data) {
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
         <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны основные ориентиры карты: Дворец судьбы, Дворец тела, текущий возрастной дворец и ключевые звёздные акценты.</p></div>
         <div class="ziwei-facts">
-          <article><span>Лунная дата</span><b class="lunar-date">${(data.ziwei.lunarDateLines || [data.ziwei.lunarDate]).map(line => `<i>${e(line)}</i>`).join("")}</b></article>
+          <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
           <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
@@ -152,7 +152,7 @@ async function openPremiumOffer() {
   try {
     const config = await api("/api/premium/config");
     const host = document.querySelector(".premium-action");
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · персональный разбор · полный PDF-отчёт</p></section>`;
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
     host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
     host.scrollIntoView({ behavior: "smooth", block: "center" });
   } catch (error) { showPremiumError(error.message); }
@@ -304,6 +304,12 @@ function showError(message) {
 function formatDate(value) {
   const [year, month, day] = String(value).split("-");
   return day && month && year ? `${day}.${month}.${year}` : value;
+}
+
+function lunarDateLines(ziwei) {
+  if (Array.isArray(ziwei?.lunarDateLines) && ziwei.lunarDateLines.length === 3) return ziwei.lunarDateLines;
+  const parts = String(ziwei?.lunarDate || "—").split(/\s*·\s*/u).filter(Boolean);
+  return parts.length === 3 ? parts : [String(ziwei?.lunarDate || "—")];
 }
 
 function lowerFirst(value) {

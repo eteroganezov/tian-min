@@ -20,9 +20,11 @@ test("CTA и calculated Zi Wei cards используют точечные align
   assert.match(html, /class="cta-label">Рассчитать мою карту/);
   assert.match(html, /class="cta-arrow"/);
   assert.match(styles, /\.hero-cta,\.primary-button\{position:relative;justify-content:center;text-align:center\}/);
-  assert.match(script, /class="lunar-date"/);
-  assert.match(styles, /\.ziwei-facts article\{[^}]*align-items:center;justify-content:center[^}]*text-align:center/);
-  assert.match(styles, /\.ziwei-section>\.current-palace\{text-align:center/);
+  assert.match(script, /class="lunar-date-line"/);
+  assert.match(script, /split\(\/\\s\*·\\s\*\/u\)/);
+  assert.match(styles, /\.lunar-date-line\{display:block/);
+  assert.match(styles, /\.ziwei-facts article\{[^}]*align-items:flex-start;justify-content:center[^}]*text-align:left/);
+  assert.match(styles, /\.ziwei-section>\.current-palace\{text-align:left/);
   assert.match(styles, /\.transformations>header p\{[^}]*padding:0;border:0;background:transparent/);
   assert.match(styles, /\.locked-grid article\{[^}]*border-radius:10px/);
 });
