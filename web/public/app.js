@@ -92,16 +92,16 @@ function renderFreePreview(data) {
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
           <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
-          <article class="current-palace"><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></article>
         </div>
         <div class="transformations"><header><span>Четыре трансформации</span><p>Четыре трансформации показывают, какие звёзды получают в карте дополнительные акценты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+        <article class="current-palace"><div><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></div></article>
         <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Все жизненные сферы и рассчитанные звёзды</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
       </section>
     </div>
 
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
       <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
-        <div class="locked-grid">${premiumSections().map((item, index) => `<article><span aria-hidden="true">${String(index + 1).padStart(2, "0")}</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
+        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
         <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональная интерпретация · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>

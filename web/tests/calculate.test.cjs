@@ -89,6 +89,7 @@ test("production build содержит бесплатную воронку и �
   assert.match(script, /Четыре трансформации показывают/);
   assert.match(script, /Находится во дворце/);
   assert.doesNotMatch(script, /◇|Посмотреть подробные данные карты/);
+  assert.doesNotMatch(script, /padStart\(2, "0"\)/);
   assert.doesNotMatch(html, /<article><b>0[1-8]<\/b><h3>/);
   assert.doesNotMatch(script, /\/api\/report|\/api\/pdf|loadPersonalReport/);
   assert.equal((html.match(/Две традиции — один цельный портрет/g) || []).length, 2);
