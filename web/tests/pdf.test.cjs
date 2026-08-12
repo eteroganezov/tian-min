@@ -25,7 +25,7 @@ test("полный PDF является настоящим документом 
   assert.match(parsed.text, /Внутренний портрет/);
   assert.match(parsed.text, /Роль, где можно влиять на качество/);
   assert.match(parsed.text, /Ваша карта в одном взгляде/);
-  assert.match(parsed.text, /Янская Земля[\s\S]{0,40}戊\s*·\s*основной элемент человека/);
+  assert.match(parsed.text, /Янская Земля[\s\S]{0,40}戊\s*·\s*ваш основной элемент/);
   assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
   assert.match(parsed.text, /Дворец партнёрства и[\s\S]{0,20}отношений/);
   assert.match(parsed.text, /Дерево[\s\S]*木[\s\S]*1/);
@@ -35,10 +35,15 @@ test("полный PDF является настоящим документом 
   assert.equal(parsed.numpages >= 19 && parsed.numpages <= 27, true, `Получилось ${parsed.numpages} страниц`);
   assert.equal((parsed.text.match(/Материалы предназначены для информационных, культурных/g) || []).length, 1);
   assert.equal(parsed.text.indexOf("Двенадцать дворцов Цзы Вэй") < parsed.text.indexOf("Главное о вас"), true);
+  assert.equal(parsed.text.indexOf("Двенадцать дворцов Цзы Вэй") < parsed.text.indexOf("Большие жизненные периоды"), true);
+  assert.equal(parsed.text.indexOf("Большие жизненные периоды") < parsed.text.indexOf("Внутренний портрет"), true);
   assert.match(parsed.text, /Дворец судьбы[\s\S]{0,50}У\s*·\s*午/i);
   assert.match(parsed.text, /Дворец тела[\s\S]{0,50}У\s*·\s*午/i);
   assert.equal((parsed.text.match(/Главное о вас/g) || []).length, 1);
   assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
+  assert.match(parsed.text, /Основному элементу требуется больше\s+поддержки со стороны карты/);
+  assert.match(parsed.text, /Хуа Лу[\s\S]{0,30}化禄[\s\S]{0,80}Возможности и ресурс/i);
+  assert.match(parsed.text, /Хуа Цюань[\s\S]{0,30}化权[\s\S]{0,80}Влияние и ответственность/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ/iu);
   assert.doesNotMatch(parsed.text, /Цзы Вэй в одном взгляде/i);
@@ -118,6 +123,7 @@ test("редакционный PDF очищает внутренние форм�
         "Особенно заметна способность соединять людей.",
         "Практическая формула периода — ясные договорённости.",
       ] },
+      { key: "traits", title: "Ваш характер в деталях", items: ["01 Наблюдательность Преобладание внимания к деталям. В РЕСУРСЕ Видите связи. В ПЕРЕГРУЗЕ Долго проверяете решение. Основания карты: Ба-цзы: первый признак. · Ба-цзы: второй признак."] },
       { key: "relationships", title: "Близость, выбор и конфликты", paragraphs: [
         "Первый вводный смысл. Первый реальный смысловой пункт.",
         "Второй реальный смысловой пункт.",
@@ -131,7 +137,7 @@ test("редакционный PDF очищает внутренние форм�
       { key: "lifestyle", title: "", items: ["РИТМ Уникальная проверочная фраза о жизненном ритме."] },
       { key: "matrix", title: "Матрица жизненных сфер", items: ["Окружение Согласие Ба-цзы Конфликт 申–寅 может отражать напряжение. Экспертно\uFFFEструктурные роли поддерживают результат.", "Цзы Вэй Доу Шу Тань Лан во дворце уязвимостей напоминает о режиме."] },
       { key: "cross-validation", title: "Где выводы устойчивее", items: ["Подтверждают Уникальная проверочная фраза о согласовании систем."] },
-      { key: "confidence", title: "Насколько устойчивы выводы", items: ["Хорошо подтверждается картой — Основная линия.", "Требует дополнительного контекста — Детали периода.", "Не стоит воспринимать буквально — Конкретные события."] },
+      { key: "confidence", title: "Насколько устойчивы выводы", items: ["Хорошо подтверждается картой — Основная линия.", "Требует дополнительного контекста — Детали периода.", "Не стоит воспринимать буквально — Конкретные даты брака, переезда, крупных потерь или болезней. Таких данных расчёт не подтверждает; высокая чувствительность расчёта не позволяет делать точные событийные заявления."] },
       { key: "manifestations", title: "Как это проявляется в жизни", items: ["Уникальная проверочная фраза о проявлении в жизни."] },
       { key: "final", title: "Ваша главная линия", paragraphs: ["В рамках этой символической интерпретации ваша опора — ясность."] },
     ],
@@ -143,17 +149,25 @@ test("редакционный PDF очищает внутренние форм�
   assert.doesNotMatch(parsed.text, /Этот отчёт основан|в рамках этой символической интерпретации|ПЕРСОНАЛЬНЫЙ СИНТЕЗ|Профессиональный слой отчёта|Русское название показано первым/i);
   assert.doesNotMatch(parsed.text, /(?:Конфликт|Соединение|Столкновение|Сочетание|Вред)\s*[-–—](?:\s|$)/i);
   assert.doesNotMatch(parsed.text, /[\u00AD\u200B-\u200D\u2060\uFFFD\uFFFE\uFFFF]/u);
+  assert.doesNotMatch(parsed.text, /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/u);
   assert.doesNotMatch(parsed.text, /\b(?:undefined|null|NaN|sensitivity)\b|следует воспринимать особенно осторожно/i);
   const relationships = parsed.text.slice(parsed.text.indexOf("Близость, выбор и конфликты"), parsed.text.indexOf("Матрица жизненных сфер"));
   for (const number of ["01", "02", "03", "04", "05"]) assert.match(relationships, new RegExp(`${number}\\s*·`));
   assert.doesNotMatch(relationships, /06\s*·/);
   assert.equal((parsed.text.match(/Материалы предназначены для информационных, культурных/g) || []).length, 1);
   assert.match(parsed.text, /Здоровье[\s\S]{0,120}Тань Лан/);
+  assert.match(parsed.text, /ОСНОВАНИЕ В КАРТЕ[\s\S]{0,100}первый признак[\s\S]{0,100}второй признак/i);
+  assert.doesNotMatch(parsed.text, /Почему карта на это указывает\s*·/i);
+  assert.match(parsed.text, /экспертные и\s+структурные роли/i);
   assert.doesNotMatch(parsed.text, /взаимодействие элементов,\s*взаимодействие элементов/i);
   assert.doesNotMatch(parsed.text, /не буквальный событийный прогноз|сохран[её]нн\p{L}* отч[её]т/iu);
   assert.doesNotMatch(parsed.text, /Оценка\s*-?\d/i);
   for (const phrase of ["подходящей среде", "стиле лидерства", "жизненном ритме", "согласовании систем", "проявлении в жизни"]) assert.match(parsed.text, new RegExp(phrase, "i"));
-  assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ|Требуют осторожности|высокая чувствительность расчёта/iu);
+  assert.match(parsed.text, /Практическая самопроверка[\s\S]{0,100}Сверьте выводы с вашей реальной жизнью/i);
+  assert.match(parsed.text, /Где важен дополнительный контекст[\s\S]{0,250}В вопросах брака, переезда и других крупных жизненных событий/i);
+  assert.equal(parsed.text.indexOf("Большие жизненные периоды") < parsed.text.indexOf("Главное о вас"), true);
+  assert.equal(parsed.text.lastIndexOf("Ваша главная линия") > parsed.text.lastIndexOf("Большие жизненные периоды"), true);
+  assert.doesNotMatch(parsed.text, /Продолжение|—\s*—|–\s*–|--|бизнес(?:\uFFFE)?анализ|экспертно(?:\uFFFE)?структурные|Требуют осторожности|высокая чувствительность расчёта|более осторожный вывод|более безопасный сценарий|следует трактовать осторожно|гарантированный сценарий|крупных потерь|болезней/iu);
 });
 
 test("PDF-рендерер принимает короткие и длинные смысловые блоки без потери финала", async () => {
