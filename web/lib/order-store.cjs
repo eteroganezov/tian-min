@@ -16,6 +16,9 @@ class MemoryOrderStore {
   saveConsent(record) { this.consents.set(record.externalConsentReference, structuredClone(record)); return structuredClone(record); }
   beginPaymentAttempt({ order, attempt, consent }) { this.saveAttempt(attempt); this.saveConsent(consent); return this.save(order); }
   recordWebhook(event) { const existing = this.webhooks.get(event.eventId); if (!existing) { this.webhooks.set(event.eventId, structuredClone(event)); return { status: "stored" }; } return existing.payloadHash === event.payloadHash ? { status: "duplicate" } : { status: "conflict" }; }
+  loadWebhook(eventId) { const value = this.webhooks.get(String(eventId)); return value ? structuredClone(value) : null; }
+  listPendingWebhooks(limit = 50) { const now = Date.now(); return [...this.webhooks.values()].filter(item => ((item.processingStatus === "pending" || item.processingStatus === "retry") && (!item.nextProcessingAt || Date.parse(item.nextProcessingAt) <= now)) || (item.processingStatus === "processing" && Date.parse(item.processingLeaseUntil || 0) <= now)).slice(0, limit).map(item => structuredClone(item)); }
+  updateWebhook(eventId, changes) { const existing = this.webhooks.get(String(eventId)); if (!existing) return null; const updated = { ...existing, ...structuredClone(changes) }; this.webhooks.set(String(eventId), updated); return structuredClone(updated); }
   saveAnomaly(record) { this.anomalies.push(structuredClone(record)); return structuredClone(record); }
 }
 

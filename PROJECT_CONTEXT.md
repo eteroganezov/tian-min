@@ -92,7 +92,7 @@ Do not rewrite this foundation merely to add a production provider.
 
 ## Lorentsen production payment integration
 
-Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented, but production credentials and the provider webhook are **not configured yet**. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
+Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented. The production connection and webhook configuration were reported active on 2026-08-12; provider reachability delivery must be rechecked after the deferred-reconciliation fix is deployed. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
 
 ### Create and retrieve payment
 
@@ -114,7 +114,7 @@ For one logical attempt, keep `external_order_id`, `Idempotency-Key` and request
 
 ### Webhooks
 
-Webhooks accelerate updates; REST polling remains fallback. Documented events: `payment.succeeded` → `succeeded_pending`, `payment.settled` → `settled`. Confirm the final state with GET after a webhook.
+Webhooks accelerate updates; REST polling remains fallback. Generic correctly signed reachability/service events are accepted without payment semantics. Every verified event is durably saved first; new events receive `202`, identical duplicates `200`. Only `payment.succeeded` and `payment.settled` enter deferred reconciliation. Reconciliation errors remain queued in the durable inbox and never turn an already accepted webhook into non-2xx. Confirm the final payment state with authenticated GET after a payment webhook.
 
 Header spelling is Lorentsen's documented spelling:
 
@@ -128,7 +128,7 @@ Verification requirements:
 1. Preserve exact raw body bytes before JSON parsing.
 2. Verify HMAC-SHA256 over the raw body using the signing secret; compare Base64 `v1=` signature in constant time.
 3. Validate signing-key version, header event ID against `event.id`, and timestamp against `event.created_at`; reject timestamps more than about 300 seconds in the future, but do not reject valid old retries solely for age.
-4. Before returning 2xx, durably save the event. Deduplicate by event ID; same ID plus a different body hash is a conflict. Durable-save failure returns 5xx. Handle duplicates and out-of-order delivery.
+4. Before returning 2xx, durably save the event. Deduplicate by event ID; same ID plus a different body hash is a conflict. Durable-save failure returns 5xx. A database-backed worker processes and retries payment reconciliation separately, including work recovered after process restart.
 
 Production records use PostgreSQL tables for orders, payment attempts/history, consent audit, webhook inbox, anomalies and future saved premium reports. DEV `.local-orders` / `.local-reports` remain unchanged. Production setup still requires an active server token, registered webhook endpoint, signing secret/key version, public HTTPS backend, `GET /connection` verification from production, and any required IP/CIDR allowlist. Store all secrets outside Git.
 
@@ -144,7 +144,7 @@ Premium PDF is functionally developed but has a separate visual backlog. Do not 
 
 At context creation: calculation core is considered stable; free preview, location autocomplete, monetization foundation, mock retry/recovery and duplicate-generation protection exist. Stale Node runtime behavior is covered by regression tests.
 
-Last known suite status: **139 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
+Last known suite status: **144 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
 
 Planned sequence, not work authorized by this file:
 

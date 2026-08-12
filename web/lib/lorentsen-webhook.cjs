@@ -1,6 +1,6 @@
 const crypto = require("node:crypto");
 
-const WEBHOOK_EVENTS = new Set(["payment.succeeded", "payment.settled"]);
+const PAYMENT_WEBHOOK_EVENTS = new Set(["payment.succeeded", "payment.settled"]);
 
 function verifyLorentsenWebhook({ rawBody, headers, secret, signingKeyVersion, now = Date.now() }) {
   if (!Buffer.isBuffer(rawBody)) throw webhookError(400, "WEBHOOK_BODY_REQUIRED", "Некорректное тело webhook.");
@@ -14,19 +14,21 @@ function verifyLorentsenWebhook({ rawBody, headers, secret, signingKeyVersion, n
   if (!safeEqual(signature, expected)) throw webhookError(401, "WEBHOOK_SIGNATURE_INVALID", "Webhook signature не подтверждена.");
   let event;
   try { event = JSON.parse(rawBody.toString("utf8")); } catch { throw webhookError(400, "WEBHOOK_JSON_INVALID", "Webhook содержит некорректный JSON."); }
-  if (!event || typeof event !== "object" || !WEBHOOK_EVENTS.has(event.type)) throw webhookError(422, "WEBHOOK_EVENT_UNSUPPORTED", "Webhook event не поддерживается.");
+  if (!event || typeof event !== "object" || Array.isArray(event)) throw webhookError(400, "WEBHOOK_EVENT_INVALID", "Webhook event имеет некорректный формат.");
+  const eventType = typeof event.type === "string" && event.type.length > 0 && event.type.length <= 200 ? event.type : null;
+  if (!eventType) throw webhookError(400, "WEBHOOK_EVENT_TYPE_REQUIRED", "Webhook event не содержит корректный type.");
   if (String(event.id || "") !== eventId) throw webhookError(400, "WEBHOOK_EVENT_ID_MISMATCH", "Event ID не совпадает с header.");
   const headerTime = parseTimestamp(timestamp);
   const eventTime = Date.parse(String(event.created_at || ""));
   if (!Number.isFinite(headerTime) || !Number.isFinite(eventTime) || Math.abs(headerTime - eventTime) > 1_000) throw webhookError(400, "WEBHOOK_TIMESTAMP_MISMATCH", "Webhook timestamp не совпадает с event.created_at.");
   if (headerTime - now > 300_000) throw webhookError(400, "WEBHOOK_TIMESTAMP_FUTURE", "Webhook timestamp находится слишком далеко в будущем.");
   const paymentPublicId = findPaymentPublicId(event);
-  if (!paymentPublicId) throw webhookError(422, "WEBHOOK_PAYMENT_ID_REQUIRED", "Webhook не содержит payment_public_id.");
   return {
     event,
     eventId,
-    eventType: event.type,
+    eventType,
     paymentPublicId,
+    requiresPaymentReconciliation: PAYMENT_WEBHOOK_EVENTS.has(eventType),
     createdAt: new Date(eventTime).toISOString(),
     payloadHash: crypto.createHash("sha256").update(rawBody).digest("hex"),
   };
@@ -41,4 +43,4 @@ function parseTimestamp(value) { const numeric = Number(value); if (Number.isFin
 function safeEqual(actual, expected) { const a = Buffer.from(String(actual)); const b = Buffer.from(String(expected)); return a.length === b.length && crypto.timingSafeEqual(a, b); }
 function webhookError(status, code, message) { const error = new Error(message); error.status = status; error.code = code; return error; }
 
-module.exports = { verifyLorentsenWebhook, WEBHOOK_EVENTS };
+module.exports = { verifyLorentsenWebhook, PAYMENT_WEBHOOK_EVENTS };

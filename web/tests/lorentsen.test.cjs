@@ -109,8 +109,8 @@ test("создание attempt + consent + order status выполняется �
 
 function signedWebhook(overrides = {}) {
   const createdAt = overrides.createdAt || "2026-08-12T10:00:00.000Z";
-  const event = { id: overrides.id || "evt_1", type: overrides.type || "payment.settled", created_at: createdAt, data: { payment_public_id: overrides.paymentId || "pay_1" } };
-  const rawBody = Buffer.from(JSON.stringify(overrides.event || event));
+  const event = overrides.event || { id: overrides.id || "evt_1", type: overrides.type || "payment.settled", created_at: createdAt, data: { payment_public_id: overrides.paymentId || "pay_1" } };
+  const rawBody = Buffer.from(JSON.stringify(event));
   const signature = `v1=${crypto.createHmac("sha256", providerConfig.webhookSecret).update(rawBody).digest("base64")}`;
   return { rawBody, headers: { "x-lorensten-event-id": overrides.headerId || event.id, "x-lorensten-timestamp": overrides.headerTimestamp || createdAt, "x-lorensten-signature": overrides.signature || signature, "x-lorensten-signing-key-version": overrides.keyVersion || providerConfig.webhookSigningKeyVersion } };
 }
@@ -122,6 +122,14 @@ test("webhook проверяет raw-body HMAC, key version, event ID и timesta
   assert.throws(() => verifyLorentsenWebhook({ ...signedWebhook({ signature: "v1=bad" }), secret: providerConfig.webhookSecret, signingKeyVersion: "v-test", now: Date.parse("2026-08-12T10:00:01Z") }), /signature/);
   assert.throws(() => verifyLorentsenWebhook({ ...signedWebhook({ keyVersion: "wrong" }), secret: providerConfig.webhookSecret, signingKeyVersion: "v-test", now: Date.parse("2026-08-12T10:00:01Z") }), /верси/i);
   assert.throws(() => verifyLorentsenWebhook({ ...signedWebhook({ headerId: "evt_other" }), secret: providerConfig.webhookSecret, signingKeyVersion: "v-test", now: Date.parse("2026-08-12T10:00:01Z") }), /Event ID/);
+});
+
+test("generic signed reachability event не требует payment_public_id", () => {
+  const payload = signedWebhook({ event: { id: "evt_reachability", type: "endpoint.test", created_at: "2026-08-12T10:00:00.000Z" } });
+  const verified = verifyLorentsenWebhook({ ...payload, secret: providerConfig.webhookSecret, signingKeyVersion: "v-test", now: Date.parse("2026-08-12T10:00:01Z") });
+  assert.equal(verified.eventType, "endpoint.test");
+  assert.equal(verified.paymentPublicId, null);
+  assert.equal(verified.requiresPaymentReconciliation, false);
 });
 
 test("webhook отклоняет >300 sec future, но принимает старый legitimate replay", () => {
@@ -236,16 +244,57 @@ test("webhook durable inbox: new=202, duplicate=200, changed body conflict", asy
   assert.equal((await ctx.service.handleLorentsenWebhook(changed.rawBody, changed.headers)).status, 409);
 });
 
+test("reachability event сохраняется, duplicate идемпотентен и reconciliation не запускается", async () => {
+  const ctx = serviceSetup([]);
+  const payload = signedWebhook({ event: { id: "evt_reachability", type: "endpoint.test", created_at: "2026-08-12T10:00:00.000Z" } });
+  assert.equal((await ctx.service.handleLorentsenWebhook(payload.rawBody, payload.headers)).status, 202);
+  assert.equal((await ctx.service.handleLorentsenWebhook(payload.rawBody, payload.headers)).status, 200);
+  await ctx.service.waitForWebhookJobs();
+  assert.equal(ctx.provider.getCalls.length, 0);
+  const stored = await ctx.orderStore.loadWebhook("evt_reachability");
+  assert.equal(stored.processingStatus, "not_applicable");
+  assert.equal(stored.eventPayload.type, "endpoint.test");
+});
+
+test("invalid signature и key version не сохраняются в durable inbox", async () => {
+  const ctx = serviceSetup([]);
+  const badSignature = signedWebhook({ id: "evt_bad_signature", signature: "v1=bad" });
+  const badVersion = signedWebhook({ id: "evt_bad_version", keyVersion: "wrong" });
+  const badEventId = signedWebhook({ id: "evt_body", headerId: "evt_header" });
+  assert.equal((await ctx.service.handleLorentsenWebhook(badSignature.rawBody, badSignature.headers)).status, 401);
+  assert.equal((await ctx.service.handleLorentsenWebhook(badVersion.rawBody, badVersion.headers)).status, 401);
+  assert.equal((await ctx.service.handleLorentsenWebhook(badEventId.rawBody, badEventId.headers)).status, 400);
+  assert.equal(ctx.orderStore.webhooks.size, 0);
+});
+
 test("payment.succeeded webhook максимум succeeded_pending; payment.settled + GET authorizes PAID", async () => {
   const ctx = serviceSetup(["preparing", "settled", "settled"]);
   const order = (await ctx.service.createCheckout(birthInput)).body.order;
   const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   const succeeded = signedWebhook({ id: "evt_success", type: "payment.succeeded", paymentId: started.body.order.paymentId });
-  await ctx.service.handleLorentsenWebhook(succeeded.rawBody, succeeded.headers);
+  assert.equal((await ctx.service.handleLorentsenWebhook(succeeded.rawBody, succeeded.headers)).status, 202);
+  await ctx.service.waitForWebhookJobs();
   assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAYMENT_PENDING");
   const settled = signedWebhook({ id: "evt_settled", type: "payment.settled", paymentId: started.body.order.paymentId });
-  await ctx.service.handleLorentsenWebhook(settled.rawBody, settled.headers);
+  assert.equal((await ctx.service.handleLorentsenWebhook(settled.rawBody, settled.headers)).status, 202);
+  await ctx.service.waitForWebhookJobs();
   assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAID");
+});
+
+test("webhook acceptance не ждёт зависший provider GET", async () => {
+  const provider = new FakeLorentsenProvider(["preparing"]);
+  let release;
+  provider.getPaymentStatus = paymentId => { provider.getCalls.push(paymentId); return new Promise(resolve => { release = () => resolve(payment(paymentId, "processing")); }); };
+  const ctx = serviceSetup([], { provider });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const webhook = signedWebhook({ id: "evt_deferred", type: "payment.succeeded", paymentId: started.body.order.paymentId });
+  const accepted = await Promise.race([ctx.service.handleLorentsenWebhook(webhook.rawBody, webhook.headers), new Promise((_, reject) => setTimeout(() => reject(new Error("acceptance waited for GET")), 50))]);
+  assert.equal(accepted.status, 202);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await ctx.orderStore.loadWebhook("evt_deferred")).processingStatus, "processing");
+  release();
+  await ctx.service.waitForWebhookJobs();
 });
 
 test("out-of-order succeeded после settled не откатывает PAID и duplicate settled не выполняет fulfillment повторно", async () => {
@@ -254,12 +303,35 @@ test("out-of-order succeeded после settled не откатывает PAID �
   const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   const settled = signedWebhook({ id: "evt_settled_first", type: "payment.settled", paymentId: started.body.order.paymentId });
   await ctx.service.handleLorentsenWebhook(settled.rawBody, settled.headers);
+  await ctx.service.waitForWebhookJobs();
   const paid = (await ctx.service.getOrder(order.orderId)).body.order;
   const late = signedWebhook({ id: "evt_success_late", type: "payment.succeeded", paymentId: started.body.order.paymentId });
   await ctx.service.handleLorentsenWebhook(late.rawBody, late.headers);
+  await ctx.service.waitForWebhookJobs();
   const after = (await ctx.service.getOrder(order.orderId)).body.order;
   assert.equal(after.status, "PAID");
   assert.equal(after.paymentConfirmedAt, paid.paymentConfirmedAt);
+});
+
+test("reconciliation timeout не меняет webhook 202 и остаётся durable retry work", async () => {
+  const provider = new FakeLorentsenProvider(["preparing"]);
+  provider.getPaymentStatus = async paymentId => { provider.getCalls.push(paymentId); const error = new Error("timeout"); error.status = 503; error.retryable = true; error.code = "PROVIDER_TIMEOUT"; throw error; };
+  const ctx = serviceSetup([], { provider });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const webhook = signedWebhook({ id: "evt_timeout", type: "payment.settled", paymentId: started.body.order.paymentId });
+  const accepted = await ctx.service.handleLorentsenWebhook(webhook.rawBody, webhook.headers);
+  assert.equal(accepted.status, 202);
+  await ctx.service.waitForWebhookJobs();
+  const stored = await ctx.orderStore.loadWebhook("evt_timeout");
+  assert.equal(stored.processingStatus, "retry");
+  assert.equal(stored.lastProcessingError.code, "RECONCILIATION_FAILED");
+  assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAYMENT_PENDING");
+  const recoveredProvider = new FakeLorentsenProvider(["settled"]);
+  const recovered = serviceSetup([], { orderStore: ctx.orderStore, provider: recoveredProvider });
+  await recovered.service.processPendingWebhooks();
+  assert.equal((await ctx.orderStore.loadWebhook("evt_timeout")).processingStatus, "processed");
+  assert.equal((await recovered.service.getOrder(order.orderId)).body.order.status, "PAID");
 });
 
 test("durable inbox failure returns 5xx and never trusts webhook payload", async () => {

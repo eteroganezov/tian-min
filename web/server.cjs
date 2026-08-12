@@ -53,6 +53,7 @@ function createServer(options = {}) {
     }
   });
   server.deploymentReady = orderStore.ready || Promise.resolve();
+  server.processPendingWebhooks = () => premiumService.processPendingWebhooks?.() || Promise.resolve([]);
   return server;
 }
 
@@ -202,7 +203,12 @@ async function startServer() {
   const { host, port } = resolveServerBinding();
   const server = createServer();
   await server.deploymentReady;
-  server.listen(port, host, () => console.log(`Тянь Мин запущен: http://localhost:${port} (bind ${host})`));
+  server.listen(port, host, () => {
+    console.log(`Тянь Мин запущен: http://localhost:${port} (bind ${host})`);
+    void server.processPendingWebhooks().catch(() => {});
+    const worker = setInterval(() => void server.processPendingWebhooks().catch(() => {}), 15_000);
+    worker.unref();
+  });
 }
 
 module.exports = { createServer, resolveServerBinding };

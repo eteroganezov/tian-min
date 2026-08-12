@@ -148,6 +148,27 @@ class PostgresPaymentStore {
     return existing.rows[0]?.payload_hash === event.payloadHash ? { status: "duplicate" } : { status: "conflict" };
   }
 
+  async loadWebhook(eventId) { await this.ready; return recordOrNull(await this.pool.query("SELECT record FROM tian_min_webhook_inbox WHERE event_id=$1", [String(eventId)])); }
+  async listPendingWebhooks(limit = 50) {
+    await this.ready;
+    const result = await this.pool.query(
+      `SELECT record FROM tian_min_webhook_inbox
+       WHERE (record->>'processingStatus' IN ('pending','retry') AND (record->>'nextProcessingAt' IS NULL OR (record->>'nextProcessingAt')::timestamptz <= NOW()))
+          OR (record->>'processingStatus'='processing' AND (record->>'processingLeaseUntil')::timestamptz <= NOW())
+       ORDER BY received_at LIMIT $1`,
+      [Math.max(1, Math.min(100, Number(limit) || 50))],
+    );
+    return result.rows.map(row => clone(row.record));
+  }
+  async updateWebhook(eventId, changes) {
+    await this.ready;
+    const result = await this.pool.query(
+      `UPDATE tian_min_webhook_inbox SET record=record || $2::jsonb WHERE event_id=$1 RETURNING record`,
+      [String(eventId), JSON.stringify(changes)],
+    );
+    return result.rows[0] ? clone(result.rows[0].record) : null;
+  }
+
   async saveAnomaly(record) {
     await this.ready;
     const anomaly = { anomalyId: record.anomalyId || `anomaly_${crypto.randomBytes(16).toString("hex")}`, createdAt: record.createdAt || new Date().toISOString(), ...record };

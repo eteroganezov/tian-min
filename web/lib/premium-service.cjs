@@ -19,6 +19,7 @@ class PremiumService {
     this.config = options.config || getProductConfig(this.env);
     this.stubGenerator = options.stubGenerator || defaultStubGenerator;
     this.generationPromises = new Map();
+    this.webhookJobs = new Set();
     this.now = options.now || (() => new Date());
   }
 
@@ -206,16 +207,45 @@ class PremiumService {
       verified = verifyLorentsenWebhook({ rawBody, headers, secret: this.paymentProvider.config.webhookSecret, signingKeyVersion: this.paymentProvider.config.webhookSigningKeyVersion, now: this.now().getTime() });
     } catch (error) { return failure(error.status || 400, error.message); }
     let inbox;
-    try { inbox = await this.orderStore.recordWebhook({ eventId: verified.eventId, eventType: verified.eventType, paymentPublicId: verified.paymentPublicId, payloadHash: verified.payloadHash, createdAt: verified.createdAt }); }
+    const needsReconciliation = verified.requiresPaymentReconciliation && Boolean(verified.paymentPublicId);
+    const missingPaymentId = verified.requiresPaymentReconciliation && !verified.paymentPublicId;
+    try { inbox = await this.orderStore.recordWebhook({ eventId: verified.eventId, eventType: verified.eventType, eventPayload: verified.event, paymentPublicId: verified.paymentPublicId, payloadHash: verified.payloadHash, createdAt: verified.createdAt, processingStatus: needsReconciliation ? "pending" : missingPaymentId ? "retry" : "not_applicable", processingAttempts: 0, lastProcessingError: missingPaymentId ? { code: "PAYMENT_ID_MISSING", at: this.isoNow() } : null }); }
     catch { return failure(503, "Webhook временно не удалось надёжно сохранить."); }
     if (inbox.status === "conflict") {
       await this.orderStore.saveAnomaly({ type: "WEBHOOK_EVENT_ID_CONFLICT", eventId: verified.eventId, createdAt: this.isoNow() });
       return failure(409, "Webhook event ID уже использован с другим payload.");
     }
-    const reconciled = await this.reconcilePayment(verified.paymentPublicId, { eventType: verified.eventType });
-    if (reconciled.status >= 500) return reconciled;
+    if (inbox.status === "stored" && needsReconciliation) this.scheduleWebhookReconciliation(verified.eventId);
     return { status: inbox.status === "stored" ? 202 : 200, body: { accepted: true, duplicate: inbox.status === "duplicate" } };
   }
+
+  scheduleWebhookReconciliation(eventId) {
+    const job = this.processWebhookEvent(eventId).catch(() => {}).finally(() => this.webhookJobs.delete(job));
+    this.webhookJobs.add(job);
+  }
+
+  async processWebhookEvent(eventId) {
+    const event = await this.orderStore.loadWebhook(eventId);
+    if (!event || !event.paymentPublicId || !["payment.succeeded", "payment.settled"].includes(event.eventType)) return { status: "not_applicable" };
+    const attempts = Number(event.processingAttempts || 0) + 1;
+    await this.orderStore.updateWebhook(eventId, { processingStatus: "processing", processingAttempts: attempts, lastProcessingStartedAt: this.isoNow(), processingLeaseUntil: futureIso(this.now(), 60) });
+    const result = await this.reconcilePayment(event.paymentPublicId, { eventType: event.eventType });
+    if (result.status >= 400) {
+      await this.orderStore.updateWebhook(eventId, { processingStatus: "retry", processingLeaseUntil: null, nextProcessingAt: result.body?.order?.nextPollAt || futureIso(this.now(), 15), lastProcessingError: { code: "RECONCILIATION_FAILED", httpStatus: result.status, at: this.isoNow() } });
+      return { status: "retry", result };
+    }
+    await this.orderStore.updateWebhook(eventId, { processingStatus: "processed", processingLeaseUntil: null, nextProcessingAt: null, lastProcessingError: null, processedAt: this.isoNow() });
+    return { status: "processed", result };
+  }
+
+  async processPendingWebhooks(limit = 50) {
+    const pending = await this.orderStore.listPendingWebhooks(limit);
+    const results = [];
+    for (const event of pending) results.push(await this.processWebhookEvent(event.eventId));
+    return results;
+  }
+
+  async waitForWebhookJobs() { await Promise.allSettled([...this.webhookJobs]); }
 
   async applyMockOutcome(orderId, outcome) {
     if (this.env.NODE_ENV === "production" || this.paymentProvider.name !== "mock") return failure(404, "DEV payment endpoint недоступен.");
