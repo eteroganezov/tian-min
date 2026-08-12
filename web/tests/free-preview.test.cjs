@@ -29,6 +29,49 @@ test("free preview содержит только реальные canonical да
   assert.deepEqual(result.body.ziwei.lunarDateLines, result.body.ziwei.lunarDate.split(" · "));
 });
 
+test("free BaZi payload готов для пользовательского UI без raw enum и артефактов", () => {
+  const result = createFreePreviewRequest(eduard, { currentYear: 2026 });
+  const bazi = result.body.bazi;
+  assert.equal(result.status, 200);
+  assert.ok(Number.isFinite(bazi.strength.score));
+  assert.doesNotMatch(bazi.strength.display.name, /[\u3400-\u9fff]/u);
+  for (const pillar of bazi.pillars) {
+    assert.match(pillar.stemDisplay.name, /(?:Ян|Инь) · небесный ствол$/);
+    assert.match(pillar.branchDisplay.name, / · земная ветвь$/);
+    assert.ok(pillar.shiShenDisplay.name);
+  }
+  const userFacing = JSON.stringify({
+    strength: bazi.strength.display.name,
+    pillars: bazi.pillars.map(pillar => [pillar.stemDisplay.name, pillar.branchDisplay.name, pillar.shiShenDisplay.name]),
+    elements: bazi.elements.map(item => [item.name, item.displayValue]),
+    currentPeriod: bazi.currentPeriod?.detailDisplay.map(item => item.name) || [],
+  });
+  assert.doesNotMatch(userFacing, /undefined|null|NaN|Infinity|极旺|偏旺|中和|偏弱|极弱/);
+});
+
+test("все пять реальных verdict проходят через end-to-end free preview с русской подписью", () => {
+  const cases = [
+    ["1940-01-15", "中和", "Сбалансированная карта"],
+    ["1940-02-15", "偏旺", "Скорее сильная карта"],
+    ["1940-04-15", "极旺(可能从强)", "Очень сильная карта (возможна структура следования силе)"],
+    ["1946-02-15", "偏弱", "Скорее ослабленная карта"],
+    ["1952-06-15", "极弱(可能从弱)", "Очень слабая карта (возможна структура следования слабости)"],
+  ];
+  for (const [date, verdict, displayName] of cases) {
+    const result = createFreePreviewRequest({ ...eduard, date, time: "12:00" }, { currentYear: 2026 });
+    assert.equal(result.status, 200);
+    assert.equal(result.body.bazi.strength.verdict, verdict);
+    assert.equal(result.body.bazi.strength.display.name, displayName);
+  }
+});
+
+test("шаблон столпа отдельно показывает stem, branch и роль в структуре Ба-цзы", () => {
+  const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
+  assert.match(script, /pillar\.gan[\s\S]*pillar\.stemDisplay\.name[\s\S]*pillar\.zhi[\s\S]*pillar\.branchDisplay\.name/);
+  assert.match(script, /Роль в структуре Ба-цзы/);
+  assert.doesNotMatch(script, /<b>\$\{e\(pillar\.stemDisplay\.name\)\}<\/b><small>/);
+});
+
 test("free payload не содержит AI-отчёт, prompts, metadata или закрытый текст", () => {
   const json = JSON.stringify(createFreePreviewRequest(eduard, { currentYear: 2026 }).body);
   assert.doesNotMatch(json, /report|prompt|auditTrail|metadata|executivePortrait|actionPlan|openai|api[_-]?key/i);

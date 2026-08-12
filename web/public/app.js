@@ -91,7 +91,7 @@ function renderFreePreview(data) {
     <div class="preview-body shell">
       <section class="preview-section" aria-labelledby="bazi-title">
         <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Ваша карта Ба-цзы</h2></div><p>Четыре столпа — это базовая структура карты рождения: год, месяц, день и час.</p></div>
-        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><b>${e(pillar.stemDisplay.name)}</b><small>${e(pillar.shiShenDisplay.name)}</small></article>`).join("")}</div>
+        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)}</i>${e(pillar.stemDisplay.name)}</b><b><i>${e(pillar.zhi)}</i>${e(pillar.branchDisplay.name)}</b></div><small><i>Роль в структуре Ба-цзы</i><b>${e(pillar.shiShenDisplay.name)}</b></small></article>`).join("")}</div>
         <div class="fact-grid">
           <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Дневной хозяин — центральный элемент карты Ба-цзы. Здесь показан рассчитанный параметр без психологической интерпретации.</p></article>
           <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>

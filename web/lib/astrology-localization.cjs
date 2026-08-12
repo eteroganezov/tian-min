@@ -18,9 +18,9 @@ const FIVE_ELEMENTS = Object.freeze({
 });
 
 const TEN_GODS = Object.freeze({
-  "正印": "Прямая печать", "偏印": "Косая печать", "正官": "Прямой чиновник",
+  "正印": "Прямая печать", "偏印": "Косвенная печать", "正官": "Прямой чиновник",
   "七杀": "Семь убийц", "正财": "Прямое богатство", "偏财": "Косвенное богатство",
-  "食神": "Дух пищи", "伤官": "Ранящий чиновника", "比肩": "Равное плечо", "劫财": "Грабитель богатства",
+  "食神": "Дух пищи", "伤官": "Ранящий чиновник", "比肩": "Равное плечо", "劫财": "Грабитель богатства",
 });
 
 // Здесь только транслитерация. Смыслы звёзд намеренно не добавляются без независимого методологического эталона.
@@ -44,7 +44,24 @@ const STEM_ELEMENTS = Object.freeze({
   "己": "Земля", "庚": "Металл", "辛": "Металл", "壬": "Вода", "癸": "Вода",
 });
 
-const STRENGTH = Object.freeze({ "身强": "Сильная карта", "偏强": "Скорее сильная карта", "身弱": "Ослабленная карта", "偏弱": "Скорее ослабленная карта", "中和": "Сбалансированная карта" });
+const STEMS = Object.freeze({
+  "甲": "Дерево Ян", "乙": "Дерево Инь", "丙": "Огонь Ян", "丁": "Огонь Инь", "戊": "Земля Ян",
+  "己": "Земля Инь", "庚": "Металл Ян", "辛": "Металл Инь", "壬": "Вода Ян", "癸": "Вода Инь",
+});
+
+const BRANCHES = Object.freeze({
+  "子": "Крыса", "丑": "Бык", "寅": "Тигр", "卯": "Кролик", "辰": "Дракон", "巳": "Змея",
+  "午": "Лошадь", "未": "Коза", "申": "Обезьяна", "酉": "Петух", "戌": "Собака", "亥": "Свинья",
+});
+
+// Полный набор verdict из calculator/bazi-enrich/wang-shuai.ts.
+const STRENGTH = Object.freeze({
+  "极旺(可能从强)": "Очень сильная карта (возможна структура следования силе)",
+  "偏旺": "Скорее сильная карта",
+  "中和": "Сбалансированная карта",
+  "偏弱": "Скорее ослабленная карта",
+  "极弱(可能从弱)": "Очень слабая карта (возможна структура следования слабости)",
+});
 const CONFIDENCE = Object.freeze({ "高": "Высокая", "中": "Средняя", "低": "Низкая" });
 
 function item(original, name) { return { original, name: name || original }; }
@@ -60,9 +77,15 @@ function transformationDisplay(original) {
   const starName = MAJOR_STARS[star] || AUXILIARY_STARS[star] || star;
   return item(original, `${starName} · ${TRANSFORMATIONS[suffix]}`);
 }
-function strengthDisplay(original) { return item(original, STRENGTH[original]); }
+function strengthDisplay(original) {
+  if (Object.prototype.hasOwnProperty.call(STRENGTH, original)) return item(original, STRENGTH[original]);
+  const message = `Неизвестный статус силы карты: ${String(original)}`;
+  if (process.env.NODE_ENV !== "production") throw new RangeError(message);
+  return item(original, "Статус требует уточнения");
+}
 function confidenceDisplay(original) { return item(original, CONFIDENCE[original]); }
-function stemDisplay(original) { return item(original, STEM_ELEMENTS[original] ? `${STEM_ELEMENTS[original]} · небесный ствол` : undefined); }
+function stemDisplay(original) { return item(original, STEMS[original] ? `${STEMS[original]} · небесный ствол` : undefined); }
+function branchDisplay(original) { return item(original, BRANCHES[original] ? `${BRANCHES[original]} · земная ветвь` : undefined); }
 
 function structureDisplay(original) {
   const base = String(original || "").endsWith("格") ? String(original).slice(0, -1) : String(original || "");
@@ -80,7 +103,7 @@ function tenGodPairDisplay(value) {
 }
 
 module.exports = {
-  AUXILIARY_STARS, CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STRENGTH, TEN_GODS, TRANSFORMATIONS,
-  auxiliaryStarDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay, transformationDisplay,
+  AUXILIARY_STARS, BRANCHES, CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STEMS, STRENGTH, TEN_GODS, TRANSFORMATIONS,
+  auxiliaryStarDisplay, branchDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay, transformationDisplay,
   strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay,
 };

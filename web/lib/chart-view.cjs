@@ -1,6 +1,6 @@
 const DIZHI = ["子","丑","寅","卯","辰","巳","午","未","申","酉","戌","亥"];
 const {
-  auxiliaryStarDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay,
+  auxiliaryStarDisplay, branchDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay,
   strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay, transformationDisplay,
 } = require("./astrology-localization.cjs");
 
@@ -12,7 +12,7 @@ function toChartView(chart) {
     shiShen: key === "day" ? "Дневной хозяин" : bazi.shiShen[key],
     shiShenDisplay: key === "day" ? { original: "日主", name: "Дневной хозяин" } : tenGodDisplay(bazi.shiShen[key]),
     stemDisplay: stemDisplay(bazi.siZhu[key].gan),
-    branchDisplay: { original: bazi.siZhu[key].zhi, name: "Земная ветвь" },
+    branchDisplay: branchDisplay(bazi.siZhu[key].zhi),
   }));
   const transformations = ziwei.gongs.flatMap(gong => (gong.sihua || []).map(item => `${item.star}${item.hua}`));
   return {
