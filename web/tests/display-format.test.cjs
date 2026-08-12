@@ -67,6 +67,16 @@ test("mobile landing переносит одну форму после объя�
   assert.match(script, /if \(event\.key !== "Enter"\) return;[\s\S]*event\.preventDefault\(\);[\s\S]*email\.blur\(\)/);
 });
 
+test("final mobile rhythm сохраняет viewport sticky и editorial-композицию", () => {
+  const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
+  assert.match(styles, /html\{overflow-x:hidden\}body\{overflow-x:visible\}\s*@supports\(overflow:clip\)\{html,body\{overflow-x:clip\}\}/);
+  assert.match(styles, /\.traditions article header b\{display:none\}/);
+  assert.match(styles, /\.traditions h3\{order:1;[^}]*font-size:25px\}/);
+  assert.match(styles, /\.free-benefits-grid span:last-child\{grid-column:1\/-1;width:calc\(50% - 4px\);justify-self:center\}/);
+  assert.match(styles, /\.preview-heading\{gap:12px;align-items:start\}/);
+  assert.match(styles, /\.pillars-grid\{margin-top:28px\}/);
+});
+
 test("premium topics показываются до CTA, а purchase disclosure не повторяет их", () => {
   const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
   assert.match(script, /Объединённый разбор Ба-цзы и Цзы Вэй/);
