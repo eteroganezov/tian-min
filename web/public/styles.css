@@ -104,18 +104,25 @@ html{overflow-x:hidden}body{overflow-x:visible}
 /* Final WEB v1 selling story: desktop editorial grid, native mobile swipe. */
 .learn-grid article>b{color:#d9b77b;font-size:10px;letter-spacing:.12em}
 .learn-grid article>b+h3{margin-top:24px}
+.learn-swipe-hint{display:none}
 @media(max-width:620px){
   .explainer{padding:58px 0 42px}
   .learn{display:block;padding:54px 0 58px}
   .learn .section-heading>span{max-width:520px;margin-top:13px;line-height:1.65}
-  .learn-grid{display:flex;width:calc(100% + 14px);margin-top:30px;padding:1px 14px 1px 0;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-padding-left:0;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;background:transparent}
+  .learn-swipe-hint{display:flex;align-items:center;justify-content:flex-end;gap:7px;margin:18px 0 0;color:rgba(255,255,255,.56);font-size:9px;font-weight:700;letter-spacing:.12em;text-transform:uppercase}
+  .learn-swipe-hint span{color:#d9b77b;font-size:14px;line-height:1}
+  .learn-grid{display:flex;width:calc(100% + 14px);margin-top:13px;padding:1px 14px 1px 0;gap:12px;overflow-x:auto;overflow-y:hidden;scroll-snap-type:x mandatory;scroll-padding-left:0;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;scrollbar-width:none;background:transparent}
   .learn-grid::-webkit-scrollbar{display:none}
-  .learn-grid article{display:flex;flex:0 0 calc(100% - 52px);flex-direction:column;min-width:0;min-height:300px;padding:28px 24px;border:1px solid rgba(255,255,255,.14)!important;background:rgba(255,255,255,.025);scroll-snap-align:start;scroll-snap-stop:always}
+  .learn-grid article{display:flex;flex:0 0 calc(100% - 52px);flex-direction:column;min-width:0;height:240px;min-height:240px;padding:22px 20px;border:1px solid rgba(255,255,255,.14)!important;border-radius:10px;background:rgba(255,255,255,.025);scroll-snap-align:start;scroll-snap-stop:always}
+  .learn-grid article:last-child{border-bottom:1px solid rgba(255,255,255,.14)!important}
   .learn-grid article>b{font-size:9px}
-  .learn-grid article>b+h3{margin:24px 0 15px;font-size:22px;line-height:1.22}
-  .learn-grid article>p{font-size:12px;line-height:1.7}
+  .learn-grid article>b+h3{margin:17px 0 11px;font-size:20px;line-height:1.2}
+  .learn-grid article>p{font-size:11px;line-height:1.6}
+  .ziwei-summary-intro{padding:0;border:0;text-align:center}
+  .ziwei-summary-intro+.ziwei-facts{margin-top:18px}
+  .transformations>header>span{display:block;text-align:center}
 }
 @media(max-width:390px){
   .learn-grid{width:calc(100% + 12px);padding-right:12px}
-  .learn-grid article{padding-inline:22px}
+  .learn-grid article{padding-inline:19px}
 }

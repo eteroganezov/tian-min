@@ -75,8 +75,12 @@ test("final mobile rhythm сохраняет viewport sticky и editorial-ком
   assert.match(styles, /\.traditions article header b\{display:none\}/);
   assert.match(styles, /\.traditions h3\{order:1;[^}]*font-size:25px\}/);
   assert.equal((html.match(/<article><b>0[1-8] \/ 08<\/b>/g) || []).length, 8);
+  assert.match(html, /class="learn-swipe-hint"[^>]*>Листайте <span>→<\/span>/);
   assert.match(styles, /\.learn-grid\{display:flex;[^}]*overflow-x:auto;[^}]*scroll-snap-type:x mandatory/);
-  assert.match(styles, /\.learn-grid article\{display:flex;flex:0 0 calc\(100% - 52px\);[^}]*scroll-snap-align:start/);
+  assert.match(styles, /\.learn-grid article\{display:flex;flex:0 0 calc\(100% - 52px\);[^}]*height:240px;min-height:240px;[^}]*border-radius:10px;[^}]*scroll-snap-align:start/);
+  assert.match(styles, /\.learn-grid article:last-child\{border-bottom:1px solid rgba\(255,255,255,\.14\)!important\}/);
+  assert.match(styles, /\.ziwei-summary-intro\{padding:0;border:0;text-align:center\}/);
+  assert.match(styles, /\.transformations>header>span\{display:block;text-align:center\}/);
   assert.match(styles, /\.preview-heading\{gap:12px;align-items:start\}/);
   assert.match(styles, /\.pillars-grid\{margin-top:28px\}/);
 });
