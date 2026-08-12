@@ -80,23 +80,24 @@ function cover(doc, chart, metadata, presentation, report) {
 }
 
 function fullReport(doc, report) {
+  const showLegacyConfidenceRows = report.schemaVersion !== "personal-report-v4";
   executivePortrait(doc, report.executivePortrait);
-  editorialSection(doc, report.personality);
+  editorialSection(doc, report.personality, showLegacyConfidenceRows);
   splitSection(doc, "Внешнее и внутреннее", [
     ["Как видят", report.externalVsInternal.external], ["Что внутри", report.externalVsInternal.internal], ["Синтез", report.externalVsInternal.synthesis],
     ["Реакция на стресс", report.stressPattern.reaction], ["Риск", report.stressPattern.mistakes], ["Восстановление", report.stressPattern.recovery],
   ]);
-  cards(doc, "5 главных черт", report.keyTraits, item => `${item.title}\n${item.explanation}\n\nВ ресурсе: ${item.positive}\nРиск: ${item.shadow}\nОснования: ${item.evidence.join("; ")}`, { continuePage: true });
-  cards(doc, "Сильные стороны", report.strengths, item => `${item.title}\n${item.essence}\n\nКак проявляется: ${item.manifestation}\nГде полезно: ${item.usefulWhere}\nПрактика: ${item.practicalUse}`, { continuePage: true });
-  cards(doc, "Риски и слабые места", report.challenges, item => `${item.pattern}\nКогда: ${item.trigger}\nВозможное следствие: ${item.consequence}\nЧто помогает: ${item.compensation}`);
-  editorialSection(doc, report.career);
-  editorialSection(doc, report.money);
-  editorialSection(doc, report.relationships);
+  cards(doc, "5 главных черт", report.keyTraits, item => `${item.title}\n${item.explanation}\n\nВ ресурсе: ${item.positive}\nРиск: ${item.shadow}${consumerEvidence(item.evidence).length ? `\nОснования: ${consumerEvidence(item.evidence).join("; ")}` : ""}`, { continuePage: true });
+  cards(doc, "Сильные стороны", report.strengths.slice(0, 5), item => `${item.title}\n${item.essence}\n\nКак проявляется: ${item.manifestation}\nГде полезно: ${item.usefulWhere}\nПрактика: ${item.practicalUse}`, { continuePage: true });
+  cards(doc, "Риски и слабые места", report.challenges.slice(0, 5), item => `${item.pattern}\nКогда: ${item.trigger}\nВозможное следствие: ${item.consequence}\nЧто помогает: ${item.compensation}`);
+  editorialSection(doc, report.career, showLegacyConfidenceRows);
+  editorialSection(doc, report.money, showLegacyConfidenceRows);
+  editorialSection(doc, report.relationships, showLegacyConfidenceRows);
   splitSection(doc, "Текущий большой период", [
     ["Период", report.currentPeriod.period], ["Главная тема", report.currentPeriod.headline], ["Что меняется", report.currentPeriod.summary],
     ["Возможности", report.currentPeriod.opportunities.join("\n• ")], ["На что обратить внимание", report.currentPeriod.risks.join("\n• ")],
     ["Что можно сделать", report.currentPeriod.actions.join("\n• ")],
-    ...(report.currentPeriod.evidence.length ? [["Почему мы сделали такой вывод", report.currentPeriod.evidence.join("\n• ")]] : []),
+    ...(consumerEvidence(report.currentPeriod.evidence).length ? [["Почему мы сделали такой вывод", consumerEvidence(report.currentPeriod.evidence).join("\n• ")]] : []),
     ["Границы интерпретации", report.currentPeriod.confidenceNote],
   ]);
   cards(doc, "Ближайшие 3 года", report.yearlyOutlook, item => `${item.year} - ${item.theme}\nВозможности: ${item.opportunities}\nРиски: ${item.risks}\nФокус: ${item.focus}\nНе форсировать: ${item.avoid}`);
@@ -130,7 +131,7 @@ function executivePortrait(doc, data) {
   splitSectionContent(doc, [["Ваш основной ресурс", data.primaryResource], ["Как вы принимаете решения", data.decisionStyle], ["Главное внутреннее противоречие", data.innerTension], ["Что особенно важно сейчас", data.currentFocus], ["Если коротко", data.synthesis]]);
 }
 
-function editorialSection(doc, data) {
+function editorialSection(doc, data, showConfidence = true) {
   page(doc, data.headline, data.title);
   bodyText(doc, data.summary);
   doc.moveDown(1);
@@ -139,8 +140,8 @@ function editorialSection(doc, data) {
     ["Сильные стороны", data.strengths.join("\n• ")],
     ["Риски", data.risks.join("\n• ")],
     ["Практические действия", data.actions.join("\n• ")],
-    ...(data.evidence.length ? [["Основания в карте", data.evidence.join("\n• ")]] : []),
-    ["Уверенность", data.confidenceNote],
+    ...(consumerEvidence(data.evidence).length ? [["Основания в карте", consumerEvidence(data.evidence).join("\n• ")]] : []),
+    ...(showConfidence ? [["Уверенность", data.confidenceNote]] : []),
   ]);
 }
 
@@ -547,6 +548,12 @@ function cleanNarrative(value) {
     .replace(/[ \t]{2,}/g, " ")
     .replace(/(?:соединение|столкновение|сочетание|вред|конфликт)\s*[–—-](?=\s*[,.;:]|\s|$)/giu, "взаимодействие элементов")
     .replace(/([.!?]\s+)такие связи/gu,"$1Такие связи");
+}
+
+// v4 stores structured evidence IDs for the future renderer. The current PDF
+// must not expose internal references as consumer text; legacy prose remains visible.
+function consumerEvidence(values) {
+  return (Array.isArray(values) ? values : []).filter(value => !/^(?:bazi|ziwei|time)\.[a-z0-9_.-]+$/i.test(String(value)));
 }
 
 function addPageNumbers(doc) {

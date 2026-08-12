@@ -1,8 +1,8 @@
 const crypto = require("node:crypto");
 const { canonicalBirthInput } = require("./personalization.cjs");
 
-const INTERPRETATION_PROMPT_VERSION = "consumer-ru-v4";
-const REPORT_SCHEMA_VERSION = "personal-report-v3";
+const INTERPRETATION_PROMPT_VERSION = "consumer-ru-v5-evidence";
+const REPORT_SCHEMA_VERSION = "personal-report-v4";
 
 function stableStringify(value) {
   if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;

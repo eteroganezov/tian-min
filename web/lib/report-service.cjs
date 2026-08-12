@@ -10,6 +10,7 @@ const { buildEvidenceCatalog, sanitizePersonalReport } = require("./report-conte
 function buildReportContext(calculation, presentation = {}, options = {}) {
   const reportYears = options.reportYears || currentReportYears();
   const chartView = structuredClone(toChartView(calculation.chart));
+  const evidenceCatalog = buildEvidenceCatalog(calculation, chartView, { reportYears });
   const context = {
     presentation: { displayName: presentation.displayName || "", birthPlace: presentation.birthPlace || null },
     interpretation: {
@@ -26,12 +27,12 @@ function buildReportContext(calculation, presentation = {}, options = {}) {
       trueSolarDate: calculation.metadata.trueSolarDate,
       trueSolarTime: calculation.metadata.trueSolarTime,
     },
-    chartView,
-    evidenceCatalog: buildEvidenceCatalog(calculation, chartView),
-    calculationData: structuredClone({
-      bazi: calculation.chart.bazi,
-      ziwei: calculation.chart.ziwei,
-    }),
+    evidenceCatalog,
+    evidenceRules: {
+      interpretationMustReferenceEvidenceIds: true,
+      annualMappingsAreNotEventPredictions: true,
+      unsupportedClaims: ["медицинские выводы", "дата брака", "точный переезд", "обещание дохода", "гарантированный карьерный результат", "конкретное событие будущего"],
+    },
     reportYears,
   };
   return deepFreeze(context);
@@ -50,10 +51,13 @@ function hasFullReport(env = process.env) {
 
 function createPreview(report) {
   const result = {
+    schemaVersion: report.schemaVersion,
+    reportTitle: report.reportTitle,
     archetype: report.archetype,
     subtitle: report.subtitle,
     oneLineFormula: report.oneLineFormula,
     executivePortrait: report.executivePortrait,
+    executiveInsights: report.executiveInsights.slice(0, 3),
     strengths: report.strengths.slice(0, 3),
     challenges: report.challenges.slice(0, 1),
   };
@@ -89,7 +93,7 @@ async function generateReportRequest(input, options = {}) {
       validation = { errors: ["провайдер вернул техническую ошибку"] };
       continue;
     }
-    validation = validatePersonalReport(report);
+    validation = validatePersonalReport(report, { evidenceCatalog: context.evidenceCatalog });
     if (validation.valid) break;
     logAiError({ aiStage: "local_schema_validation", code: "INVALID_STRUCTURED_OUTPUT", type: "validation_error" }, { model, attempt: attempt + 1 });
   }
@@ -100,7 +104,7 @@ async function generateReportRequest(input, options = {}) {
     body: {
       aiStatus: "ready", hasFullReport: full,
       report: full ? report : createPreview(report),
-      model, presentation, ...fingerprints,
+      model, schemaVersion: REPORT_SCHEMA_VERSION, presentation, ...fingerprints,
     },
     internal: { report, calculation, context },
   };
