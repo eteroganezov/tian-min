@@ -3,38 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Персональная карта личности и жизненного пути на основе Ба-цзы и Цзы Вэй Доу Шу.">
-  <title>Тянь Мин — персональная карта личности и жизненного пути</title>
+  <meta name="description" content="Бесплатный расчёт персональной карты Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения.">
+  <title>Тянь Мин — бесплатный расчёт карты Ба-цзы и Цзы Вэй</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <main>
-    <section class="hero" id="top">
-      <nav class="nav shell" aria-label="Основная навигация">
-        <a class="brand" href="#top"><span class="brand-mark">命</span><span><b>ТЯНЬ МИН</b><small>天命</small></span></a>
-        <span class="nav-note">Персональная карта личности и жизненного пути</span>
-      </nav>
+  <header class="site-header">
+    <nav class="nav shell" aria-label="Основная навигация">
+      <a class="brand" href="#top"><span class="brand-mark" aria-hidden="true">命</span><span><b>ТЯНЬ МИН</b><small>天命</small></span></a>
+      <div class="nav-links"><a href="#calculator">Рассчитать карту</a><a href="#how-it-works">Как это работает</a><a href="#what-you-learn">Что вы узнаете</a></div>
+      <a class="nav-cta" href="#calculator">Рассчитать карту</a>
+    </nav>
+  </header>
+  <main id="top">
+    <section class="hero">
       <div class="hero-layout shell">
         <div class="hero-copy">
-          <p class="eyebrow">Две традиции · один цельный портрет</p>
-          <h1>Понять себя.<br><em>Увидеть свой ритм.</em></h1>
-          <p class="hero-intro">Персональный разбор характера, сильных сторон, отношений, карьеры и жизненных периодов на основе Ба-цзы (八字) и Цзы Вэй Доу Шу (紫微斗数).</p>
-          <p class="brand-explainer">Тянь Мин (天命) — традиционное китайское понятие, связанное с судьбой и жизненным предназначением.</p>
-          <div class="benefits" aria-label="Что входит в отчёт">
-            <span>Характер</span><span>Сильные стороны</span><span>Отношения</span><span>Периоды</span>
-          </div>
+          <p class="eyebrow">ТЯНЬ МИН · 天命</p>
+          <h1>Персональная карта личности и жизненного пути</h1>
+          <p class="brand-line">Две традиции — один цельный портрет</p>
+          <p class="hero-intro">Рассчитайте свою карту Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения. Базовый расчёт и персональное preview карты доступны бесплатно.</p>
+          <a class="hero-cta" href="#calculator">Рассчитать мою карту бесплатно</a>
+          <p class="cta-note">Без оплаты · результат сразу после расчёта</p>
         </div>
-        <form class="birth-form" id="birth-form" novalidate>
-          <div class="form-heading"><span>Ваши данные</span><h2>Начать персональный разбор</h2><p>Сначала рассчитаем карту, затем подготовим разбор</p></div>
-          <label class="field"><span>Имя <small>необязательно</small></span><input id="display-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="Введите имя"><small class="field-help">Используется только для персонализации отчёта</small></label>
+        <form class="birth-form" id="birth-form" novalidate aria-labelledby="form-title">
+          <span id="calculator" class="anchor-target" aria-hidden="true"></span>
+          <div class="form-heading"><span>Бесплатный расчёт</span><h2 id="form-title">Ваши данные рождения</h2><p>Нужны для точного построения двух карт</p></div>
+          <label class="field"><span>Имя <small>необязательно</small></span><input id="display-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="Введите имя"><small class="field-help">Только для обращения к вам в результате</small></label>
           <div class="form-row">
-            <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31"></label>
-            <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time"></label>
+            <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31" required></label>
+            <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time" required></label>
           </div>
           <div class="field place-field">
             <label for="birth-place">Место рождения</label>
-            <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false">
+            <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false" required>
             <div class="place-options" id="place-options" role="listbox" hidden></div>
           </div>
           <fieldset class="gender-field"><legend>Пол</legend><div class="gender-options">
@@ -43,19 +46,37 @@
           </div></fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
           <div class="ambiguity-box" id="ambiguity-box" hidden></div>
-          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Получить свой разбор</span><span aria-hidden="true">↗</span></button>
-          <p class="privacy-note">Расчёт выполняется конфиденциально. Мы автоматически учитываем место рождения и исторические правила времени.</p>
+          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту бесплатно</span><span aria-hidden="true">→</span></button>
+          <p class="form-note">Сначала вы увидите базовую персональную карту. Полный разбор можно будет получить отдельно.</p>
         </form>
       </div>
     </section>
-    <section class="foundation shell" aria-labelledby="foundation-title">
-      <div class="foundation-heading"><p>Что лежит в основе разбора</p><h2 id="foundation-title">Две системы.<br>Один цельный портрет.</h2></div>
-      <div class="foundation-copy"><article><span>01 · Ба-цзы</span><p><b>Ба-цзы (八字)</b> рассматривает дату и время рождения как сочетание четырёх «столпов». Через взаимодействие пяти элементов система описывает врождённые особенности характера, сильные стороны, внутренние противоречия и жизненные периоды.</p></article><article><span>02 · Цзы Вэй Доу Шу</span><p><b>Цзы Вэй Доу Шу (紫微斗数)</b> раскладывает карту по двенадцати жизненным сферам: личности, отношениям, финансам, карьере, окружению, дому и другим направлениям.</p></article><p class="foundation-summary">В ТЯНЬ МИН обе системы рассматриваются вместе — не как точное предсказание судьбы, а как способ увидеть более целостный персональный портрет и лучше понять свой ритм.</p></div>
+
+    <section class="explainer shell" id="how-it-works" aria-labelledby="how-title">
+      <header class="section-heading"><p>Основа расчёта</p><h2 id="how-title">Как это работает</h2></header>
+      <div class="traditions">
+        <article><span>01 · 八字</span><h3>Ба-цзы</h3><p>Традиционный китайский метод анализа карты рождения по дате и времени. Карта показывает сочетание пяти элементов и помогает рассматривать характер, сильные стороны и жизненные циклы.</p></article>
+        <article><span>02 · 紫微斗数</span><h3>Цзы Вэй Доу Шу</h3><p>Другая китайская традиция, которая рассматривает двенадцать жизненных сфер — личность, карьеру, отношения, ресурсы и окружение — через систему дворцов и звёзд.</p></article>
+        <article><span>03 · Вместе</span><h3>Зачем нужны обе</h3><p>Ба-цзы показывает внутреннюю структуру и динамику, а Цзы Вэй добавляет взгляд через конкретные жизненные сферы. Мы сопоставляем обе карты в одном результате.</p></article>
+      </div>
+      <p class="section-signature">Две традиции — один цельный портрет</p>
     </section>
-    <section class="promise shell" aria-label="Содержание отчёта">
-      <p>В вашем отчёте</p>
-      <div><article><b>01</b><span>Ваш характер и внутренние мотивы</span></article><article><b>02</b><span>Карьера, деньги и стиль роста</span></article><article><b>03</b><span>Отношения и подходящее окружение</span></article><article><b>04</b><span>Текущий период и следующие годы</span></article></div>
+
+    <section class="learn" id="what-you-learn" aria-labelledby="learn-title">
+      <div class="shell"><header class="section-heading light"><p>Полный персональный разбор</p><h2 id="learn-title">Что вы узнаете</h2><span>Базовая карта бесплатна. Эти темы входят в отдельный расширенный отчёт.</span></header>
+        <div class="learn-grid">
+          <article><b>01</b><h3>Характер и внутренние мотивы</h3><p>Как вы принимаете решения, что поддерживает ваш внутренний ресурс и где возникают противоречия.</p></article>
+          <article><b>02</b><h3>Сильные стороны и точки роста</h3><p>Какие качества легче превращать в результат и что может мешать использовать их полностью.</p></article>
+          <article><b>03</b><h3>Карьера и реализация</h3><p>Рабочая среда, профессиональные роли, стиль лидерства и возможные направления роста.</p></article>
+          <article><b>04</b><h3>Деньги</h3><p>Как в карте проявляются темы заработка, ресурсов, риска и финансовых решений.</p></article>
+          <article><b>05</b><h3>Отношения</h3><p>Особенности близости, партнёрства, границ и взаимодействия с другими людьми.</p></article>
+          <article><b>06</b><h3>Текущий жизненный период</h3><p>Какие темы особенно заметны на нынешнем этапе.</p></article>
+          <article><b>07</b><h3>Ближайшие годы</h3><p>Главные акценты ближайшего периода и изменения фокуса.</p></article>
+          <article><b>08</b><h3>Персональный план действий</h3><p>Практические ориентиры: что имеет смысл усиливать и что может забирать лишний ресурс.</p></article>
+        </div>
+      </div>
     </section>
+
     <div id="result-root" aria-live="polite"></div>
     <footer class="footer shell"><span>ТЯНЬ МИН · 天命</span><p>Материалы предназначены для информационных, культурных и развлекательных целей. Они не заменяют медицинские, финансовые, юридические или иные профессиональные рекомендации.</p></footer>
   </main>

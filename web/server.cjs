@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const { calculateRequest } = require("./lib/calculate.cjs");
+const { createFreePreviewRequest } = require("./lib/free-preview.cjs");
 const { locationProvider } = require("./lib/location-provider.cjs");
 const { generateReportRequest } = require("./lib/report-service.cjs");
 const { createPdfFromSavedReport, createPdfRequest } = require("./lib/pdf-service.cjs");
@@ -13,10 +14,13 @@ const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=u
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
   const reportStore = options.reportStore || new LocalReportStore();
+  const freePreviewRequest = options.freePreviewRequest || createFreePreviewRequest;
+  const reportRequest = options.reportRequest || generateReportRequest;
   return http.createServer(async (request, response) => {
     try {
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
-      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response, reportStore);
+      if (request.method === "POST" && request.url === "/api/free-preview") return await handleFreePreview(request, response, freePreviewRequest);
+      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response, reportStore, reportRequest);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
       if (request.method === "GET" && request.url === "/api/dev/reports/latest") return handleSavedReport(response, reportStore);
       if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
@@ -28,6 +32,13 @@ function createServer(options = {}) {
       return sendJson(response, 500, { error: "Внутренняя ошибка. Попробуйте ещё раз." });
     }
   });
+}
+
+async function handleFreePreview(request, response, freePreviewRequest) {
+  const input = await readJson(request, response, 20_000);
+  if (!input) return;
+  const result = freePreviewRequest(input);
+  return sendJson(response, result.status, result.body);
 }
 
 function handlePlaces(request, response) {
@@ -44,10 +55,10 @@ async function handleCalculation(request, response) {
   return sendJson(response, result.status, result.body);
 }
 
-async function handleReport(request, response, reportStore) {
+async function handleReport(request, response, reportStore, reportRequest) {
   const input = await readJson(request, response, 30_000);
   if (!input) return;
-  const result = await generateReportRequest(input, { reportStore });
+  const result = await reportRequest(input, { reportStore });
   return sendJson(response, result.status, result.body);
 }
 

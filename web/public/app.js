@@ -8,9 +8,6 @@ const placeOptions = document.querySelector("#place-options");
 const ambiguityBox = document.querySelector("#ambiguity-box");
 let selectedPlace = null;
 let searchTimer = null;
-let currentInput = null;
-let currentReport = null;
-let currentHasFullReport = false;
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -22,153 +19,163 @@ placeInput.addEventListener("input", () => {
 });
 placeInput.addEventListener("keydown", event => { if (event.key === "Escape") renderPlaceOptions([]); });
 document.addEventListener("click", event => { if (!event.target.closest(".place-field")) renderPlaceOptions([]); });
-form.addEventListener("submit", async event => { event.preventDefault(); await submitCalculation(); });
+form.addEventListener("submit", async event => { event.preventDefault(); await submitFreeCalculation(); });
 
-async function submitCalculation(timeOccurrence) {
-  showError(""); ambiguityBox.hidden = true;
+async function submitFreeCalculation(timeOccurrence) {
+  showError("");
+  ambiguityBox.hidden = true;
   const data = new FormData(form);
-  const date = String(data.get("date") || "");
-  const time = String(data.get("time") || "");
-  const gender = String(data.get("gender") || "");
-  const name = String(data.get("name") || "").trim().replace(/\s+/g, " ");
-  if (!date) return showError("Укажите дату рождения.");
-  if (!time) return showError("Укажите время рождения.");
+  const input = {
+    name: String(data.get("name") || "").trim().replace(/\s+/g, " "),
+    date: String(data.get("date") || ""),
+    time: String(data.get("time") || ""),
+    gender: String(data.get("gender") || ""),
+    placeId: selectedPlace?.id || "",
+    ...(timeOccurrence ? { timeOccurrence } : {}),
+  };
+  if (!input.date) return showError("Укажите дату рождения.");
+  if (!input.time) return showError("Укажите время рождения.");
   if (!selectedPlace) return showError("Выберите место рождения из списка подсказок.");
-  if (!gender) return showError("Выберите пол.");
-  currentInput = { name, date, time, gender, placeId: selectedPlace.id, ...(timeOccurrence ? { timeOccurrence } : {}) };
-  currentReport = null; currentHasFullReport = false;
-  setLoading(true);
+  if (!input.gender) return showError("Выберите пол.");
+
+  setState("CALCULATING");
   try {
-    const response = await fetch("/api/calculate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(currentInput) });
+    const response = await fetch("/api/free-preview", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    });
     const payload = await response.json();
     if (response.status === 409 && payload.code === "AMBIGUOUS_LOCAL_TIME") return showAmbiguity(payload.options || []);
     if (!response.ok) throw new Error(payload.error || "Не удалось выполнить расчёт.");
-    currentInput.name = payload.presentation?.displayName || "";
-    resultRoot.innerHTML = renderBaseResult(payload.chart, payload.metadata, payload.presentation || { displayName: "" });
-    bindResultActions();
+    resultRoot.innerHTML = renderFreePreview(payload);
+    bindPreviewActions();
+    setState("FREE_PREVIEW_READY");
     resultRoot.scrollIntoView({ behavior: "smooth", block: "start" });
-    setLoading(false);
-    await loadPersonalReport(payload.chart, payload.metadata, payload.presentation || { displayName: "" });
   } catch (error) {
     resultRoot.innerHTML = "";
+    setState("ERROR");
     showError(error instanceof Error ? error.message : "Не удалось выполнить расчёт. Попробуйте ещё раз.");
-    setLoading(false);
   }
 }
 
-async function loadPersonalReport(chart, metadata, presentation) {
-  updateAiState("loading", "Готовим персональный разбор…", "Сопоставляем Ба-цзы и Цзы Вэй, выделяем устойчивые выводы.");
-  try {
-    const response = await fetch("/api/report", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(currentInput) });
-    const payload = await response.json();
-    if (!response.ok || payload.aiStatus === "error") throw new Error(payload.error || "Не удалось подготовить персональный разбор.");
-    if (payload.aiStatus === "unavailable") { updatePdfEntitlement(false); return updateAiState("unavailable", payload.message, "Карта уже рассчитана. После подключения персональной интерпретации здесь появится полный разбор характера, карьеры, отношений и жизненных периодов."); }
-    currentReport = payload.report;
-    currentHasFullReport = payload.hasFullReport;
-    const normalizedPresentation = payload.presentation || presentation;
-    const container = document.querySelector("#personal-report");
-    if (container) container.innerHTML = renderPersonalReport(payload.report, payload.hasFullReport, chart, metadata, normalizedPresentation);
-    updatePdfEntitlement(payload.hasFullReport);
-    bindResultActions();
-  } catch (error) {
-    updateAiState("error", "Персональный разбор сейчас не удалось подготовить.", "Карта остаётся доступна — расчёт не потерян.");
-  }
-}
-
-function renderBaseResult(chart, metadata, presentation) {
-  const name = presentation?.displayName || "";
-  const place = presentation?.birthPlace?.label || metadata.place.name;
-  return `<section class="report-shell">
-    <header class="report-cover shell">
-      <div class="cover-kicker"><span>Ваш персональный разбор</span><i></i><span>Ба-цзы × Цзы Вэй</span></div>
-      <h2>${name ? `${e(name)}, ваша карта готова.` : "Ваша карта готова."}<br><em>Теперь — к главному.</em></h2>
-      <p>${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(place)}</p>
-      <div class="cover-actions"><button class="pdf-button" data-action="pdf" disabled aria-disabled="true">Отчёт готовится…</button><button class="text-button" data-action="technical">Посмотреть карту</button></div>
+function renderFreePreview(data) {
+  const name = data.person.displayName;
+  const current = data.bazi.currentPeriod;
+  const currentPalace = data.ziwei.currentPalace;
+  const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
+  return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
+    <header class="preview-cover shell">
+      <p class="section-label">Бесплатная персональная карта</p>
+      <h2>${name ? `${e(name)}, ваша карта готова` : "Ваша карта готова"}</h2>
+      <p>Мы рассчитали Ба-цзы и Цзы Вэй Доу Шу по вашим данным рождения.</p>
+      <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
     </header>
-    <div id="personal-report" class="personal-report shell">${renderAiState("loading", "Готовим персональный разбор…", "Сопоставляем две системы и собираем понятную картину.")}</div>
-    ${renderTechnical(chart, metadata)}
+
+    <div class="preview-body shell">
+      <section class="preview-section" aria-labelledby="bazi-title">
+        <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Ваша карта Ба-цзы</h2></div><p>Четыре столпа — это базовая структура карты рождения: год, месяц, день и час.</p></div>
+        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><b>${e(pillar.stemDisplay.name)}</b><small>${e(pillar.shiShenDisplay.name)}</small></article>`).join("")}</div>
+        <div class="fact-grid">
+          <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Дневной хозяин — центральный элемент карты Ба-цзы. Здесь показан рассчитанный параметр без психологической интерпретации.</p></article>
+          <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показатель описывает соотношение опоры и нагрузки для Дневного хозяина внутри рассчитанной карты.</p></article>
+          <article><span>Текущий большой период</span><h3>${current ? `${e(current.years)} · ${e(current.ganZhi)}` : "Не определён"}</h3><p>${current ? `${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}` : "Период не входит в первые рассчитанные циклы."}</p></article>
+        </div>
+        <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div></div>
+      </section>
+
+      <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
+        <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
+        <div class="ziwei-facts">
+          <article><span>Лунная дата</span><b>${e(data.ziwei.lunarDate)}</b></article>
+          <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace)}</b></article>
+          <article><span>Дворец тела</span><b>${e(data.ziwei.shenPalace)}</b></article>
+          <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
+          <article class="current-palace"><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></article>
+        </div>
+        <div class="transformations"><span>Четыре трансформации</span><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+        <details class="technical-chart"><summary><span>Посмотреть подробные данные карты</span><small>12 дворцов и рассчитанные звёзды</small></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+      </section>
+    </div>
+
+    <section class="premium-teaser" data-state="PREMIUM_LOCKED">
+      <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
+        <div class="locked-grid">${premiumSections().map((item, index) => `<article><span aria-hidden="true">${String(index + 1).padStart(2, "0")} · ◇</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
+        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Полный персональный PDF-отчёт · Ба-цзы + Цзы Вэй</p><div class="premium-message" role="status" hidden>Полный разбор скоро будет доступен.</div></div>
+      </div>
+    </section>
   </section>`;
 }
 
-function renderPersonalReport(report, full, chart, metadata, presentation) {
-  const name = presentation?.displayName || "";
-  if (!full) return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote></section>
-    ${renderExecutivePortrait(report.executivePortrait)}
-    ${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
-    <section class="locked-report"><span>Полный отчёт</span><h2>Карьера, деньги, отношения, периоды и план действий</h2><p>Архитектура полной версии уже готова. В текущем режиме открыта бесплатная предварительная версия.</p></section>`;
-  return `<section class="archetype-block"><p class="section-label">${name ? `${e(name)}, ваш архетип` : "Ваш архетип"}</p><h2>${e(report.archetype)}</h2><h3>${e(report.subtitle)}</h3><blockquote>${e(report.oneLineFormula)}</blockquote><div class="birth-caption">${e(metadata.originalBirthDate)} · ${e(metadata.originalBirthTime)} · ${e(presentation?.birthPlace?.label || metadata.birthPlace)}</div></section>
-    ${renderExecutivePortrait(report.executivePortrait)}
-    ${renderEditorialSection(report.personality, "personality")}
-    ${renderTraits(report.keyTraits)}${renderStrengths(report.strengths)}${renderChallenges(report.challenges)}
-    ${renderComparison(report.externalVsInternal)}${renderStress(report.stressPattern)}
-    ${renderEditorialSection(report.career, "career")}
-    ${renderEditorialSection(report.money, "money")}
-    ${renderEditorialSection(report.relationships, "relationships")}
-    ${renderMiniGrid("Люди и окружение", report.environment)}${renderMiniGrid("Лидерство и конфликты", report.leadership)}${renderMiniGrid("Образ жизни и ресурс", report.lifestyle)}
-    ${renderCurrentPeriod(report.currentPeriod)}${renderYears(report.yearlyOutlook)}${renderTransitions(report.keyLifeTransitions)}${renderScenarios(report.scenarios)}
-    ${renderMatrix(report.lifeAreaMatrix)}${renderCrossValidation(report.crossValidation)}${renderConclusionStability(report.conclusionStability)}${renderActionPlan(report.actionPlan)}${renderLifeManifestations(report.lifeManifestations)}
-    <section class="report-section final-summary"><p class="section-label">Итог</p><h2>${e(report.finalSummary.headline)}</h2><div class="prose">${paragraphs(report.finalSummary.summary)}</div>${list(report.finalSummary.priorities)}</section>`;
+function renderPalace(palace) {
+  const stars = palace.mainStars.length ? palace.mainStars.map(star => `<span>${e(star.name)} <small>${e(star.original)}</small></span>`).join("") : "<span>Основные звёзды не указаны</span>";
+  return `<article class="${palace.isCurrentPeriod ? "active" : ""}"><header><b>${e(palace.displayName.name)}</b><span>${e(palace.ganZhi)}</span></header><p>${stars}</p><footer>${e(palace.majorPeriod)} лет${palace.isMing ? " · Дворец судьбы" : ""}${palace.isShen ? " · Дворец тела" : ""}</footer></article>`;
 }
 
-function renderAiState(kind, title, text) { return `<section class="ai-state ${e(kind)}"><div class="pulse" aria-hidden="true"></div><div><p class="section-label">Персональная интерпретация</p><h2>${e(title)}</h2><p>${e(text)}</p></div></section>`; }
-function updateAiState(kind, title, text) { const root = document.querySelector("#personal-report"); if (root) root.innerHTML = renderAiState(kind, title, text); }
-
-function renderTraits(items) { return `<section class="report-section"><p class="section-label">Пять главных черт</p><h2>Ваш характер в деталях</h2><div class="trait-list">${items.map((item, i) => `<article><span>0${i + 1}</span><div><h3>${e(item.title)}</h3><p>${e(item.explanation)}</p><div class="trait-poles"><p><b>В ресурсе</b>${e(item.positive)}</p><p><b>В перегрузе</b>${e(item.shadow)}</p></div><small>Основания карты: ${e(item.evidence.join(" · "))}</small></div></article>`).join("")}</div></section>`; }
-function renderStrengths(items) { return `<section class="report-section tone-sage"><p class="section-label">Ваши ресурсы</p><h2>Сильные стороны</h2><div class="card-grid">${items.map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.essence)}</p>${item.manifestation ? `<small>${e(item.manifestation)}</small><b>${e(item.practicalUse)}</b>` : ""}</article>`).join("")}</div></section>`; }
-function renderChallenges(items) { return `<section class="report-section"><p class="section-label">Зоны внимания</p><h2>Что может мешать</h2><div class="challenge-grid">${items.map(item => `<article><h3>${e(item.pattern)}</h3><p><b>Когда:</b> ${e(item.trigger || "—")}</p><p><b>Риск:</b> ${e(item.consequence || "—")}</p><p class="remedy">${e(item.compensation || "")}</p></article>`).join("")}</div></section>`; }
-function renderComparison(data) { return `<section class="report-section comparison"><p class="section-label">Два слоя</p><h2>Как вас видят — и что внутри</h2><div><article><span>Снаружи</span><p>${e(data.external)}</p></article><article><span>Внутри</span><p>${e(data.internal)}</p></article></div><blockquote>${e(data.synthesis)}</blockquote></section>`; }
-function renderStress(data) { return `<section class="report-section"><p class="section-label">Под давлением</p><h2>Стресс и принятие решений</h2><div class="process-line"><article><span>01</span><h3>Реакция</h3><p>${e(data.reaction)}</p></article><article><span>02</span><h3>Ошибка</h3><p>${e(data.mistakes)}</p></article><article><span>03</span><h3>Восстановление</h3><p>${e(data.recovery)}</p></article></div><p class="editorial-note"><b>Лучше не делать:</b> ${e(data.avoid)}</p></section>`; }
-function renderExecutivePortrait(data) { const blocks=[["Ваш основной ресурс",data.primaryResource],["Как вы принимаете решения",data.decisionStyle],["Главное внутреннее противоречие",data.innerTension],["Что особенно важно сейчас",data.currentFocus]]; return `<section class="report-section lead executive-portrait"><p class="section-label">Главное о вас</p><h2>${e(data.headline)}</h2><div class="prose narrow">${paragraphs(data.summary)}</div><div class="portrait-features">${blocks.map(([title,text],i)=>`<article><span>0${i+1} · ${e(title)}</span><p>${e(text)}</p></article>`).join("")}</div><blockquote>${e(data.synthesis)}</blockquote></section>`; }
-function renderEditorialSection(data, cls) { return `<section class="report-section editorial-section ${e(cls)}"><p class="section-label">${e(data.title)}</p><h2>${e(data.headline)}</h2><div class="prose narrow">${paragraphs(data.summary)}</div><div class="editorial-insights">${data.insights.map(item=>`<article><h3>${e(item.heading)}</h3><p>${e(item.text)}</p></article>`).join("")}</div><div class="editorial-grid"><article><span>Что поддерживает</span>${list(data.strengths)}</article><article><span>На что обратить внимание</span>${list(data.risks)}</article><article><span>Что можно сделать</span>${ordered(data.actions)}</article></div>${data.evidence.length ? `<details class="evidence"><summary>Почему мы сделали такой вывод</summary>${list(data.evidence)}</details>` : ""}<p class="confidence-note">${e(data.confidenceNote)}</p></section>`; }
-function renderMiniGrid(title, data) { const labels = {supports:"Что усиливает",drains:"Что истощает",allies:"Союзники",toxicPatterns:"Опасные паттерны",communication:"Общение",style:"Стиль",control:"Контроль",authority:"Авторитет",conflict:"В споре",negotiation:"Договорённости",mistakes:"Ошибки",rhythm:"Ритм",intensity:"Интенсивность",stabilityVsChange:"Стабильность и перемены",rest:"Отдых",overload:"Перегруз",recovery:"Восстановление",environment:"Среда"}; return `<section class="report-section compact"><p class="section-label">${e(title)}</p><div class="mini-grid">${Object.entries(data).map(([key,value])=>`<article><span>${e(labels[key] || key)}</span><p>${e(value)}</p></article>`).join("")}</div></section>`; }
-function renderCurrentPeriod(data) { return `<section class="report-section period-feature"><p class="section-label">Сейчас</p><h2>${e(data.headline)}</h2><h3>${e(data.period)}</h3><div class="prose narrow">${paragraphs(data.summary)}</div><div class="period-grid"><article><span>Возможности</span>${list(data.opportunities)}</article><article><span>На что обратить внимание</span>${list(data.risks)}</article><article><span>Что можно сделать</span>${ordered(data.actions)}</article></div>${data.evidence.length?`<details class="evidence"><summary>Почему мы сделали такой вывод</summary>${list(data.evidence)}</details>`:""}<p class="confidence-note">${e(data.confidenceNote)}</p></section>`; }
-function renderYears(items) { return `<section class="report-section"><p class="section-label">Ближайший горизонт</p><h2>Следующие три года</h2><div class="year-timeline">${items.map(item=>`<article><strong>${e(item.year)}</strong><div><h3>${e(item.theme)}</h3><p><b>Возможность:</b> ${e(item.opportunities)}</p><p class="year-risk"><b>Риск:</b> ${e(item.risks)}</p><small><b>Фокус:</b> ${e(item.focus)}</small><small><b>Не форсировать:</b> ${e(item.avoid)}</small></div></article>`).join("")}</div></section>`; }
-function renderTransitions(items) { return `<section class="report-section"><p class="section-label">Длинная перспектива</p><h2>Ключевые переходы</h2><div class="transitions">${items.map(item=>`<article><span>${e(item.age)}</span><div><small>${e(item.period)}</small><h3>${e(item.theme)}</h3><p>${e(item.change)}</p></div></article>`).join("")}</div></section>`; }
-function renderScenarios(items) { return `<section class="report-section tone-dark"><p class="section-label">Выбор, а не предсказание</p><h2>Три возможных сценария</h2><div class="scenario-grid">${items.map(item=>`<article><span>${e(item.type)}</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p><small>${e(item.decisions)}</small></article>`).join("")}</div></section>`; }
-function renderMatrix(items) { return `<section class="report-section"><p class="section-label">Две системы</p><h2>Матрица жизненных сфер</h2><div class="matrix">${items.map(item=>`<article><header><h3>${e(item.area)}</h3><span class="alignment">${e(item.alignment)}</span></header><p><b>Ба-цзы</b>${e(item.bazi)}</p><p><b>Цзы Вэй Доу Шу</b>${e(item.ziwei)}</p><footer>${e(item.synthesis)}</footer></article>`).join("")}</div></section>`; }
-function renderCrossValidation(data) { return `<section class="report-section"><p class="section-label">Сопоставление двух систем</p><h2>Где выводы устойчивее</h2><div class="validation-grid"><article><span>Подтверждают</span>${list(data.agreements)}</article><article><span>Расходятся</span>${list(data.divergences)}</article><article><span>Устойчивые выводы</span>${list(data.stableConclusions)}</article><article><span>Требуют осторожности</span>${list(data.weakerConclusions)}</article></div></section>`; }
-function renderConclusionStability(data) { return `<section class="report-section compact"><p class="section-label">Границы интерпретации</p><h2>Насколько устойчивы выводы</h2><div class="validation-grid"><article><span>Хорошо подтверждается картой</span>${list(data.wellSupported)}</article><article><span>Требует дополнительного контекста</span>${list(data.needsContext)}</article><article><span>Не стоит воспринимать буквально</span>${list(data.notLiteral)}</article></div></section>`; }
-function renderActionPlan(data) { return `<section class="report-section action-plan"><p class="section-label">Практический итог</p><h2>План действий</h2><div class="action-columns"><article><h3>Делать чаще</h3>${ordered(data.doMore)}</article><article><h3>Избегать</h3>${ordered(data.avoid)}</article></div><div class="next-focus"><h3>Фокус на 12 месяцев</h3>${list(data.next12Months)}</div></section>`; }
-function renderLifeManifestations(items) { return `<section class="report-section self-check"><p class="section-label">Наблюдения</p><h2>Как это проявляется в жизни</h2>${items.map((item,i)=>`<article><span>${String(i+1).padStart(2,"0")}</span><p>${e(item)}</p></article>`).join("")}</section>`; }
-
-function renderTechnical(chart, metadata) {
-  const max = Math.max(...chart.bazi.elementsDisplay.map(item => Number(item.value)), 1);
-  return `<section class="technical shell" id="technical-chart"><details><summary><span>Карта Ба-цзы и Цзы Вэй</span><small>Подробные данные, на которых основан персональный разбор</small></summary><div class="technical-body">
-    <details class="method-details"><summary>Как учитывается место рождения</summary><p>Вы вводите местное время рождения — то время, которое показывали часы в месте рождения. Система автоматически определяет исторический часовой пояс, учитывает действовавшее в тот момент летнее время и выполняет необходимую временную коррекцию для расчёта карты.</p><p>Вам не нужно самостоятельно определять UTC, часовой пояс или солнечное время.</p>${metadata.calculationSensitivity === "HIGH" ? `<small>Время рождения находится близко к чувствительной границе расчёта.</small>` : ""}</details>
-    <div class="technical-heading"><div><span>Ба-цзы</span><small>八字</small></div><h3>Четыре столпа</h3><p>Год, месяц, день и час образуют основу карты. Китайские знаки сохранены как исходные профессиональные обозначения.</p></div>
-    <div class="pillars-grid">${chart.bazi.pillars.map(p=>`<article><span>${e(p.label)}</span><strong>${e(p.gan)}${e(p.zhi)}</strong><b>${e(p.shiShenDisplay.name)}</b><small>${e(p.shiShenDisplay.original)}</small><em>${e(p.stemDisplay.name)} · ${e(p.branchDisplay.name)}</em></article>`).join("")}</div>
-    <div class="technical-facts explanatory"><p><span>Дневной хозяин</span><b>${e(chart.bazi.dayMaster)}</b><small>Центральный элемент дня рождения — точка отсчёта для чтения карты.</small></p><p><span>Структура карты</span><b>${e(chart.bazi.structureDisplay.name)}</b><small>${e(chart.bazi.structure)}</small></p><p><span>Сила и баланс</span><b>${e(chart.bazi.strength.display.name)}</b><small>Оценка: ${e(chart.bazi.strength.score)} · уверенность ${e(chart.bazi.strength.confidenceDisplay.name.toLowerCase())}</small></p><p><span>Регулирующие элементы</span><b>${chart.bazi.regulatingDisplay.map(item=>`${e(item.name)} <i>${e(item.original)}</i>`).join(" · ") || "—"}</b><small>Элементы, которые используются методологией для оценки баланса карты.</small></p></div>
-    <h4>Соотношение пяти элементов</h4><div class="elements-list">${chart.bazi.elementsDisplay.map(item=>`<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Number(item.value)/max*100}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div>
-    <h4>Большие жизненные периоды Ба-цзы</h4><p class="technical-note">Последовательные десятилетние этапы карты. Смысл текущего периода раскрывается выше в персональной интерпретации.</p><div class="period-strip">${chart.bazi.majorPeriods.map(item=>`<article><b>${e(item.ganZhi)}</b><span>${e(item.range)}</span><small>${e(item.years)}</small><em>${item.detailDisplay.map(value=>e(value.name)).join(" · ")}</em></article>`).join("")}</div>
-    <div class="technical-heading ziwei-heading"><div><span>Цзы Вэй Доу Шу</span><small>紫微斗数</small></div><h3>Двенадцать дворцов</h3><p>Каждый дворец обозначает отдельную жизненную сферу. Русское название показано первым, китайский оригинал — вторично.</p></div>
-    <div class="technical-facts"><p><span>Лунная дата</span><b>${e(chart.ziwei.lunarDateDisplay)}</b><small>${e(chart.ziwei.lunarDate)}</small></p><p><span>Дворец судьбы</span><b>${e(chart.ziwei.mingPalace)}</b></p><p><span>Дворец тела</span><b>${e(chart.ziwei.shenPalace)}</b></p><p><span>Система пяти элементов</span><b>${e(chart.ziwei.fiveElementBureauDisplay.name)}</b><small>${e(chart.ziwei.fiveElementBureau)}</small></p></div>
-    <div class="palaces-grid">${chart.ziwei.palaces.map(item=>`<article class="${item.isCurrentPeriod ? "current-palace" : ""}"><header><div><b>${e(item.displayName.name)}</b><small>${e(item.name)}</small></div><span>${e(item.ganZhi)}</span></header><div class="main-stars">${item.mainStarsDisplay.length ? item.mainStarsDisplay.map(star=>`<p><b>${e(star.name)}</b><small>${e(star.original)}</small></p>`).join("") : `<p><b>Без главной звезды</b></p>`}</div><footer><span>Дополнительные звёзды</span><small>${item.auxStarsDisplay.length ? item.auxStarsDisplay.map(star=>`${e(star.name)} <i>${e(star.original)}</i>`).join(" · ") : "—"}</small></footer><em>${e(item.majorPeriod)} лет${item.isCurrentPeriod ? " · текущий период" : ""}</em></article>`).join("")}</div>
-  </div></details></section>`;
+function premiumSections() {
+  return [
+    { title: "Характер и внутренние мотивы", description: "Решения, внутренний ресурс и противоречия." },
+    { title: "Сильные стороны и точки роста", description: "Качества, которые легче превращать в результат." },
+    { title: "Карьера и реализация", description: "Роли, рабочая среда и возможные направления роста." },
+    { title: "Деньги", description: "Ресурсы, риск и стиль финансовых решений." },
+    { title: "Отношения", description: "Близость, партнёрство и личные границы." },
+    { title: "Текущий жизненный период", description: "Темы, заметные на нынешнем этапе." },
+    { title: "Ближайшие годы", description: "Изменение акцентов и фокуса периода." },
+    { title: "Персональный план действий", description: "Практические ориентиры и точки приложения усилий." },
+  ];
 }
 
-async function downloadPdf(button) {
-  if (!currentInput) return;
-  const original = button.innerHTML; button.disabled = true; button.textContent = "Создаём PDF…";
+function bindPreviewActions() {
+  document.querySelector('[data-action="premium"]')?.addEventListener("click", event => {
+    const message = event.currentTarget.parentElement.querySelector(".premium-message");
+    message.hidden = false;
+    message.focus?.();
+  });
+}
+
+async function searchPlaces(query) {
   try {
-    const payload = { ...currentInput, ...(currentHasFullReport && currentReport ? { report: currentReport } : {}) };
-    const response = await fetch("/api/pdf", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload) });
-    if (!response.ok) { const error = await response.json(); throw new Error(error.error || "Не удалось создать PDF."); }
-    const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a");
-    const disposition = response.headers.get("Content-Disposition") || ""; const filename = disposition.match(/filename="([^"]+)"/)?.[1] || `tian-min-report-${currentInput.date}-${currentInput.time.replace(":","-")}.pdf`;
-    link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
-  } catch (error) { showError(error instanceof Error ? error.message : "Не удалось создать PDF."); }
-  finally { button.disabled = false; button.innerHTML = original; }
+    const response = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
+    const payload = await response.json();
+    renderPlaceOptions(response.ok ? payload.places : []);
+  } catch { renderPlaceOptions([]); }
 }
 
-function bindResultActions() { document.querySelectorAll('[data-action="pdf"]').forEach(button=>button.onclick=()=>downloadPdf(button)); document.querySelectorAll('[data-action="technical"]').forEach(button=>button.onclick=()=>{const details=document.querySelector("#technical-chart details"); if(details){details.open=true;details.scrollIntoView({behavior:"smooth"});}}); }
-function updatePdfEntitlement(ready = false) { document.querySelectorAll('[data-action="pdf"]').forEach(button => { button.disabled = !ready; button.setAttribute("aria-disabled", String(!ready)); button.innerHTML = ready ? "Скачать полный отчёт <span>↓</span>" : "Отчёт пока недоступен"; }); }
-async function searchPlaces(query) { try { const response=await fetch(`/api/places?q=${encodeURIComponent(query)}`); const payload=await response.json(); if(placeInput.value.trim()===query) renderPlaceOptions(response.ok?payload.places:[]); } catch { renderPlaceOptions([]); } }
-function renderPlaceOptions(places) { placeOptions.innerHTML=places.map((place,index)=>`<button type="button" role="option" data-index="${index}"><strong>${e(place.display?.city || place.city)}</strong><span>${e(place.display?.country || place.country)}</span></button>`).join(""); placeOptions.hidden=!places.length; placeInput.setAttribute("aria-expanded",String(Boolean(places.length))); placeOptions.querySelectorAll("button").forEach((button,index)=>button.addEventListener("click",()=>{selectedPlace=places[index];placeInput.value=selectedPlace.display?.label || selectedPlace.label;renderPlaceOptions([]);showError("");})); }
-function showAmbiguity(options) { setLoading(false); ambiguityBox.innerHTML=`<p>В эту ночь указанное время наступало дважды. Выберите вариант:</p>${options.map(option=>`<button type="button" data-value="${e(option.value)}">${e(option.label)}</button>`).join("")}`; ambiguityBox.hidden=false; ambiguityBox.querySelectorAll("button").forEach(button=>button.addEventListener("click",()=>submitCalculation(button.dataset.value))); }
-function showError(message) { errorBox.textContent=message; errorBox.hidden=!message; }
-function setLoading(loading) { submitButton.disabled=loading; buttonLabel.textContent=loading?"Рассчитываем карту…":"Получить свой разбор"; }
-function paragraphs(value) { return String(value||"").split(/\n{2,}/).map(p=>`<p>${e(p)}</p>`).join(""); }
-function list(items) { return `<ul>${items.map(item=>`<li>${e(item)}</li>`).join("")}</ul>`; }
-function ordered(items) { return `<ol>${items.map(item=>`<li>${e(item)}</li>`).join("")}</ol>`; }
-function russianTypography(value) { return String(value ?? "").replace(/(^|[\s(«„])((?:а|в|и|к|о|с|у|но|на|по|из|за|от|до|для|при))\s+(?=\S)/giu, (_match,before,word)=>`${before}${word}\u00a0`); }
-function e(value) { return russianTypography(value).replace(/[&<>'"]/g,char=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[char]); }
+function renderPlaceOptions(places) {
+  placeOptions.innerHTML = places.map((place, index) => `<button type="button" role="option" data-index="${index}">${e(place.display.label)}</button>`).join("");
+  placeOptions.hidden = places.length === 0;
+  placeInput.setAttribute("aria-expanded", String(places.length > 0));
+  placeOptions.querySelectorAll("button").forEach((button, index) => button.addEventListener("click", () => {
+    selectedPlace = places[index];
+    placeInput.value = selectedPlace.display.label;
+    renderPlaceOptions([]);
+  }));
+}
+
+function showAmbiguity(options) {
+  setState("INITIAL");
+  ambiguityBox.hidden = false;
+  ambiguityBox.innerHTML = `<p>В этот день часы переводили назад. Выберите, к какому времени относится запись:</p>${options.map(option => `<button type="button" data-occurrence="${e(option.value)}">${e(option.label)}</button>`).join("")}`;
+  ambiguityBox.querySelectorAll("button").forEach(button => button.addEventListener("click", () => submitFreeCalculation(button.dataset.occurrence)));
+}
+
+function setState(state) {
+  form.dataset.state = state;
+  const loading = state === "CALCULATING";
+  submitButton.disabled = loading;
+  buttonLabel.textContent = loading ? "Рассчитываем вашу карту…" : "Рассчитать мою карту бесплатно";
+}
+
+function showError(message) {
+  errorBox.hidden = !message;
+  errorBox.textContent = message;
+}
+
+function formatDate(value) {
+  const [year, month, day] = String(value).split("-");
+  return day && month && year ? `${day}.${month}.${year}` : value;
+}
+
+function e(value) {
+  return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
+}
