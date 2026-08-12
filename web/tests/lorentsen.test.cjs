@@ -67,6 +67,28 @@ test("409/422 не retry, 429/5xx retry и Retry-After сохраняется", 
   assert.equal(parseRetryAfter("6"), 6);
 });
 
+test("422 сохраняет безопасную provider-диагностику без email и request values", async () => {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(422, {
+    error: {
+      code: "validation_error",
+      type: "request_validation",
+      message: "payer private@example.test has invalid consent",
+      details: [{ field: "consent_version", value: "private-value" }, { field: "payer_email", value: "private@example.test" }],
+    },
+  }) });
+  await assert.rejects(provider.createPayment({ requestBody: {}, idempotencyKey: "idem" }), error => {
+    assert.equal(error.status, 422);
+    assert.deepEqual(error.providerDetails, {
+      providerCode: "validation_error",
+      providerType: "request_validation",
+      providerMessage: "payer [redacted-email] has invalid consent",
+      fields: ["consent_version", "payer_email"],
+    });
+    assert.doesNotMatch(JSON.stringify(error.providerDetails), /private@example|private-value/);
+    return true;
+  });
+});
+
 test("все документированные provider statuses поддержаны, неизвестный становится provider_result_unknown", async () => {
   assert.deepEqual(PROVIDER_STATUSES, ["preparing", "processing", "requires_action", "succeeded_pending", "settled", "manual_review", "failed", "expired", "provider_result_unknown"]);
   const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), fetch: async () => response(200, { payment_public_id: "pay_unknown", external_order_id: "ext_unknown", status: "invented" }) });
@@ -149,7 +171,7 @@ function serviceSetup(statuses, options = {}) {
   const orderStore = options.orderStore || new MemoryOrderStore();
   const provider = options.provider || new FakeLorentsenProvider(statuses);
   const reportStore = { load: async () => null, save: async value => value };
-  const service = new PremiumService({ env: { NODE_ENV: "production", PAYMENT_MODE: "lorentsen" }, orderStore, reportStore, paymentProvider: provider, now: options.now || (() => new Date("2026-08-12T10:00:01Z")) });
+  const service = new PremiumService({ env: { NODE_ENV: "production", PAYMENT_MODE: "lorentsen" }, orderStore, reportStore, paymentProvider: provider, logger: options.logger || { error() {} }, now: options.now || (() => new Date("2026-08-12T10:00:01Z")) });
   return { service, orderStore, provider };
 }
 const validConsent = { email: "payer@example.test", termsAccepted: true, autoRedemptionAccepted: true };
@@ -213,6 +235,27 @@ test("retryable create failure повторяет тот же attempt, idempoten
   assert.equal(provider.createCalls[0].attemptId, provider.createCalls[1].attemptId);
   assert.equal(provider.createCalls[0].idempotencyKey, provider.createCalls[1].idempotencyKey);
   assert.deepEqual(provider.createCalls[0].requestBody, provider.createCalls[1].requestBody);
+});
+
+test("create failure пишет только redacted structural diagnostics", async () => {
+  const entries = [];
+  const provider = new FakeLorentsenProvider();
+  provider.createPayment = async () => {
+    const error = new Error("Lorentsen отклонил параметры платежа.");
+    error.status = 422;
+    error.code = "PROVIDER_VALIDATION_ERROR";
+    error.providerDetails = { providerCode: "validation_error", providerType: null, providerMessage: "invalid field", fields: ["consent_version"] };
+    throw error;
+  };
+  const ctx = serviceSetup([], { provider, logger: { error: (...args) => entries.push(args) } });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const result = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  assert.equal(result.status, 422);
+  const attempt = [...ctx.orderStore.attempts.values()][0];
+  assert.deepEqual(attempt.failureInfo.provider.fields, ["consent_version"]);
+  assert.match(entries[0][0], /PAYMENT_PROVIDER_ERROR/);
+  assert.match(entries[0][1], /consent_version/);
+  assert.doesNotMatch(entries.flat().join(" "), /payer@example|test-token|webhook-test-secret/);
 });
 
 test("succeeded_pending не выставляет PAID, authenticated GET settled выставляет", async () => {

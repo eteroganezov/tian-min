@@ -94,6 +94,8 @@ Do not rewrite this foundation merely to add a production provider.
 
 Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented. The production connection and webhook configuration were reported active on 2026-08-12; provider reachability delivery must be rechecked after the deferred-reconciliation fix is deployed. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
 
+The first production create attempt was rejected with HTTP `422`. Its persisted request contained every documented field and the expected amount/currency/consent versions, but the old provider adapter discarded Lorentsen's response details and no `trace_id` was returned. Safe redacted diagnostics now preserve provider code/type/message and invalid field names for the next manually initiated attempt; do not alter the contract until that evidence is available.
+
 ### Create and retrieve payment
 
 - Production base: `https://api.lorentsen.pro` (no separate sandbox base is documented in the available guide).
@@ -144,7 +146,7 @@ Premium PDF is functionally developed but has a separate visual backlog. Do not 
 
 At context creation: calculation core is considered stable; free preview, location autocomplete, monetization foundation, mock retry/recovery and duplicate-generation protection exist. Stale Node runtime behavior is covered by regression tests.
 
-Last known suite status: **144 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
+Last known suite status: **146 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
 
 Planned sequence, not work authorized by this file:
 

@@ -18,6 +18,7 @@ class PremiumService {
     this.paymentProvider = options.paymentProvider;
     this.config = options.config || getProductConfig(this.env);
     this.stubGenerator = options.stubGenerator || defaultStubGenerator;
+    this.logger = options.logger || console;
     this.generationPromises = new Map();
     this.webhookJobs = new Set();
     this.now = options.now || (() => new Date());
@@ -142,9 +143,10 @@ class PremiumService {
     } catch (error) {
       const now = this.isoNow();
       attempt.retryTimestamps = [...attempt.retryTimestamps, now];
-      attempt.failureInfo = { code: error.code || "PROVIDER_ERROR", httpStatus: error.status || 503, retryable: Boolean(error.retryable), at: now };
+      attempt.failureInfo = { code: error.code || "PROVIDER_ERROR", httpStatus: error.status || 503, retryable: Boolean(error.retryable), provider: error.providerDetails || null, at: now };
       attempt.traceId = error.traceId || attempt.traceId;
       attempt.nextPollAt = futureIso(this.now(), error.retryAfterSeconds || 5);
+      this.logger.error("[PAYMENT_PROVIDER_ERROR]", JSON.stringify({ stage: "create_payment", httpStatus: error.status || null, code: error.code || "PROVIDER_ERROR", traceId: error.traceId || null, provider: error.providerDetails || null }));
       if (error.code === "PROVIDER_VALIDATION_ERROR") attempt.providerStatus = "failed";
       else if (error.retryable || error.code === "IDEMPOTENCY_CONFLICT" || error.code === "PROVIDER_ORDER_MISMATCH") attempt.providerStatus = "provider_result_unknown";
       if (attempt.statusHistory.at(-1)?.status !== attempt.providerStatus) attempt.statusHistory = [...attempt.statusHistory, { status: attempt.providerStatus, at: now }];

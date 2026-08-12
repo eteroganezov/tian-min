@@ -49,6 +49,7 @@ class LorentsenPaymentProvider {
       const error = providerError(safeProviderMessage(response.status), response.status, retryable, code);
       error.retryAfterSeconds = retryAfterSeconds;
       error.traceId = safeString(payload?.trace_id, 160);
+      error.providerDetails = safeProviderErrorDetails(payload);
       throw error;
     }
     return normalizePayment(payload, response.status, retryAfterSeconds);
@@ -157,7 +158,38 @@ async function readSafeJson(response) {
   }
 }
 function safeProviderMessage(status) { if (status === 409) return "Lorentsen отклонил изменённый idempotent request."; if (status === 422) return "Lorentsen отклонил параметры платежа."; if (status === 429) return "Lorentsen временно ограничил частоту запросов."; return "Lorentsen временно не обработал запрос."; }
+function safeProviderErrorDetails(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  const error = payload.error && typeof payload.error === "object" ? payload.error : payload;
+  const providerCode = safeDiagnosticToken(error.code || payload.code);
+  const providerType = safeDiagnosticToken(error.type || payload.type);
+  const providerMessage = safeDiagnosticText(error.message || error.detail || payload.message || payload.detail);
+  const fields = [...new Set([
+    ...collectDiagnosticFields(error),
+    ...(error !== payload ? collectDiagnosticFields(payload) : []),
+  ])].slice(0, 20);
+  return providerCode || providerType || providerMessage || fields.length ? { providerCode, providerType, providerMessage, fields } : null;
+}
+function collectDiagnosticFields(value) {
+  if (!value || typeof value !== "object") return [];
+  const candidates = [];
+  for (const key of ["field", "param", "path"]) if (typeof value[key] === "string") candidates.push(value[key]);
+  for (const key of ["errors", "details", "violations"]) {
+    const items = Array.isArray(value[key]) ? value[key] : [];
+    for (const item of items) if (item && typeof item === "object") {
+      for (const name of ["field", "param", "path"]) if (typeof item[name] === "string") candidates.push(item[name]);
+    }
+  }
+  return candidates.map(safeDiagnosticField).filter(Boolean);
+}
+function safeDiagnosticToken(value) { const string = String(value || "").trim(); return /^[A-Za-z0-9_.:-]{1,120}$/.test(string) ? string : null; }
+function safeDiagnosticField(value) { const string = String(value || "").trim(); return /^[A-Za-z0-9_.\[\]-]{1,160}$/.test(string) ? string : null; }
+function safeDiagnosticText(value) {
+  if (typeof value !== "string") return null;
+  const string = value.replace(/[\r\n\t]+/g, " ").replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[redacted-email]").replace(/\bBearer\s+\S+/gi, "Bearer [redacted]").trim();
+  return string ? string.slice(0, 240) : null;
+}
 function providerError(message, status, retryable, code) { const error = new Error(message); error.status = status; error.retryable = retryable; error.code = code; return error; }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
 
-module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, normalizePayment, parseRetryAfter, resolveLorentsenConfig };
+module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };
