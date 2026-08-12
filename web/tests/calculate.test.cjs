@@ -100,4 +100,6 @@ test("production build содержит бесплатную воронку и �
   assert.match(styles, /\.transformations>div>p\{border-radius:8px\}/);
   assert.match(styles, /\.transformations>header p\{[^}]*padding:0;border:0;background:transparent\}/);
   assert.match(styles, /\.locked-grid article\{border:[^}]+border-radius:10px\}/);
+  assert.match(styles, /\.pillars-grid article\{border-radius:8px\}/);
+  assert.match(styles, /\.birth-summary span\{border-radius:8px\}/);
 });
