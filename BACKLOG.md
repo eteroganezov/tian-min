@@ -3,10 +3,9 @@
 ## Production / Payments
 
 - Подготовить production deployment architecture и публичный HTTPS backend.
-- Интегрировать выбранный provider Lorentsen; заменить временные DEV `100 RUB` на launch price `399 RUB` только в production configuration.
-- Настроить production credentials, `GET /connection`, create/get payment и QR/payment-link flow.
-- Зарегистрировать webhook и реализовать raw-body HMAC verification, durable inbox, event/body-hash deduplication и обработку out-of-order events.
-- Сохранить идемпотентность logical payment attempts, polling/reconciliation и production persistence; fulfillment разрешать только после Lorentsen `settled`.
+- Подключить Railway PostgreSQL и добавить production Lorentsen variables/secrets по `web/LORENTSEN_DEPLOYMENT.md`.
+- Создать production client, проверить `GET /connection`, зарегистрировать webhook endpoint и выполнить reachability/signature test.
+- Согласовать с Lorentsen публичное partner name `Edward` vs `Тянь Мин` до первого реального платежа.
 - Провести production checkout QA: payment → server-confirmed `settled` → `PAID` → разрешение report generation.
 
 ## Premium Generation

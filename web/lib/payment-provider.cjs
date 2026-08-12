@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { LorentsenPaymentProvider } = require("./lorentsen-provider.cjs");
 
 class MockPaymentProvider {
   constructor(options = {}) {
@@ -29,11 +30,15 @@ class UnavailablePaymentProvider {
   async handleWebhook() { return { verified: false }; }
 }
 
-function createPaymentProvider(env = process.env) {
+function createPaymentProvider(env = process.env, options = {}) {
   const mode = env.PAYMENT_MODE || (env.NODE_ENV === "production" ? "disabled" : "mock");
   if (mode === "mock") return new MockPaymentProvider({ env });
+  if (mode === "lorentsen") {
+    if (env.NODE_ENV !== "production") throw configurationError("Lorentsen provider разрешён только в production.");
+    return new LorentsenPaymentProvider({ env, fetch: options.fetch });
+  }
   return new UnavailablePaymentProvider();
 }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
 
-module.exports = { MockPaymentProvider, UnavailablePaymentProvider, createPaymentProvider };
+module.exports = { MockPaymentProvider, UnavailablePaymentProvider, LorentsenPaymentProvider, createPaymentProvider };

@@ -11,31 +11,36 @@ const { LocalReportStore } = require("./lib/report-store.cjs");
 const { LocalOrderStore } = require("./lib/order-store.cjs");
 const { createPaymentProvider } = require("./lib/payment-provider.cjs");
 const { PremiumService } = require("./lib/premium-service.cjs");
+const { PostgresPaymentStore, PostgresReportStore } = require("./lib/production-store.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
-  const reportStore = options.reportStore || new LocalReportStore();
   const env = options.env || process.env;
+  const paymentProvider = options.paymentProvider || createPaymentProvider(env);
+  const orderStore = options.orderStore || (paymentProvider.name === "lorentsen" ? new PostgresPaymentStore({ env }) : new LocalOrderStore({ env }));
+  const reportStore = options.reportStore || (paymentProvider.name === "lorentsen" ? new PostgresReportStore(orderStore) : new LocalReportStore());
   const premiumService = options.premiumService || new PremiumService({
     env, reportStore,
-    orderStore: options.orderStore || new LocalOrderStore({ env }),
-    paymentProvider: options.paymentProvider || createPaymentProvider(env),
+    orderStore,
+    paymentProvider,
   });
   const freePreviewRequest = options.freePreviewRequest || createFreePreviewRequest;
   const reportRequest = options.reportRequest || generateReportRequest;
-  return http.createServer(async (request, response) => {
+  const server = http.createServer(async (request, response) => {
     try {
+      if (env.NODE_ENV === "production" && request.url.startsWith("/api/dev/")) return sendJson(response, 404, { error: "Страница не найдена." });
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
       if (request.method === "POST" && request.url === "/api/free-preview") return await handleFreePreview(request, response, freePreviewRequest);
       if (request.method === "POST" && request.url === "/api/report") return sendJson(response, 403, { error: "Прямая генерация отключена. Персональный разбор запускается сервером только после подтверждённой оплаты." });
       if (request.method === "GET" && request.url === "/api/premium/config") return sendJson(response, 200, premiumService.getConfig());
       if (request.method === "POST" && request.url === "/api/premium/checkout") return await handlePremiumAction(request, response, input => premiumService.createCheckout(input), 30_000);
-      if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input.orderId));
+      if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input));
       if (request.method === "POST" && request.url === "/api/premium/dev/payment") return await handlePremiumAction(request, response, input => premiumService.applyMockOutcome(input.orderId, input.outcome));
+      if (request.method === "POST" && request.url === "/api/payments/lorentsen/webhook") return await handleLorentsenWebhook(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId));
-      if (request.method === "GET" && request.url.startsWith("/api/premium/order/")) return handlePremiumOrder(request, response, premiumService);
+      if (request.method === "GET" && request.url.startsWith("/api/premium/order/")) return await handlePremiumOrder(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
       if (request.method === "GET" && request.url === "/api/dev/reports/latest") return handleSavedReport(response, reportStore);
       if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
@@ -47,6 +52,8 @@ function createServer(options = {}) {
       return sendJson(response, 500, { error: "Внутренняя ошибка. Попробуйте ещё раз." });
     }
   });
+  server.deploymentReady = orderStore.ready || Promise.resolve();
+  return server;
 }
 
 async function handlePremiumAction(request, response, action, limit = 10_000) {
@@ -56,9 +63,16 @@ async function handlePremiumAction(request, response, action, limit = 10_000) {
   return sendJson(response, result.status, result.body);
 }
 
-function handlePremiumOrder(request, response, premiumService) {
+async function handlePremiumOrder(request, response, premiumService) {
   const orderId = decodeURIComponent(new URL(request.url, "http://localhost").pathname.split("/").pop() || "");
-  const result = premiumService.getOrder(orderId);
+  const result = await premiumService.getOrder(orderId);
+  return sendJson(response, result.status, result.body);
+}
+
+async function handleLorentsenWebhook(request, response, premiumService) {
+  const rawBody = await readRawBody(request, response, 256 * 1024);
+  if (!rawBody) return;
+  const result = await premiumService.handleLorentsenWebhook(rawBody, request.headers);
   return sendJson(response, result.status, result.body);
 }
 
@@ -148,6 +162,18 @@ async function readJson(request, response, limit) {
   try { return JSON.parse(raw); } catch { sendJson(response, 400, { error: "Не удалось прочитать данные формы." }); return null; }
 }
 
+async function readRawBody(request, response, limit) {
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.length;
+    if (size > limit) { sendJson(response, 413, { error: "Слишком большой webhook." }); return null; }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
 function serveStatic(request, response, staticRoot) {
   const url = new URL(request.url, "http://localhost");
   const requested = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1));
@@ -170,9 +196,12 @@ function resolveServerBinding(env = process.env) {
   return { host: env.HOST || "0.0.0.0", port };
 }
 
-if (require.main === module) {
+if (require.main === module) void startServer().catch(() => { console.error("[STARTUP_ERROR] Production configuration или persistence недоступна."); process.exitCode = 1; });
+
+async function startServer() {
   const { host, port } = resolveServerBinding();
   const server = createServer();
+  await server.deploymentReady;
   server.listen(port, host, () => console.log(`Тянь Мин запущен: http://localhost:${port} (bind ${host})`));
 }
 

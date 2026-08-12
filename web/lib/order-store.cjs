@@ -2,13 +2,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 class MemoryOrderStore {
-  constructor() { this.orders = new Map(); }
+  constructor() { this.orders = new Map(); this.attempts = new Map(); this.consents = new Map(); this.webhooks = new Map(); this.anomalies = []; }
   save(order) { this.orders.set(order.orderId, structuredClone(order)); return structuredClone(order); }
   load(orderId) { const order = this.orders.get(String(orderId)); return order ? structuredClone(order) : null; }
   findByCheckoutKey(checkoutKeyHash) {
     const order = [...this.orders.values()].find(item => item.checkoutKeyHash === checkoutKeyHash);
     return order ? structuredClone(order) : null;
   }
+  saveAttempt(attempt) { const existing = this.attempts.get(attempt.attemptId); if (existing && existing.requestBodyHash !== attempt.requestBodyHash) throw new Error("Immutable payment attempt body нельзя изменить."); this.attempts.set(attempt.attemptId, structuredClone(attempt)); return structuredClone(attempt); }
+  loadAttempt(attemptId) { const value = this.attempts.get(String(attemptId)); return value ? structuredClone(value) : null; }
+  findAttemptByPaymentId(paymentId) { const value = [...this.attempts.values()].find(item => item.paymentPublicId === paymentId); return value ? structuredClone(value) : null; }
+  listAttemptsByOrder(orderId) { return [...this.attempts.values()].filter(item => item.orderId === orderId).map(item => structuredClone(item)); }
+  saveConsent(record) { this.consents.set(record.externalConsentReference, structuredClone(record)); return structuredClone(record); }
+  beginPaymentAttempt({ order, attempt, consent }) { this.saveAttempt(attempt); this.saveConsent(consent); return this.save(order); }
+  recordWebhook(event) { const existing = this.webhooks.get(event.eventId); if (!existing) { this.webhooks.set(event.eventId, structuredClone(event)); return { status: "stored" }; } return existing.payloadHash === event.payloadHash ? { status: "duplicate" } : { status: "conflict" }; }
+  saveAnomaly(record) { this.anomalies.push(structuredClone(record)); return structuredClone(record); }
 }
 
 class LocalOrderStore extends MemoryOrderStore {

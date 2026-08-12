@@ -90,9 +90,9 @@ Rules already enforced:
 
 Do not rewrite this foundation merely to add a production provider.
 
-## Lorentsen production payment contract (future work)
+## Lorentsen production payment integration
 
-Lorentsen is the selected future provider. It is **not integrated yet**. API calls and secrets are backend-only.
+Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented, but production credentials and the provider webhook are **not configured yet**. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
 
 ### Create and retrieve payment
 
@@ -130,7 +130,7 @@ Verification requirements:
 3. Validate signing-key version, header event ID against `event.id`, and timestamp against `event.created_at`; reject timestamps more than about 300 seconds in the future, but do not reject valid old retries solely for age.
 4. Before returning 2xx, durably save the event. Deduplicate by event ID; same ID plus a different body hash is a conflict. Durable-save failure returns 5xx. Handle duplicates and out-of-order delivery.
 
-Production setup requires an active server token, registered webhook endpoint, signing secret/key version, public HTTPS backend, `GET /connection` verification from production, and any required IP/CIDR allowlist. Store all secrets outside Git.
+Production records use PostgreSQL tables for orders, payment attempts/history, consent audit, webhook inbox, anomalies and future saved premium reports. DEV `.local-orders` / `.local-reports` remain unchanged. Production setup still requires an active server token, registered webhook endpoint, signing secret/key version, public HTTPS backend, `GET /connection` verification from production, and any required IP/CIDR allowlist. Store all secrets outside Git.
 
 ## Premium generation and PDF
 
@@ -144,7 +144,7 @@ Premium PDF is functionally developed but has a separate visual backlog. Do not 
 
 At context creation: calculation core is considered stable; free preview, location autocomplete, monetization foundation, mock retry/recovery and duplicate-generation protection exist. Stale Node runtime behavior is covered by regression tests.
 
-Last known suite status: **103 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
+Last known suite status: **139 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
 
 Planned sequence, not work authorized by this file:
 

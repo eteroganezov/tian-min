@@ -37,11 +37,11 @@ test("free preview не создаёт order и не вызывает OpenAI", (
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
 });
 
-test("checkout создаёт один заказ, использует server price и игнорирует paid от браузера", () => {
+test("checkout создаёт один заказ, использует server price и игнорирует paid от браузера", async () => {
   const context = setup();
   try {
-    const first = context.service.createCheckout({ ...input, paid: true, amount: 1, status: "PAID" });
-    const second = context.service.createCheckout(input);
+    const first = await context.service.createCheckout({ ...input, paid: true, amount: 1, status: "PAID" });
+    const second = await context.service.createCheckout(input);
     assert.equal(first.status, 201);
     assert.equal(first.body.order.status, "CHECKOUT_STARTED");
     assert.equal(first.body.order.amount, getProductConfig(context.env).amount);
@@ -56,7 +56,7 @@ test("checkout создаёт один заказ, использует server p
 test("неоплаченный order не проходит generation gate, provider success выставляет PAID", async () => {
   const context = setup();
   try {
-    const order = context.service.createCheckout(input).body.order;
+    const order = (await context.service.createCheckout(input)).body.order;
     assert.equal((await context.service.generate(order.orderId)).status, 403);
     const pending = await context.service.startPayment(order.orderId);
     assert.equal(pending.body.order.status, "PAYMENT_PENDING");
@@ -69,6 +69,7 @@ test("неоплаченный order не проходит generation gate, prov
 test("mock payment разрешён только development и production mode fail-closed", () => {
   assert.equal(createPaymentProvider({ NODE_ENV: "development", PAYMENT_MODE: "mock" }).name, "mock");
   assert.throws(() => createPaymentProvider({ NODE_ENV: "production", PAYMENT_MODE: "mock" }), /запрещён в production/);
+  assert.throws(() => createPaymentProvider({ NODE_ENV: "development", PAYMENT_MODE: "lorentsen" }), /только в production/);
   assert.equal(createPaymentProvider({ NODE_ENV: "production" }).name, "unconfigured");
 });
 
@@ -80,7 +81,7 @@ test("server source закрывает прямой legacy /api/report обхо�
 test("ошибка оплаты допускает retry и сохраняет бесплатный результат независимым", async () => {
   const context = setup();
   try {
-    const order = context.service.createCheckout(input).body.order;
+    const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     const failed = await context.service.applyMockOutcome(order.orderId, "failed");
     assert.equal(failed.body.order.status, "CHECKOUT_STARTED");
@@ -96,7 +97,7 @@ test("один paid report генерируется один раз и REPORT_RE
   const gate = new Promise(resolve => { release = resolve; });
   const context = setup({ stubGenerator: async order => { generationCalls += 1; await gate; return { mode: "stub", reportId: order.reportId }; } });
   try {
-    const order = context.service.createCheckout(input).body.order;
+    const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     await context.service.applyMockOutcome(order.orderId, "succeeded");
     const firstPromise = context.service.generate(order.orderId);
@@ -117,7 +118,7 @@ test("один paid report генерируется один раз и REPORT_RE
 test("повторный payment callback после REPORT_READY идемпотентен", async () => {
   const context = setup();
   try {
-    const order = context.service.createCheckout(input).body.order;
+    const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     const paid = await context.service.applyMockOutcome(order.orderId, "succeeded");
     const ready = await context.service.generate(order.orderId);
@@ -132,7 +133,7 @@ test("REPORT_FAILED можно повторить без новой оплаты
   let calls = 0;
   const context = setup({ stubGenerator: async order => { calls += 1; if (calls === 1) throw new Error("stub failed"); return { mode: "stub", reportId: order.reportId }; } });
   try {
-    const order = context.service.createCheckout(input).body.order;
+    const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     await context.service.applyMockOutcome(order.orderId, "succeeded");
     assert.equal((await context.service.generate(order.orderId)).body.order.status, "REPORT_FAILED");
@@ -141,17 +142,17 @@ test("REPORT_FAILED можно повторить без новой оплаты
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
 });
 
-test("DEV LocalOrderStore даёт повторный доступ после нового service instance", () => {
+test("DEV LocalOrderStore даёт повторный доступ после нового service instance", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "tian-min-orders-"));
   const env = { NODE_ENV: "development", PAYMENT_MODE: "mock" };
   try {
     const firstStore = new LocalOrderStore({ root, env });
     const reportRoot = path.join(root, "reports");
     const first = new PremiumService({ env, orderStore: firstStore, reportStore: new LocalReportStore({ root: reportRoot }), paymentProvider: new MockPaymentProvider({ env }) });
-    const order = first.createCheckout(input).body.order;
+    const order = (await first.createCheckout(input)).body.order;
     const second = new PremiumService({ env, orderStore: new LocalOrderStore({ root, env }), reportStore: new LocalReportStore({ root: reportRoot }), paymentProvider: new MockPaymentProvider({ env }) });
-    assert.equal(second.getOrder(order.orderId).body.order.reportId, order.reportId);
-    assert.equal(second.createCheckout(input).body.order.orderId, order.orderId);
+    assert.equal((await second.getOrder(order.orderId)).body.order.reportId, order.reportId);
+    assert.equal((await second.createCheckout(input)).body.order.orderId, order.orderId);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -168,7 +169,7 @@ test("REPORT_READY восстанавливается из persistence без п
       paymentProvider: new MockPaymentProvider({ env }),
       stubGenerator: async order => { generationCalls += 1; return { mode: "stub", reportId: order.reportId }; },
     });
-    const order = first.createCheckout(input).body.order;
+    const order = (await first.createCheckout(input)).body.order;
     await first.startPayment(order.orderId);
     await first.applyMockOutcome(order.orderId, "succeeded");
     assert.equal((await first.generate(order.orderId)).body.order.status, "REPORT_READY");
@@ -180,7 +181,7 @@ test("REPORT_READY восстанавливается из persistence без п
       paymentProvider: new MockPaymentProvider({ env }),
       stubGenerator: async () => { generationCalls += 1; throw new Error("не должна запускаться"); },
     });
-    assert.equal(restored.getOrder(order.orderId).body.order.status, "REPORT_READY");
+    assert.equal((await restored.getOrder(order.orderId)).body.order.status, "REPORT_READY");
     assert.equal((await restored.generate(order.orderId)).body.order.status, "REPORT_READY");
     assert.equal(generationCalls, 1);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
@@ -188,8 +189,8 @@ test("REPORT_READY восстанавливается из persistence без п
 
 test("production price и local order storage работают fail-closed", () => {
   const env = { NODE_ENV: "production" };
-  assert.equal(getProductConfig(env).available, false);
-  assert.equal(getProductConfig(env).amount, null);
+  assert.equal(getProductConfig(env).available, true);
+  assert.equal(getProductConfig(env).amount, 399);
   const store = new LocalOrderStore({ root: path.join(os.tmpdir(), "unused-production-orders"), env });
   assert.throws(() => store.save({ orderId: "order_1234567890abcdef1234567890abcdef" }), /Production order storage/);
 });
@@ -202,5 +203,11 @@ test("frontend monetization не вызывает OpenAI/report API", () => {
   assert.match(script, /restorePremiumOrder\(\)/);
   assert.match(script, /\["PAID", "REPORT_GENERATING"\]/);
   assert.match(script, /\["CHECKOUT_STARTED", "PAYMENT_PENDING"\]/);
+  assert.match(script, /name="payerEmail"/);
+  assert.match(script, /name="termsAccepted"/);
+  assert.match(script, /name="autoRedemptionAccepted"/);
+  assert.match(script, /button\.disabled.*email\.validity\.valid/);
+  assert.match(script, /paymentMethod\.link|method\.link/);
+  assert.doesNotMatch(script, /decode.*QR|status\s*:\s*["']PAID/);
   assert.doesNotMatch(script, /\/api\/report|OPENAI_API_KEY|paid\s*:\s*true/);
 });

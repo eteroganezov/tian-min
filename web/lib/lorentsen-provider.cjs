@@ -1,0 +1,163 @@
+const PROVIDER_STATUSES = Object.freeze([
+  "preparing", "processing", "requires_action", "succeeded_pending", "settled",
+  "manual_review", "failed", "expired", "provider_result_unknown",
+]);
+const TERMINAL_STATUSES = new Set(["failed", "expired"]);
+
+class LorentsenPaymentProvider {
+  constructor(options = {}) {
+    this.env = options.env || process.env;
+    this.fetch = options.fetch || globalThis.fetch;
+    this.config = resolveLorentsenConfig(this.env);
+    this.name = "lorentsen";
+  }
+
+  async createPayment(attempt) {
+    return this.request("POST", "/api/v1/integration/payments", {
+      body: attempt.requestBody,
+      idempotencyKey: attempt.idempotencyKey,
+      acceptedStatuses: [200, 201],
+    });
+  }
+
+  async getPaymentStatus(paymentPublicId) {
+    if (!isProviderId(paymentPublicId)) throw providerError("Некорректный payment_public_id.", 400, false, "INVALID_PAYMENT_ID");
+    return this.request("GET", `/api/v1/integration/payments/${encodeURIComponent(paymentPublicId)}`, { acceptedStatuses: [200] });
+  }
+
+  async request(method, pathname, options = {}) {
+    const url = new URL(pathname, this.config.apiBaseUrl);
+    assertProviderUrl(url, this.config.apiBaseUrl);
+    const headers = { Authorization: `Bearer ${this.config.apiToken}`, Accept: "application/json" };
+    let body;
+    if (options.body) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
+    if (options.idempotencyKey) headers["Idempotency-Key"] = options.idempotencyKey;
+    let response;
+    try {
+      response = await this.fetch(url, { method, headers, body, redirect: "error", signal: AbortSignal.timeout(this.config.requestTimeoutMs) });
+    } catch (error) {
+      throw providerError(error?.name === "TimeoutError" ? "Lorentsen не ответил вовремя." : "Не удалось связаться с Lorentsen.", 503, true, error?.name === "TimeoutError" ? "PROVIDER_TIMEOUT" : "PROVIDER_NETWORK_ERROR");
+    }
+    const retryAfterSeconds = parseRetryAfter(response.headers?.get?.("retry-after"));
+    const payload = await readSafeJson(response);
+    if (!options.acceptedStatuses.includes(response.status)) {
+      const retryable = response.status === 429 || response.status >= 500;
+      const code = response.status === 409 ? "IDEMPOTENCY_CONFLICT" : response.status === 422 ? "PROVIDER_VALIDATION_ERROR" : response.status === 429 ? "PROVIDER_RATE_LIMIT" : "PROVIDER_HTTP_ERROR";
+      const error = providerError(safeProviderMessage(response.status), response.status, retryable, code);
+      error.retryAfterSeconds = retryAfterSeconds;
+      error.traceId = safeString(payload?.trace_id, 160);
+      throw error;
+    }
+    return normalizePayment(payload, response.status, retryAfterSeconds);
+  }
+}
+
+function resolveLorentsenConfig(env = process.env) {
+  const apiBaseUrl = env.LORENTSEN_API_BASE_URL || "https://api.lorentsen.pro";
+  assertProviderUrl(new URL(apiBaseUrl), apiBaseUrl);
+  const required = {
+    apiToken: "LORENTSEN_API_TOKEN",
+    webhookEndpointId: "LORENTSEN_WEBHOOK_ENDPOINT_ID",
+    webhookSecret: "LORENTSEN_WEBHOOK_SECRET",
+    webhookSigningKeyVersion: "LORENTSEN_WEBHOOK_SIGNING_KEY_VERSION",
+    partnerPublicName: "LORENTSEN_PARTNER_PUBLIC_NAME",
+    publicBaseUrl: "PUBLIC_BASE_URL",
+    termsUrl: "LORENTSEN_TERMS_URL",
+    privacyUrl: "LORENTSEN_PRIVACY_URL",
+    autoRedemptionTermsUrl: "LORENTSEN_AUTO_REDEMPTION_TERMS_URL",
+  };
+  const values = {};
+  const missing = [];
+  for (const [key, name] of Object.entries(required)) {
+    const value = String(env[name] || "").trim();
+    if (!value) missing.push(name);
+    values[key] = value;
+  }
+  if (!String(env.DATABASE_URL || "").trim()) missing.push("DATABASE_URL");
+  if (missing.length) throw configurationError(`Для PAYMENT_MODE=lorentsen не настроены: ${missing.join(", ")}.`);
+  for (const [name, value] of [["PUBLIC_BASE_URL", values.publicBaseUrl], ["LORENTSEN_TERMS_URL", values.termsUrl], ["LORENTSEN_PRIVACY_URL", values.privacyUrl], ["LORENTSEN_AUTO_REDEMPTION_TERMS_URL", values.autoRedemptionTermsUrl]]) assertHttpsUrl(value, name);
+  return Object.freeze({
+    apiBaseUrl: new URL(apiBaseUrl).toString(),
+    ...values,
+    consentVersion: env.LORENTSEN_CONSENT_VERSION || "certificate_purchase_terms_v1",
+    autoRedemptionConsentVersion: env.LORENTSEN_AUTO_REDEMPTION_CONSENT_VERSION || "partner_auto_redemption_consent_v1",
+    requestTimeoutMs: positiveInteger(env.LORENTSEN_REQUEST_TIMEOUT_MS, 10_000),
+  });
+}
+
+function normalizePayment(payload, httpStatus, headerRetryAfter) {
+  if (!payload || typeof payload !== "object") throw providerError("Lorentsen вернул некорректный JSON.", 502, true, "INVALID_PROVIDER_RESPONSE");
+  const status = PROVIDER_STATUSES.includes(payload.status) ? payload.status : "provider_result_unknown";
+  const paymentPublicId = safeString(payload.payment_public_id, 200);
+  const externalOrderId = safeString(payload.external_order_id, 200);
+  if (!paymentPublicId) throw providerError("Lorentsen не вернул payment_public_id.", 502, true, "INVALID_PROVIDER_RESPONSE");
+  if (!externalOrderId) throw providerError("Lorentsen не вернул external_order_id.", 502, true, "INVALID_PROVIDER_RESPONSE");
+  return {
+    paymentId: paymentPublicId,
+    paymentPublicId,
+    externalOrderId,
+    status,
+    paymentMethod: normalizePaymentMethod(payload.payment_method),
+    retryAfterSeconds: positiveInteger(payload.retry_after_seconds, headerRetryAfter || 5),
+    traceId: safeString(payload.trace_id, 160),
+    httpStatus,
+  };
+}
+
+function normalizePaymentMethod(value) {
+  if (value == null) return null;
+  if (typeof value !== "object") return null;
+  const link = safeExternalUrl(value.link);
+  const image = safeImageUrl(value.image);
+  const expiresAt = validDate(value.expires_at) ? new Date(value.expires_at).toISOString() : null;
+  return link || image ? { link, image, expiresAt } : null;
+}
+
+function assertProviderUrl(url, configuredBase) {
+  const base = new URL(configuredBase);
+  if (url.protocol !== "https:" || base.protocol !== "https:" || base.hostname !== "api.lorentsen.pro" || url.hostname !== base.hostname || url.username || url.password) {
+    throw configurationError("LORENTSEN_API_BASE_URL должен указывать на https://api.lorentsen.pro.");
+  }
+}
+function assertHttpsUrl(value, name) { const url = new URL(value); if (url.protocol !== "https:" || url.username || url.password) throw configurationError(`${name} должен быть публичным HTTPS URL.`); }
+function safeExternalUrl(value) { try { const url = new URL(String(value || "")); return url.protocol === "https:" && !url.username && !url.password ? url.toString() : null; } catch { return null; } }
+function safeImageUrl(value) { const string = String(value || ""); return /^data:image\/(?:png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(string) ? string : safeExternalUrl(string); }
+function validDate(value) { return Number.isFinite(Date.parse(String(value || ""))); }
+function isProviderId(value) { return typeof value === "string" && /^[A-Za-z0-9._:-]{1,200}$/.test(value); }
+function safeString(value, limit) { return typeof value === "string" ? value.slice(0, limit) : null; }
+function positiveInteger(value, fallback) { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
+function parseRetryAfter(value) { const seconds = Number(value); if (Number.isFinite(seconds) && seconds >= 0) return Math.ceil(seconds); const date = Date.parse(String(value || "")); return Number.isFinite(date) ? Math.max(0, Math.ceil((date - Date.now()) / 1000)) : null; }
+async function readSafeJson(response) {
+  const limit = 512 * 1024;
+  const declared = Number(response.headers?.get?.("content-length"));
+  if (Number.isFinite(declared) && declared > limit) throw providerError("Lorentsen вернул слишком большой ответ.", 502, true, "PROVIDER_RESPONSE_TOO_LARGE");
+  try {
+    if (!response.body?.getReader) {
+      const text = await response.text();
+      if (Buffer.byteLength(text) > limit) throw providerError("Lorentsen вернул слишком большой ответ.", 502, true, "PROVIDER_RESPONSE_TOO_LARGE");
+      return JSON.parse(text);
+    }
+    const reader = response.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) { await reader.cancel(); throw providerError("Lorentsen вернул слишком большой ответ.", 502, true, "PROVIDER_RESPONSE_TOO_LARGE"); }
+      chunks.push(Buffer.from(value));
+    }
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch (error) {
+    if (error?.code === "PROVIDER_RESPONSE_TOO_LARGE") throw error;
+    return null;
+  }
+}
+function safeProviderMessage(status) { if (status === 409) return "Lorentsen отклонил изменённый idempotent request."; if (status === 422) return "Lorentsen отклонил параметры платежа."; if (status === 429) return "Lorentsen временно ограничил частоту запросов."; return "Lorentsen временно не обработал запрос."; }
+function providerError(message, status, retryable, code) { const error = new Error(message); error.status = status; error.retryable = retryable; error.code = code; return error; }
+function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
+
+module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, normalizePayment, parseRetryAfter, resolveLorentsenConfig };

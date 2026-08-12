@@ -13,6 +13,8 @@ let activePlaceIndex = -1;
 let placeSearchSequence = 0;
 let currentBirthInput = null;
 let premiumBusy = false;
+let premiumConfig = null;
+let paymentPollTimer = null;
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -150,8 +152,12 @@ async function openPremiumOffer() {
   if (premiumBusy) return;
   premiumBusy = true;
   try {
-    const config = await api("/api/premium/config");
+    const config = premiumConfig = await api("/api/premium/config");
     const host = document.querySelector(".premium-action");
+    if (!config.available) {
+      host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
+      return;
+    }
     host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
     host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
     host.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -165,14 +171,19 @@ async function startCheckout() {
   try {
     const checkout = await api("/api/premium/checkout", currentBirthInput);
     localStorage.setItem("tianMinOrderId", checkout.order.orderId);
-    const payment = await api("/api/premium/payment/start", { orderId: checkout.order.orderId });
-    renderPaymentState(payment.order);
+    if (premiumConfig?.paymentMode === "lorentsen") renderConsentCheckout(checkout.order);
+    else {
+      const payment = await api("/api/premium/payment/start", { orderId: checkout.order.orderId });
+      renderPaymentState(payment.order);
+    }
   } catch (error) { showPremiumError(error.message); }
   finally { premiumBusy = false; }
 }
 
 function renderPaymentState(order) {
   const host = document.querySelector(".premium-action") || resultRoot;
+  clearTimeout(paymentPollTimer);
+  if (order.paymentProvider === "lorentsen") return renderLorentsenState(host, order);
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
   if (order.status === "REPORT_FAILED") {
     host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Оплата подтверждена</p><h3>Разбор не удалось подготовить</h3><p>Оплата сохранена. Повторная попытка не требует нового заказа или платежа.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать подготовить ещё раз</button></section>`;
@@ -187,6 +198,59 @@ function renderPaymentState(order) {
   }
   host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="${e(order.status)}"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Проверка платёжного сценария</h3><p>Реальные деньги не списываются. Эта панель недоступна в production.</p><div class="payment-notice">Статус оплаты: ожидает подтверждения</div><button type="button" class="premium-button" data-outcome="succeeded">Симулировать успешную оплату</button><button type="button" class="secondary-checkout-button" data-outcome="failed">Симулировать ошибку оплаты</button></section>`;
   host.querySelectorAll("[data-outcome]").forEach(button => button.addEventListener("click", () => simulatePayment(order.orderId, button.dataset.outcome)));
+}
+
+function renderConsentCheckout(order) {
+  const host = document.querySelector(".premium-action") || resultRoot;
+  const config = premiumConfig;
+  if (!config?.consent) return showPremiumError("Платёжная форма пока не настроена.");
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="CONSENT">
+    <p class="section-label">Оплата полного разбора</p><h3>${e(formatPrice(order.amount, order.currency))}</h3>
+    <label class="checkout-field">Email для получения сертификата<input type="email" name="payerEmail" autocomplete="email" inputmode="email" required></label>
+    <label class="consent-check"><input type="checkbox" name="termsAccepted"><span>Я принимаю <a href="${e(config.consent.termsUrl)}" target="_blank" rel="noopener noreferrer">условия покупки сертификата Lorentsen</a> и <a href="${e(config.consent.privacyUrl)}" target="_blank" rel="noopener noreferrer">политику конфиденциальности</a></span></label>
+    <label class="consent-check"><input type="checkbox" name="autoRedemptionAccepted"><span>Я согласен, что сертификат, приобретаемый этой оплатой, будет немедленно погашен у партнёра ${e(config.partnerPublicName)}. <a href="${e(config.consent.autoRedemptionTermsUrl)}" target="_blank" rel="noopener noreferrer">Подробнее</a></span></label>
+    <button type="button" class="premium-button" data-action="confirm-payment" disabled>Перейти к оплате</button>
+    <p>Сумма определяется сервером. Платёжный статус подтверждается только Lorentsen.</p>
+  </section>`;
+  const email = host.querySelector('[name="payerEmail"]');
+  const terms = host.querySelector('[name="termsAccepted"]');
+  const redemption = host.querySelector('[name="autoRedemptionAccepted"]');
+  const button = host.querySelector('[data-action="confirm-payment"]');
+  const update = () => { button.disabled = !(email.validity.valid && email.value.trim() && terms.checked && redemption.checked); };
+  [email, terms, redemption].forEach(control => control.addEventListener("input", update));
+  [terms, redemption].forEach(control => control.addEventListener("change", update));
+  button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }));
+}
+
+async function submitLorentsenPayment(orderId, consent) {
+  if (premiumBusy) return;
+  premiumBusy = true;
+  try { renderPaymentState((await api("/api/premium/payment/start", { orderId, ...consent })).order); }
+  catch (error) { showPremiumError(error.message); }
+  finally { premiumBusy = false; }
+}
+
+function renderLorentsenState(host, order) {
+  if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
+  if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "FAILED")}"><p class="section-label">Оплата не завершена</p><h3>${order.providerStatus === "expired" ? "Срок оплаты истёк" : "Платёж отклонён"}</h3><p>Бесплатная карта остаётся доступной. Новую попытку можно начать после подтверждённого завершения предыдущей.</p><button type="button" class="premium-button" data-action="retry-payment">Повторить оплату</button></section>`;
+    host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => renderConsentCheckout(order));
+    return;
+  }
+  const method = order.paymentMethod;
+  if (order.providerStatus === "requires_action" && method) {
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата через Lorentsen</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или точную ссылку, полученную от платёжного провайдера.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>Оплатить до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Ожидаем подтверждение Lorentsen…</div></section>`;
+  } else {
+    const copy = { preparing: ["Платёж создаётся", "QR-код появится после подготовки Lorentsen."], processing: ["Платёж обрабатывается", "Ожидаем подтверждение платёжного провайдера."], succeeded_pending: ["Оплата принята в обработку", "Отчёт станет доступен только после окончательного статуса settled."], manual_review: ["Платёж проверяется", "Lorentsen выполняет ручную проверку. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата через Lorentsen</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div></section>`;
+  }
+  schedulePaymentPoll(order.orderId, order.nextPollAt);
+}
+
+function schedulePaymentPoll(orderId, nextPollAt) {
+  clearTimeout(paymentPollTimer);
+  const delay = Math.max(1000, Math.min(30000, Date.parse(nextPollAt || "") - Date.now() || 5000));
+  paymentPollTimer = setTimeout(async () => { try { renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(orderId)}`)).order); } catch { schedulePaymentPoll(orderId, null); } }, delay);
 }
 
 async function simulatePayment(orderId, outcome) {
@@ -204,6 +268,10 @@ async function simulatePayment(orderId, outcome) {
 }
 
 function renderPaidState(host, order) {
+  if (order.paymentProvider === "lorentsen") {
+    host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Оплата подтверждена</p><h3>Статус settled подтверждён</h3><p>Оплата надёжно сохранена. Автоматическая AI-генерация на этом этапе ещё не включена.</p></section>`;
+    return;
+  }
   host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Оплата подтверждена</p><h3>Готовим персональный разбор</h3><p>Тестовая генерация выполняется без OpenAI API и без расходования средств.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
 }
 
@@ -217,19 +285,20 @@ async function restorePremiumOrder() {
   const orderId = localStorage.getItem("tianMinOrderId");
   if (!orderId) return;
   try {
+    premiumConfig = await api("/api/premium/config");
     const result = await api(`/api/premium/order/${encodeURIComponent(orderId)}`);
     if (["PAID", "REPORT_GENERATING"].includes(result.order.status)) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderPaidState(resultRoot.querySelector(".premium-action"), result.order);
-      const generated = await api("/api/premium/generate", { orderId });
-      renderPaymentState(generated.order);
+      if (result.order.paymentProvider === "lorentsen") renderPaymentState(result.order);
+      else { const generated = await api("/api/premium/generate", { orderId }); renderPaymentState(generated.order); }
     } else if (result.order.status === "REPORT_READY") {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderReadyState(resultRoot.querySelector(".premium-action"), result.order);
     } else if (result.order.status === "CHECKOUT_STARTED" && !result.order.paymentFailureReason) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
-      const payment = await api("/api/premium/payment/start", { orderId });
-      renderPaymentState(payment.order);
+      if (premiumConfig.paymentMode === "lorentsen") renderConsentCheckout(result.order);
+      else { const payment = await api("/api/premium/payment/start", { orderId }); renderPaymentState(payment.order); }
     } else if (["CHECKOUT_STARTED", "PAYMENT_PENDING"].includes(result.order.status)) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderPaymentState(result.order);
