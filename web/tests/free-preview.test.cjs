@@ -20,6 +20,9 @@ test("free preview содержит только реальные canonical да
   assert.deepEqual(result.body.bazi.elements, canonical.bazi.elementsDisplay);
   assert.deepEqual(result.body.ziwei.transformations, canonical.ziwei.transformationsDisplay);
   assert.equal(result.body.ziwei.palaces.length, 12);
+  assert.equal(result.body.ziwei.mingPalace.displayName.name, "Дворец судьбы и личности");
+  assert.equal(result.body.ziwei.mingPalace.branch, canonical.ziwei.mingPalace);
+  assert.match(result.body.ziwei.shenPalace.displayName.name, /^Дворец /);
   assert.equal(result.body.bazi.currentPeriod.years, "2024–2033");
   assert.equal(result.body.ziwei.currentPalace.isCurrentPeriod, true);
 });

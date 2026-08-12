@@ -9,6 +9,8 @@ function createFreePreviewRequest(input, options = {}) {
   const currentYear = Number(options.currentYear || new Date().getFullYear());
   const currentBaziPeriod = chart.bazi.majorPeriods.find(period => yearInRange(currentYear, period.years)) || null;
   const currentZiweiPalace = chart.ziwei.palaces.find(palace => palace.isCurrentPeriod) || null;
+  const mingPalace = chart.ziwei.palaces.find(palace => palace.isMing) || null;
+  const shenPalace = chart.ziwei.palaces.find(palace => palace.isShen) || null;
 
   return {
     status: 200,
@@ -31,8 +33,8 @@ function createFreePreviewRequest(input, options = {}) {
       },
       ziwei: {
         lunarDate: chart.ziwei.lunarDateDisplay,
-        mingPalace: chart.ziwei.mingPalace,
-        shenPalace: chart.ziwei.shenPalace,
+        mingPalace: mingPalace ? safePalaceIdentity(mingPalace) : { branch: chart.ziwei.mingPalace, displayName: null },
+        shenPalace: shenPalace ? safePalaceIdentity(shenPalace) : { branch: chart.ziwei.shenPalace, displayName: null },
         fiveElementBureau: chart.ziwei.fiveElementBureauDisplay,
         transformations: chart.ziwei.transformationsDisplay,
         currentPalace: currentZiweiPalace ? safePalace(currentZiweiPalace) : null,
@@ -40,6 +42,10 @@ function createFreePreviewRequest(input, options = {}) {
       },
     },
   };
+}
+
+function safePalaceIdentity(palace) {
+  return { branch: palace.dizhi, displayName: palace.displayName };
 }
 
 function yearInRange(year, range) {

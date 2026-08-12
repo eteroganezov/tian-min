@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Бесплатный расчёт персональной карты Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения.">
-  <title>Тянь Мин — бесплатный расчёт карты Ба-цзы и Цзы Вэй</title>
+  <meta name="description" content="Расчёт базовой персональной карты Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения — без оплаты.">
+  <title>Тянь Мин — персональная карта Ба-цзы и Цзы Вэй</title>
   <link rel="stylesheet" href="/styles.css">
   <script src="/app.js" defer></script>
 </head>
@@ -23,13 +23,13 @@
           <p class="eyebrow">ТЯНЬ МИН · 天命</p>
           <h1>Персональная карта личности и жизненного пути</h1>
           <p class="brand-line">Две традиции — один цельный портрет</p>
-          <p class="hero-intro">Рассчитайте свою карту Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения. Базовый расчёт и персональное preview карты доступны бесплатно.</p>
-          <a class="hero-cta" href="#calculator">Рассчитать мою карту бесплатно</a>
-          <p class="cta-note">Без оплаты · результат сразу после расчёта</p>
+          <p class="hero-intro">Рассчитайте свою карту Ба-цзы и Цзы Вэй Доу Шу по дате, времени и месту рождения. Сначала вы увидите реальные параметры обеих карт, а затем сможете перейти к отдельному полному разбору.</p>
+          <a class="hero-cta" href="#calculator">Рассчитать мою карту <span aria-hidden="true">→</span></a>
+          <p class="cta-note"><b>Базовая карта — без оплаты.</b> Полный персональный разбор доступен отдельно.</p>
         </div>
         <form class="birth-form" id="birth-form" novalidate aria-labelledby="form-title">
           <span id="calculator" class="anchor-target" aria-hidden="true"></span>
-          <div class="form-heading"><span>Бесплатный расчёт</span><h2 id="form-title">Ваши данные рождения</h2><p>Нужны для точного построения двух карт</p></div>
+          <div class="form-heading"><span>Базовая карта · без оплаты</span><h2 id="form-title">Ваши данные рождения</h2><p>Нужны для точного построения двух карт</p></div>
           <label class="field"><span>Имя <small>необязательно</small></span><input id="display-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="Введите имя"><small class="field-help">Только для обращения к вам в результате</small></label>
           <div class="form-row">
             <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31" required></label>
@@ -46,8 +46,8 @@
           </div></fieldset>
           <div class="form-error" id="form-error" role="alert" hidden></div>
           <div class="ambiguity-box" id="ambiguity-box" hidden></div>
-          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту бесплатно</span><span aria-hidden="true">→</span></button>
-          <p class="form-note">Сначала вы увидите базовую персональную карту. Полный разбор можно будет получить отдельно.</p>
+          <button class="primary-button" id="submit-button" type="submit"><span class="button-label">Рассчитать мою карту</span><span aria-hidden="true">→</span></button>
+          <p class="form-note">Расчёт базовой карты не требует оплаты. Полный персональный разбор — отдельный продукт.</p>
         </form>
       </div>
     </section>
@@ -55,9 +55,9 @@
     <section class="explainer shell" id="how-it-works" aria-labelledby="how-title">
       <header class="section-heading"><p>Основа расчёта</p><h2 id="how-title">Как это работает</h2></header>
       <div class="traditions">
-        <article><span>01 · 八字</span><h3>Ба-цзы</h3><p>Традиционный китайский метод анализа карты рождения по дате и времени. Карта показывает сочетание пяти элементов и помогает рассматривать характер, сильные стороны и жизненные циклы.</p></article>
-        <article><span>02 · 紫微斗数</span><h3>Цзы Вэй Доу Шу</h3><p>Другая китайская традиция, которая рассматривает двенадцать жизненных сфер — личность, карьеру, отношения, ресурсы и окружение — через систему дворцов и звёзд.</p></article>
-        <article><span>03 · Вместе</span><h3>Зачем нужны обе</h3><p>Ба-цзы показывает внутреннюю структуру и динамику, а Цзы Вэй добавляет взгляд через конкретные жизненные сферы. Мы сопоставляем обе карты в одном результате.</p></article>
+        <article><header><b>01</b><span>八字</span></header><p class="tradition-role">Внутренняя структура</p><h3>Ба-цзы</h3><p>Традиционный китайский метод анализа карты рождения по дате и времени. Карта показывает сочетание пяти элементов и помогает рассматривать характер, сильные стороны и жизненные циклы.</p></article>
+        <article><header><b>02</b><span>紫微斗数</span></header><p class="tradition-role">Жизненные сферы</p><h3>Цзы Вэй Доу Шу</h3><p>Другая китайская традиция, которая рассматривает двенадцать жизненных сфер — личность, карьеру, отношения, ресурсы и окружение — через систему дворцов и звёзд.</p></article>
+        <article><header><b>03</b><span>合</span></header><p class="tradition-role">Цельный портрет</p><h3>Зачем нужны обе</h3><p>Ба-цзы показывает внутреннюю структуру и динамику, а Цзы Вэй добавляет взгляд через конкретные жизненные сферы. Мы сопоставляем обе карты в одном результате.</p></article>
       </div>
       <p class="section-signature">Две традиции — один цельный портрет</p>
     </section>

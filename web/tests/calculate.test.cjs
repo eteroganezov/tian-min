@@ -61,7 +61,10 @@ test("ошибка пользователя не содержит stack trace", 
 test("production build содержит бесплатную воронку и нормализованную терминологию", () => {
   const html = fs.readFileSync(path.resolve(__dirname, "..", "dist", "index.html"), "utf8");
   const script = fs.readFileSync(path.resolve(__dirname, "..", "dist", "app.js"), "utf8");
-  assert.match(html, /Рассчитать мою карту бесплатно/);
+  assert.match(html, /Рассчитать мою карту/);
+  assert.match(html, /Базовая карта — без оплаты/);
+  assert.match(html, /Полный персональный разбор доступен отдельно/);
+  assert.doesNotMatch(html, /Рассчитать мою карту бесплатно|Без оплаты · результат сразу после расчёта/);
   assert.match(html, /name="name"/);
   assert.match(html, /Ба-цзы/);
   assert.match(html, /Цзы Вэй Доу Шу/);
@@ -79,6 +82,8 @@ test("production build содержит бесплатную воронку и �
   assert.match(script, /Текущий большой период/);
   assert.match(script, /Получить полный персональный разбор/);
   assert.match(script, /Полный разбор скоро будет доступен/);
+  assert.match(script, /Открыть 12 дворцов и звёзды/);
+  assert.doesNotMatch(script, /◇|Посмотреть подробные данные карты/);
   assert.doesNotMatch(script, /\/api\/report|\/api\/pdf|loadPersonalReport/);
   assert.equal((html.match(/Две традиции — один цельный портрет/g) || []).length, 2);
   assert.doesNotMatch(html, /Две системы[.,—]/);

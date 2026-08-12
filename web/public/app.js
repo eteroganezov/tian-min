@@ -66,7 +66,7 @@ function renderFreePreview(data) {
   const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
   return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
     <header class="preview-cover shell">
-      <p class="section-label">Бесплатная персональная карта</p>
+      <p class="section-label">Базовая персональная карта</p>
       <h2>${name ? `${e(name)}, ваша карта готова` : "Ваша карта готова"}</h2>
       <p>Мы рассчитали Ба-цзы и Цзы Вэй Доу Шу по вашим данным рождения.</p>
       <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
@@ -78,7 +78,7 @@ function renderFreePreview(data) {
         <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><b>${e(pillar.stemDisplay.name)}</b><small>${e(pillar.shiShenDisplay.name)}</small></article>`).join("")}</div>
         <div class="fact-grid">
           <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Дневной хозяин — центральный элемент карты Ба-цзы. Здесь показан рассчитанный параметр без психологической интерпретации.</p></article>
-          <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показатель описывает соотношение опоры и нагрузки для Дневного хозяина внутри рассчитанной карты.</p></article>
+          <article><span>Баланс карты</span><h3>${e(data.bazi.strength.display.name)}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>
           <article><span>Текущий большой период</span><h3>${current ? `${e(current.years)} · ${e(current.ganZhi)}` : "Не определён"}</h3><p>${current ? `${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}` : "Период не входит в первые рассчитанные циклы."}</p></article>
         </div>
         <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.value)}</strong></div>`).join("")}</div></div>
@@ -88,20 +88,20 @@ function renderFreePreview(data) {
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
         <div class="ziwei-facts">
           <article><span>Лунная дата</span><b>${e(data.ziwei.lunarDate)}</b></article>
-          <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace)}</b></article>
-          <article><span>Дворец тела</span><b>${e(data.ziwei.shenPalace)}</b></article>
+          <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
+          <article><span>Дворец тела</span><b>${e(data.ziwei.shenPalace.displayName?.name || data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(data.ziwei.fiveElementBureau.name)}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
           <article class="current-palace"><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e(currentPalace?.ganZhi || "")}</small></article>
         </div>
         <div class="transformations"><span>Четыре трансформации</span><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
-        <details class="technical-chart"><summary><span>Посмотреть подробные данные карты</span><small>12 дворцов и рассчитанные звёзды</small></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+        <details class="technical-chart"><summary><span><b class="disclosure-open">Открыть 12 дворцов и звёзды</b><b class="disclosure-close">Скрыть 12 дворцов и звёзды</b><small>Подробные рассчитанные данные карты</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
       </section>
     </div>
 
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
       <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
-        <div class="locked-grid">${premiumSections().map((item, index) => `<article><span aria-hidden="true">${String(index + 1).padStart(2, "0")} · ◇</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
-        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Полный персональный PDF-отчёт · Ба-цзы + Цзы Вэй</p><div class="premium-message" role="status" hidden>Полный разбор скоро будет доступен.</div></div>
+        <div class="locked-grid">${premiumSections().map((item, index) => `<article><span aria-hidden="true">${String(index + 1).padStart(2, "0")}</span><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
+        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональная интерпретация · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>
   </section>`;
@@ -114,14 +114,14 @@ function renderPalace(palace) {
 
 function premiumSections() {
   return [
-    { title: "Характер и внутренние мотивы", description: "Решения, внутренний ресурс и противоречия." },
-    { title: "Сильные стороны и точки роста", description: "Качества, которые легче превращать в результат." },
-    { title: "Карьера и реализация", description: "Роли, рабочая среда и возможные направления роста." },
-    { title: "Деньги", description: "Ресурсы, риск и стиль финансовых решений." },
-    { title: "Отношения", description: "Близость, партнёрство и личные границы." },
-    { title: "Текущий жизненный период", description: "Темы, заметные на нынешнем этапе." },
-    { title: "Ближайшие годы", description: "Изменение акцентов и фокуса периода." },
-    { title: "Персональный план действий", description: "Практические ориентиры и точки приложения усилий." },
+    { title: "Характер и внутренние мотивы", description: "Решения, внутренний ресурс и противоречия" },
+    { title: "Сильные стороны и точки роста", description: "Качества, которые легче превращать в результат" },
+    { title: "Карьера и реализация", description: "Роли, рабочая среда и возможные направления роста" },
+    { title: "Деньги", description: "Ресурсы, риск и стиль финансовых решений" },
+    { title: "Отношения", description: "Близость, партнёрство и личные границы" },
+    { title: "Текущий жизненный период", description: "Темы, заметные на нынешнем этапе" },
+    { title: "Ближайшие годы", description: "Изменение акцентов и фокуса периода" },
+    { title: "Персональный план действий", description: "Практические ориентиры и точки приложения усилий" },
   ];
 }
 
@@ -163,7 +163,7 @@ function setState(state) {
   form.dataset.state = state;
   const loading = state === "CALCULATING";
   submitButton.disabled = loading;
-  buttonLabel.textContent = loading ? "Рассчитываем вашу карту…" : "Рассчитать мою карту бесплатно";
+  buttonLabel.textContent = loading ? "Рассчитываем вашу карту…" : "Рассчитать мою карту";
 }
 
 function showError(message) {
