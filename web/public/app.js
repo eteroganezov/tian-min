@@ -8,6 +8,8 @@ const placeOptions = document.querySelector("#place-options");
 const ambiguityBox = document.querySelector("#ambiguity-box");
 let selectedPlace = null;
 let searchTimer = null;
+let currentBirthInput = null;
+let premiumBusy = false;
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -39,6 +41,7 @@ async function submitFreeCalculation(timeOccurrence) {
   if (!input.gender) return showError("Выберите пол.");
 
   setState("CALCULATING");
+  currentBirthInput = input;
   try {
     const response = await fetch("/api/free-preview", {
       method: "POST",
@@ -127,12 +130,113 @@ function premiumSections() {
 }
 
 function bindPreviewActions() {
-  document.querySelector('[data-action="premium"]')?.addEventListener("click", event => {
-    const message = event.currentTarget.parentElement.querySelector(".premium-message");
-    message.hidden = false;
-    message.focus?.();
-  });
+  document.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
 }
+
+async function openPremiumOffer() {
+  if (premiumBusy) return;
+  premiumBusy = true;
+  try {
+    const config = await api("/api/premium/config");
+    const host = document.querySelector(".premium-action");
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}</div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · персональная интерпретация · полный PDF-отчёт</p></section>`;
+    host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
+    host.scrollIntoView({ behavior: "smooth", block: "center" });
+  } catch (error) { showPremiumError(error.message); }
+  finally { premiumBusy = false; }
+}
+
+async function startCheckout() {
+  if (premiumBusy || !currentBirthInput) return;
+  premiumBusy = true;
+  try {
+    const checkout = await api("/api/premium/checkout", currentBirthInput);
+    localStorage.setItem("tianMinOrderId", checkout.order.orderId);
+    const payment = await api("/api/premium/payment/start", { orderId: checkout.order.orderId });
+    renderPaymentState(payment.order);
+  } catch (error) { showPremiumError(error.message); }
+  finally { premiumBusy = false; }
+}
+
+function renderPaymentState(order) {
+  const host = document.querySelector(".premium-action") || resultRoot;
+  if (order.status === "REPORT_READY") return renderReadyState(host, order);
+  if (order.status === "REPORT_FAILED") {
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Оплата подтверждена</p><h3>Разбор не удалось подготовить</h3><p>Оплата сохранена. Повторная попытка не требует нового заказа или платежа.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать подготовить ещё раз</button></section>`;
+    host.querySelector('[data-action="retry-generation"]').addEventListener("click", async () => renderPaymentState((await api("/api/premium/generate", { orderId: order.orderId })).order));
+    return;
+  }
+  if (order.status === "REPORT_GENERATING" || order.status === "PAID") return renderPaidState(host, order);
+  if (order.paymentFailureReason) {
+    host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="PAYMENT_FAILED"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Оплата не завершена</h3><p>Бесплатная карта остаётся доступной. Можно безопасно повторить попытку.</p><div class="payment-notice error">Тестовый платёж отклонён</div><button type="button" class="premium-button" data-action="retry-payment">Попробовать ещё раз</button></section>`;
+    host.querySelector('[data-action="retry-payment"]').addEventListener("click", async () => { const payment = await api("/api/premium/payment/start", { orderId: order.orderId }); renderPaymentState(payment.order); });
+    return;
+  }
+  host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="${e(order.status)}"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Проверка платёжного сценария</h3><p>Реальные деньги не списываются. Эта панель недоступна в production.</p><div class="payment-notice">Статус оплаты: ожидает подтверждения</div><button type="button" class="premium-button" data-outcome="succeeded">Симулировать успешную оплату</button><button type="button" class="secondary-checkout-button" data-outcome="failed">Симулировать ошибку оплаты</button></section>`;
+  host.querySelectorAll("[data-outcome]").forEach(button => button.addEventListener("click", () => simulatePayment(order.orderId, button.dataset.outcome)));
+}
+
+async function simulatePayment(orderId, outcome) {
+  if (premiumBusy) return;
+  premiumBusy = true;
+  try {
+    const result = await api("/api/premium/dev/payment", { orderId, outcome });
+    if (result.order.status === "PAID") {
+      renderPaidState(document.querySelector(".premium-action") || resultRoot, result.order);
+      const generated = await api("/api/premium/generate", { orderId });
+      renderPaymentState(generated.order);
+    } else renderPaymentState(result.order);
+  } catch (error) { showPremiumError(error.message); }
+  finally { premiumBusy = false; }
+}
+
+function renderPaidState(host, order) {
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Оплата подтверждена</p><h3>Готовим персональный разбор</h3><p>Тестовая генерация выполняется без OpenAI API и без расходования средств.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+}
+
+function renderReadyState(host, order) {
+  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор готов</p><h3>Тестовый отчёт сохранён</h3><p>Monetization flow завершён в mock-режиме. Реальная интерпретация и PDF будут включены после подключения production-оплаты.</p><button type="button" class="premium-button" data-action="open-stub">Открыть тестовый результат</button><button type="button" class="secondary-checkout-button" data-action="pdf-stub">Проверить PDF-flow</button><div class="stub-result" hidden>Тестовый полный разбор подготовлен без обращения к AI. Report ID: ${e(order.reportId)}</div><div class="pdf-stub-result" hidden>PDF-flow готов к подключению сохранённого premium-отчёта.</div></section>`;
+  host.querySelector('[data-action="open-stub"]')?.addEventListener("click", () => { host.querySelector(".stub-result").hidden = false; });
+  host.querySelector('[data-action="pdf-stub"]')?.addEventListener("click", () => { host.querySelector(".pdf-stub-result").hidden = false; });
+}
+
+async function restorePremiumOrder() {
+  const orderId = localStorage.getItem("tianMinOrderId");
+  if (!orderId) return;
+  try {
+    const result = await api(`/api/premium/order/${encodeURIComponent(orderId)}`);
+    if (["PAID", "REPORT_GENERATING"].includes(result.order.status)) {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderPaidState(resultRoot.querySelector(".premium-action"), result.order);
+      const generated = await api("/api/premium/generate", { orderId });
+      renderPaymentState(generated.order);
+    } else if (result.order.status === "REPORT_READY") {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderReadyState(resultRoot.querySelector(".premium-action"), result.order);
+    } else if (result.order.status === "CHECKOUT_STARTED" && !result.order.paymentFailureReason) {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      const payment = await api("/api/premium/payment/start", { orderId });
+      renderPaymentState(payment.order);
+    } else if (["CHECKOUT_STARTED", "PAYMENT_PENDING"].includes(result.order.status)) {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderPaymentState(result.order);
+    }
+  } catch { localStorage.removeItem("tianMinOrderId"); }
+}
+
+async function api(url, body) {
+  const response = await fetch(url, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const payload = await response.json();
+  if (!response.ok) throw new Error(payload.error || "Не удалось выполнить действие.");
+  return payload;
+}
+
+function showPremiumError(message) {
+  const host = document.querySelector(".premium-action") || resultRoot;
+  host.insertAdjacentHTML("beforeend", `<div class="payment-notice error" role="alert">${e(message || "Не удалось продолжить. Бесплатная карта остаётся доступной.")}</div>`);
+}
+function formatPrice(amount, currency) { return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency === "RUB" ? "₽" : currency}`; }
+function premiumOfferItems() { return ["Характер и внутренние мотивы", "Сильные стороны и точки роста", "Карьера и реализация", "Деньги", "Отношения", "Текущий жизненный период", "Ближайшие годы", "Персональный план действий", "Интерпретация Ба-цзы и Цзы Вэй", "Полный PDF-отчёт"]; }
 
 async function searchPlaces(query) {
   try {
@@ -184,3 +288,5 @@ function lowerFirst(value) {
 function e(value) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
+
+restorePremiumOrder();

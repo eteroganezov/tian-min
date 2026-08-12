@@ -8,19 +8,34 @@ const { locationProvider } = require("./lib/location-provider.cjs");
 const { generateReportRequest } = require("./lib/report-service.cjs");
 const { createPdfFromSavedReport, createPdfRequest } = require("./lib/pdf-service.cjs");
 const { LocalReportStore } = require("./lib/report-store.cjs");
+const { LocalOrderStore } = require("./lib/order-store.cjs");
+const { createPaymentProvider } = require("./lib/payment-provider.cjs");
+const { PremiumService } = require("./lib/premium-service.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
   const reportStore = options.reportStore || new LocalReportStore();
+  const env = options.env || process.env;
+  const premiumService = options.premiumService || new PremiumService({
+    env, reportStore,
+    orderStore: options.orderStore || new LocalOrderStore({ env }),
+    paymentProvider: options.paymentProvider || createPaymentProvider(env),
+  });
   const freePreviewRequest = options.freePreviewRequest || createFreePreviewRequest;
   const reportRequest = options.reportRequest || generateReportRequest;
   return http.createServer(async (request, response) => {
     try {
       if (request.method === "POST" && request.url === "/api/calculate") return await handleCalculation(request, response);
       if (request.method === "POST" && request.url === "/api/free-preview") return await handleFreePreview(request, response, freePreviewRequest);
-      if (request.method === "POST" && request.url === "/api/report") return await handleReport(request, response, reportStore, reportRequest);
+      if (request.method === "POST" && request.url === "/api/report") return sendJson(response, 403, { error: "Прямая генерация отключена. Персональный разбор запускается сервером только после подтверждённой оплаты." });
+      if (request.method === "GET" && request.url === "/api/premium/config") return sendJson(response, 200, premiumService.getConfig());
+      if (request.method === "POST" && request.url === "/api/premium/checkout") return await handlePremiumAction(request, response, input => premiumService.createCheckout(input), 30_000);
+      if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input.orderId));
+      if (request.method === "POST" && request.url === "/api/premium/dev/payment") return await handlePremiumAction(request, response, input => premiumService.applyMockOutcome(input.orderId, input.outcome));
+      if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId));
+      if (request.method === "GET" && request.url.startsWith("/api/premium/order/")) return handlePremiumOrder(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
       if (request.method === "GET" && request.url === "/api/dev/reports/latest") return handleSavedReport(response, reportStore);
       if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
@@ -32,6 +47,19 @@ function createServer(options = {}) {
       return sendJson(response, 500, { error: "Внутренняя ошибка. Попробуйте ещё раз." });
     }
   });
+}
+
+async function handlePremiumAction(request, response, action, limit = 10_000) {
+  const input = await readJson(request, response, limit);
+  if (!input) return;
+  const result = await action(input);
+  return sendJson(response, result.status, result.body);
+}
+
+function handlePremiumOrder(request, response, premiumService) {
+  const orderId = decodeURIComponent(new URL(request.url, "http://localhost").pathname.split("/").pop() || "");
+  const result = premiumService.getOrder(orderId);
+  return sendJson(response, result.status, result.body);
 }
 
 async function handleFreePreview(request, response, freePreviewRequest) {

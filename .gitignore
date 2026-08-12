@@ -18,6 +18,7 @@ analysis.json
 smoke.json
 report.html
 web/.local-reports/
+web/.local-orders/
 output/pdf/sample-personal-report-v*.pdf
 *-report.html
 *-zonghe.html

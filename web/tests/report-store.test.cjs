@@ -37,3 +37,12 @@ test("legacy-адаптер превращает проверочный блок
     assert.doesNotMatch(JSON.stringify(sections), /Проверьте на себе|Насколько это про вас/);
   } finally { fs.rmSync(root, { recursive: true, force: true }); }
 });
+
+test("хранилище принимает стабильный reportId проекта с подчёркиванием", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "tian-min-report-"));
+  try {
+    const store = new LocalReportStore({ root });
+    store.save({ kind: "premium-generation-stub", reportId: "tmr_1234567890abcdef12345678" });
+    assert.equal(store.load("tmr_1234567890abcdef12345678").kind, "premium-generation-stub");
+  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+});

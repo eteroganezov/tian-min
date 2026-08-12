@@ -100,7 +100,7 @@ function stripRepeatedDisclaimer(value) {
 
 function safeId(value) {
   const id = String(value || "");
-  if (!/^[a-z0-9-]{3,100}$/i.test(id)) throw new Error("Некорректный идентификатор отчёта.");
+  if (!/^[a-z0-9_-]{3,100}$/i.test(id)) throw new Error("Некорректный идентификатор отчёта.");
   return id;
 }
 

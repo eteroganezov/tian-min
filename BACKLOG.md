@@ -13,3 +13,7 @@ Premium PDF v5.2 FINAL заморожен. Следующие задачи за�
 ## Premium PDF — будущий visual refresh
 
 После фиксации финальной web design system провести отдельный visual refresh Premium PDF. Использовать free preview сайта как один из визуальных ориентиров: типографика, воздух, карточки, иерархия, цветовые отношения и более premium editorial presentation. Не копировать web буквально — адаптировать решения под A4/PDF.
+
+## Production payment
+
+Подключить production payment provider после выбора провайдера и финальной цены: create payment, redirect/payment form, signed webhook, reconciliation и production persistence.
