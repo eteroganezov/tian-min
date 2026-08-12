@@ -6,6 +6,9 @@ const resultRoot = document.querySelector("#result-root");
 const placeInput = document.querySelector("#birth-place");
 const placeOptions = document.querySelector("#place-options");
 const ambiguityBox = document.querySelector("#ambiguity-box");
+const siteHeader = document.querySelector(".site-header");
+const heroLayout = document.querySelector(".hero-layout");
+const mobileFormSlot = document.querySelector("#mobile-form-slot");
 let selectedPlace = null;
 let searchTimer = null;
 let placeResults = [];
@@ -15,6 +18,23 @@ let currentBirthInput = null;
 let premiumBusy = false;
 let premiumConfig = null;
 let paymentPollTimer = null;
+
+const mobileFormMedia = typeof matchMedia === "function" ? matchMedia("(max-width: 620px)") : null;
+function syncMobileFormPosition() {
+  if (!mobileFormMedia || !heroLayout || !mobileFormSlot) return;
+  const destination = mobileFormMedia.matches ? mobileFormSlot : heroLayout;
+  if (form.parentElement !== destination) destination.appendChild(form);
+}
+function syncHeaderHeight() {
+  if (!siteHeader?.getBoundingClientRect || !document.documentElement?.style) return;
+  document.documentElement.style.setProperty("--site-header-height", `${Math.ceil(siteHeader.getBoundingClientRect().height)}px`);
+}
+syncMobileFormPosition();
+syncHeaderHeight();
+if (mobileFormMedia?.addEventListener) mobileFormMedia.addEventListener("change", syncMobileFormPosition);
+else mobileFormMedia?.addListener?.(syncMobileFormPosition);
+if (typeof ResizeObserver === "function" && siteHeader) new ResizeObserver(syncHeaderHeight).observe(siteHeader);
+if (typeof addEventListener === "function") addEventListener("orientationchange", syncHeaderHeight);
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -119,7 +139,7 @@ function renderFreePreview(data) {
 
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
       <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
-        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}<p class="locked-more">И другие темы полного разбора</p></div>
+        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
         <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>
@@ -141,6 +161,8 @@ function premiumSections() {
     { title: "Текущий жизненный период", description: "Темы, заметные на нынешнем этапе" },
     { title: "Ближайшие годы", description: "Изменение акцентов и фокуса периода" },
     { title: "Персональный план действий", description: "Практические ориентиры и точки приложения усилий" },
+    { title: "Объединённый разбор Ба-цзы и Цзы Вэй", description: "Обе традиции в одном цельном портрете" },
+    { title: "Полный PDF-отчёт", description: "Готовый персональный материал для повторного чтения" },
   ];
 }
 
@@ -158,9 +180,9 @@ async function openPremiumOffer() {
       host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
       return;
     }
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Обе карты — с объяснением именно для вас</h3><p>Расширенный продукт соединяет рассчитанные Ба-цзы и Цзы Вэй в понятный персональный отчёт.</p><div class="offer-list">${premiumOfferItems().map(item => `<span>${e(item)}</span>`).join("")}<span class="offer-more">И другие темы полного разбора</span></div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
     host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
-    host.scrollIntoView({ behavior: "smooth", block: "center" });
+    revealCheckout(host);
   } catch (error) { showPremiumError(error.message); }
   finally { premiumBusy = false; }
 }
@@ -216,7 +238,7 @@ function renderConsentCheckout(order) {
   const terms = host.querySelector('[name="termsAccepted"]');
   const redemption = host.querySelector('[name="autoRedemptionAccepted"]');
   const button = host.querySelector('[data-action="confirm-payment"]');
-  const update = () => { button.disabled = !(email.validity.valid && email.value.trim() && terms.checked && redemption.checked); };
+  const update = () => { button.disabled = !(email.validity.valid && isPlausibleEmail(email.value) && terms.checked && redemption.checked); };
   [email, terms, redemption].forEach(control => control.addEventListener("input", update));
   [terms, redemption].forEach(control => control.addEventListener("change", update));
   email.addEventListener("keydown", event => {
@@ -225,6 +247,7 @@ function renderConsentCheckout(order) {
     email.blur();
   });
   button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }));
+  revealCheckout(host);
 }
 
 async function submitLorentsenPayment(orderId, consent) {
@@ -323,7 +346,8 @@ function showPremiumError(message) {
   host.insertAdjacentHTML("beforeend", `<div class="payment-notice error" role="alert">${e(message || "Не удалось продолжить. Бесплатная карта остаётся доступной.")}</div>`);
 }
 function formatPrice(amount, currency) { return `${new Intl.NumberFormat("ru-RU").format(amount)} ${currency === "RUB" ? "₽" : currency}`; }
-function premiumOfferItems() { return ["Характер и внутренние мотивы", "Сильные стороны и точки роста", "Карьера и реализация", "Деньги", "Отношения", "Текущий жизненный период", "Ближайшие годы", "Персональный план действий", "Объединённый разбор Ба-цзы и Цзы Вэй", "Полный PDF-отчёт"]; }
+function isPlausibleEmail(value) { return /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(String(value || "").trim()); }
+function revealCheckout(host) { host.querySelector(".checkout-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }); }
 
 async function searchPlaces(query, sequence) {
   try {
