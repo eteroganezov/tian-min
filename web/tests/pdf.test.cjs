@@ -7,10 +7,31 @@ const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { toChartView } = require("../lib/chart-view.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
 const { createPdfFilename, createPdfFromSavedReport, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
-const { buildSampleVariants } = require("../scripts/generate-sample-pdf.cjs");
+const { buildReviewVariants, buildLongStressVariant } = require("../scripts/generate-sample-pdf.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
+
+function consecutiveTextDuplicates(value,path=[],issues=[]) {
+  if(typeof value==="string"){
+    const parts=value.split(/(?<=[.!?])\s+|\n+/u).map(part=>part.trim()).filter(part=>part.length>=24);
+    for(let index=1;index<parts.length;index++){
+      const previous=parts[index-1].toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+      const current=parts[index].toLocaleLowerCase("ru-RU").replace(/[^\p{L}\p{N}]+/gu," ").trim();
+      if(previous===current)issues.push(`${path.join(".")}: ${parts[index]}`);
+    }
+    return issues;
+  }
+  if(Array.isArray(value)){
+    for(let index=1;index<value.length;index++){
+      if(typeof value[index-1]==="string"&&typeof value[index]==="string"&&value[index-1].trim()===value[index].trim())issues.push(`${path.join(".")}: ${value[index]}`);
+    }
+    value.forEach((item,index)=>consecutiveTextDuplicates(item,[...path,String(index)],issues));
+    return issues;
+  }
+  if(value&&typeof value==="object")for(const [key,item] of Object.entries(value))consecutiveTextDuplicates(item,[...path,key],issues);
+  return issues;
+}
 
 test("v4 PDF является самостоятельным premium-документом с TOC, metadata и всеми разделами", async () => {
   const calculation = calculateBirthChart(input);
@@ -25,6 +46,9 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /ПЕРСОНАЛЬНЫЙ РАЗБОР/i);
   assert.match(parsed.text, /Содержание/);
   assert.match(parsed.text, /Ваш портрет в двух минутах/);
+  assert.match(parsed.text, /Ваша карта · Ба-цзы/);
+  assert.match(parsed.text, /Ваша карта · Пять элементов/);
+  assert.match(parsed.text, /Ваша карта · Цзы Вэй/);
   assert.match(parsed.text, /Как читать этот отчёт/);
   assert.match(parsed.text, /ОСНОВАНИЯ ВАШЕГО РАЗБОРА/i);
   assert.match(parsed.text, /Паспорт Ба-цзы/);
@@ -44,12 +68,14 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages >= 30 && parsed.numpages <= 38, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 33 && parsed.numpages <= 42, true, `Получилось ${parsed.numpages} страниц`);
   assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
   assert.equal(parsed.text.indexOf("Содержание") < parsed.text.indexOf("Ваш портрет в двух минутах"),true);
+  assert.equal(parsed.text.indexOf("Ваш портрет в двух минутах") < parsed.text.indexOf("Ваша карта · Ба-цзы"),true);
+  assert.equal(parsed.text.indexOf("Ваша карта · Цзы Вэй") < parsed.text.indexOf("Как читать этот отчёт"),true);
   assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Паспорт Ба-цзы"),true);
   assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
   assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
@@ -59,6 +85,7 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.doesNotMatch(parsed.text, /[\u0000\uFFFD\uFFFE\uFFFF]/u);
   assert.doesNotMatch(parsed.text, /\b(?:произойдёт|вас ждёт|точно случится)\b/iu);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI-интерпретация/);
+  assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -213,17 +240,24 @@ test("PDF-рендерер принимает короткие и длинные
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
 });
 
-test("v4 renderer выдерживает standard, long и sensitivity fixtures без пустых страниц", async () => {
-  const variants=buildSampleVariants();
-  assert.equal(variants.length,3);
-  const sensitive=variants.find(value=>value.key==="sensitivity");
-  const standard=variants.find(value=>value.key==="standard");
-  const long=variants.find(value=>value.key==="long");
-  assert.equal(standard.input.birthTimeCertainty,"exact");
-  assert.equal(long.input.birthTimeCertainty,"exact");
-  assert.equal(sensitive.input.birthTimeCertainty,"approximate");
-  assert.equal(sensitive.report.yearlyOutlook.every(year=>year.evidence.every(id=>!id.startsWith("ziwei.annual."))),true);
+test("v4 renderer выдерживает exact, approximate и внутренний long stress-test без пустых страниц", async () => {
+  const review=buildReviewVariants();
+  const long=buildLongStressVariant();
+  const variants=[...review,long];
+  assert.equal(review.length,2);
+  const exact=review.find(value=>value.key==="exact");
+  const approximate=review.find(value=>value.key==="approximate");
+  assert.deepEqual(
+    { ...exact.input,birthTimeCertainty:undefined },
+    { ...approximate.input,birthTimeCertainty:undefined },
+  );
+  assert.equal(exact.input.birthTimeCertainty,"exact");
+  assert.equal(approximate.input.birthTimeCertainty,"approximate");
+  assert.equal(exact.calculationMetadata.calculationSensitivity,approximate.calculationMetadata.calculationSensitivity);
+  assert.deepEqual(exact.calculationMetadata.sensitivityFlags,approximate.calculationMetadata.sensitivityFlags);
+  assert.equal(approximate.report.yearlyOutlook.every(year=>year.evidence.every(id=>!id.startsWith("ziwei.annual."))),true);
   for(const variant of variants){
+    assert.deepEqual(consecutiveTextDuplicates(variant.report),[],`${variant.key}: найдены соседние дубли`);
     const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
     assert.equal(result.status,200,variant.key);
     const pages=[];
@@ -235,10 +269,11 @@ test("v4 renderer выдерживает standard, long и sensitivity fixtures 
     assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
-    assert.equal(parsed.numpages>=26&&parsed.numpages<=40,true,`${variant.key}: ${parsed.numpages} страниц`);
-    if(variant.key==="sensitivity"){
+    assert.equal(parsed.numpages>=29&&parsed.numpages<=44,true,`${variant.key}: ${parsed.numpages} страниц`);
+    assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
+    if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
-      assert.match(parsed.text,/чувствительн/i);
+      assert.match(parsed.text,/Часозависимый акцент/i);
     }else{
       assert.doesNotMatch(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
     }
