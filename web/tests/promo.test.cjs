@@ -5,7 +5,7 @@ const path = require("node:path");
 const { MemoryOrderStore } = require("../lib/order-store.cjs");
 const { MockPaymentProvider } = require("../lib/payment-provider.cjs");
 const { PremiumService } = require("../lib/premium-service.cjs");
-const { initialPromoRecords, normalizePromoCode, promoAvailability } = require("../lib/promo-config.cjs");
+const { VERIFIED_PROVIDER_MINIMUM_RUB, initialPromoRecords, normalizePromoCode, promoAvailability } = require("../lib/promo-config.cjs");
 const { locationProvider } = require("../lib/location-provider.cjs");
 
 const birthInput = { name: "Тест", date: "1995-09-03", time: "05:50", gender: "male", placeId: locationProvider.search("Москва")[0].id };
@@ -116,14 +116,34 @@ test("complimentary entitlement связан с точным order/report и н�
   assert.equal((await ctx.service.getOrder(changed.orderId)).body.order.accessReason, undefined);
 });
 
-test("FRIEND100 и SUPPORT399 configured, но production redemption заблокирован до подтверждения minimum", async () => {
+test("FRIEND100 и SUPPORT399 активны после account-level quote minimum 100 RUB", async () => {
   const ctx = setup();
+  assert.equal(VERIFIED_PROVIDER_MINIMUM_RUB, 100);
   assert.equal(ctx.orderStore.getPromo("FRIEND100").targetFinalAmount, 100);
   assert.equal(ctx.orderStore.getPromo("SUPPORT399").targetFinalAmount, 399);
-  assert.equal((await ctx.service.applyPromo({ birthInput, code: "FRIEND100" })).body.error, "Промокод больше недоступен");
-  assert.equal((await ctx.service.applyPromo({ birthInput, code: "SUPPORT399" })).body.error, "Промокод больше недоступен");
+  assert.equal(ctx.orderStore.getPromo("FRIEND100").active, true);
+  assert.equal(ctx.orderStore.getPromo("SUPPORT399").active, true);
+  assert.equal((await ctx.service.applyPromo({ birthInput, code: "FRIEND100" })).body.order.amount, 100);
+  assert.equal((await ctx.service.applyPromo({ birthInput: { ...birthInput, date: "1996-10-04" }, code: "SUPPORT399" })).body.order.amount, 399);
   assert.equal(ctx.providerCalls, 0);
-  assert.equal(ctx.orderStore.orders.size, 0);
+  assert.equal(ctx.orderStore.orders.size, 2);
+});
+
+test("production promo price summary остаётся server-owned: 599→100 и 599→399", async () => {
+  const productionConfig = { productId: "premium-personal-report", amount: 599, currency: "RUB", priceIsDevPlaceholder: false, available: true };
+  const orderStore = new MemoryOrderStore({ promos: initialPromoRecords(now) });
+  const service = new PremiumService({ env: { NODE_ENV: "production", OPENAI_MODEL: "test" }, config: productionConfig, orderStore, reportStore: null, paymentProvider: new MockPaymentProvider(), now: () => now });
+  const friend = await service.applyPromo({ birthInput, code: "FRIEND100" });
+  const support = await service.applyPromo({ birthInput: { ...birthInput, date: "1996-10-04" }, code: "SUPPORT399" });
+  assert.deepEqual(friend.body.pricing, { baseAmount: 599, discountAmount: 499, finalAmount: 100, currency: "RUB", promoCode: "FRIEND100" });
+  assert.deepEqual(support.body.pricing, { baseAmount: 599, discountAmount: 200, finalAmount: 399, currency: "RUB", promoCode: "SUPPORT399" });
+});
+
+test("production promo seed updates activation without resetting redemption counters", () => {
+  const source = fs.readFileSync(path.resolve(__dirname, "..", "lib", "production-store.cjs"), "utf8");
+  assert.match(source, /ON CONFLICT\(normalized_code\) DO UPDATE SET[\s\S]*active=EXCLUDED\.active/);
+  assert.match(source, /jsonb_build_object\('redemptionCount',tian_min_promos\.redemption_count/);
+  assert.doesNotMatch(source, /redemption_count=EXCLUDED\.redemption_count/);
 });
 
 test("normal price без promo остаётся server-owned: DEV 100, production 599", async () => {

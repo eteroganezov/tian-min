@@ -311,6 +311,43 @@ test("promo error показывается человеческим тексто
   assert.doesNotMatch(ui.host.innerHTML, /database|provider|minim|internal/i);
 });
 
+test("promo first tap немедленно блокирует повторный запрос и после success обновляет цену", async () => {
+  const calls = [];
+  let resolveApply;
+  const pendingApply = new Promise(resolve => { resolveApply = resolve; });
+  const promoOrder = order(null, { status: "CHECKOUT_STARTED", baseAmount: 599, amount: 100, promoCode: "FRIEND100" });
+  const ui = harness(async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    if (url === "/api/premium/promo/apply") { await pendingApply; return { ok: true, json: async () => ({ order: promoOrder, pricing: { baseAmount: 599, discountAmount: 499, finalAmount: 100, currency: "RUB", promoCode: "FRIEND100" } }) }; }
+    throw new Error(`unexpected ${url}`);
+  });
+  await ui.context.openPremiumOffer();
+  ui.host.querySelector('[data-action="show-promo"]').dispatch("click");
+  ui.host.querySelector('[name="promoCode"]').value = "FRIEND100";
+  const first = ui.context.applyPromo(ui.host, { date: "1995-09-03" });
+  const second = ui.context.applyPromo(ui.host, { date: "1995-09-03" });
+  assert.equal(ui.host.querySelector('[data-action="apply-promo"]').disabled, true);
+  assert.equal(ui.host.querySelector('[name="promoCode"]').disabled, true);
+  assert.match(ui.host.querySelector(".promo-message").textContent, /Проверяем промокод/);
+  assert.equal(calls.filter(call => call.url === "/api/premium/promo/apply").length, 1);
+  resolveApply();
+  await Promise.all([first, second]);
+  assert.match(ui.host.innerHTML, /✓ Промокод применён/);
+  assert.match(ui.host.innerHTML, /−499 ₽/);
+  assert.match(ui.host.innerHTML, /100 ₽/);
+  assert.match(ui.host.innerHTML, /Перейти к оплате/);
+  assert.doesNotMatch(ui.host.innerHTML, /Получить персональный разбор/);
+});
+
+test("SUPPORT399 summary показывает скидку 200 ₽ и paid CTA", () => {
+  const ui = harness(async () => ({ ok: true, json: async () => config }));
+  ui.context.renderPremiumOffer(ui.host, config, { pricing: { baseAmount: 599, discountAmount: 200, finalAmount: 399, currency: "RUB", promoCode: "SUPPORT399" }, message: "✓ Промокод применён", success: true });
+  assert.match(ui.host.innerHTML, /−200 ₽/);
+  assert.match(ui.host.innerHTML, /399 ₽/);
+  assert.match(ui.host.innerHTML, /Перейти к оплате/);
+});
+
 test("успешный promo перерасчёт не возвращает скрытую кнопку раскрытия", () => {
   const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
   assert.match(styles, /\.promo-toggle\[hidden\]\{display:none\}/);

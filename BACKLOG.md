@@ -11,7 +11,6 @@
 - Lorentsen account profile still exposes the external organization label `Edward`; request a provider-side rename to `Тянь Мин`. Tian Min-controlled checkout copy already uses the canonical product name.
 - Controlled production payment validation: the flow is not end-to-end proven until a deliberately supervised attempt reaches authenticated GET `settled`. No real payment should be initiated without a separate explicit task.
 - Independent specialist verification remains required for the explicitly skipped Zi Wei star/bureau/period cases, late 子-hour school rule and selected `TRUE_SOLAR_TIME_V1` astrological references.
-- Promo codes `FRIEND100` (`100 RUB`) and `SUPPORT399` (`399 RUB`) are configured but inactive. The current verified Lorentsen minimum rejects both targets. A planned reduction to `100 RUB` must be verified separately before either code is activated; paid promos still require authenticated `settled`.
 
 ## NEXT
 
@@ -52,6 +51,7 @@ Brand architecture note: brand `Tian Min / Тянь Мин`, Chinese wordmark `�
 - Premium Report `personal-report-v4`: deterministic evidence catalog, strict Structured Outputs schema, evidence validation, unsupported-claim protection and legacy compatibility.
 - Shared Premium PDF v4 renderer/design system and saved-report compatibility. Final editorial approval remains in NOW, not DONE.
 - Production incident diagnosed: three `399 RUB` attempts received HTTP `422` / `amount_out_of_range`, without `payment_public_id`, QR or payment link. The server-owned temporary early-user price was restored to the provider-compatible **599 RUB** (`59900` minor units).
-- Promo Codes v1: collapsed checkout UX, canonical server validation, durable promo/event/redemption schema, atomic limited `FAMILY0` complimentary entitlement bound to one order/report, and inactive configured `FRIEND100`/`SUPPORT399` paid targets.
+- Promo Codes v1: collapsed checkout UX, canonical server validation, durable promo/event/redemption schema and atomic limited `FAMILY0` complimentary entitlement bound to one order/report.
+- Lorentsen `100 RUB` account-level quote verified read-only on 2026-08-13 without link/payment creation. `FRIEND100` (`100 RUB`) and `SUPPORT399` (`399 RUB`) are active paid promos; both retain the normal checkout and authenticated `settled` gate. Promo submission has immediate loading feedback and double-click protection.
 - Premium Generation & Delivery v1: server-verified paid-settled or complimentary access, persisted generation lifecycle and atomic duplicate guard, immutable semantic report storage, deterministic authorized PDF open/download, safe retry and same-browser recovery. Transactional email and cross-device recovery remain unfinished.
 - Tian Min favicon set: standalone `命` in deep jade/ivory/gold as SVG, 16×16, 32×32 and Apple Touch Icon assets. The main site logo remains unchanged.

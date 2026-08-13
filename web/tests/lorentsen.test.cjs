@@ -313,9 +313,6 @@ test("production checkout хранит 59900 minor units, exact consent schema �
 
 test("активированный paid promo сохраняет server amount и только authenticated settled выставляет PAID", async () => {
   const ctx = serviceSetup(["requires_action", "settled"]);
-  const promo = ctx.orderStore.promos.get("FRIEND100");
-  promo.active = true;
-  promo.startsAt = null;
   const applied = await ctx.service.applyPromo({ birthInput, code: " friend100 " });
   assert.equal(applied.body.order.baseAmount, 599);
   assert.equal(applied.body.order.amount, 100);
@@ -323,9 +320,24 @@ test("активированный paid promo сохраняет server amount �
   assert.equal(pending.body.order.status, "PAYMENT_PENDING");
   assert.equal(ctx.provider.createCalls[0].requestBody.customer_amount_minor, 10000);
   assert.equal((await ctx.service.getOrder(applied.body.order.orderId)).body.order.status, "PAYMENT_PENDING");
+  assert.equal((await ctx.service.generate(applied.body.order.orderId)).status, 403);
   const settled = await ctx.service.reconcilePayment(pending.body.order.paymentId);
   assert.equal(settled.body.order.status, "PAID");
   assert.equal(ctx.orderStore.promoEvents.has(`settled:FRIEND100:${applied.body.order.orderId}`), true);
+});
+
+test("SUPPORT399 остаётся paid flow: pending не даёт entitlement, authenticated settled даёт PAID", async () => {
+  const ctx = serviceSetup(["requires_action", "settled"]);
+  const applied = await ctx.service.applyPromo({ birthInput, code: "SUPPORT399" });
+  assert.deepEqual(applied.body.pricing, { baseAmount: 599, discountAmount: 200, finalAmount: 399, currency: "RUB", promoCode: "SUPPORT399" });
+  assert.equal(applied.body.order.accessReason, undefined);
+  const pending = await ctx.service.startPayment({ orderId: applied.body.order.orderId, ...validConsent });
+  assert.equal(ctx.provider.createCalls[0].requestBody.customer_amount_minor, 39900);
+  assert.equal(pending.body.order.status, "PAYMENT_PENDING");
+  assert.equal((await ctx.service.generate(applied.body.order.orderId)).status, 403);
+  const settled = await ctx.service.reconcilePayment(pending.body.order.paymentId);
+  assert.equal(settled.body.order.status, "PAID");
+  assert.equal(settled.body.order.accessReason, undefined);
 });
 
 test("email и две отдельные consent actions обязательны", async () => {

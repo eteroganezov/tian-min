@@ -99,7 +99,13 @@ class PostgresPaymentStore {
       await this.pool.query(
         `INSERT INTO tian_min_promos(normalized_code,code,discount_type,discount_value,target_final_amount,active,starts_at,expires_at,max_redemptions,redemption_count,per_order_limit,campaign,source,record,created_at,updated_at)
          VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
-         ON CONFLICT(normalized_code) DO NOTHING`,
+         ON CONFLICT(normalized_code) DO UPDATE SET
+         code=EXCLUDED.code,discount_type=EXCLUDED.discount_type,discount_value=EXCLUDED.discount_value,
+         target_final_amount=EXCLUDED.target_final_amount,active=EXCLUDED.active,starts_at=EXCLUDED.starts_at,
+         expires_at=EXCLUDED.expires_at,max_redemptions=EXCLUDED.max_redemptions,per_order_limit=EXCLUDED.per_order_limit,
+         campaign=EXCLUDED.campaign,source=EXCLUDED.source,
+         record=EXCLUDED.record || jsonb_build_object('redemptionCount',tian_min_promos.redemption_count,'createdAt',tian_min_promos.created_at,'updatedAt',NOW()),
+         updated_at=NOW()`,
         [promo.normalizedCode, promo.code, promo.discountType, promo.discountValue, promo.targetFinalAmount, promo.active, promo.startsAt, promo.expiresAt, promo.maxRedemptions, promo.redemptionCount, promo.perOrderLimit, promo.campaign, promo.source, JSON.stringify(promo), promo.createdAt, promo.updatedAt],
       );
     }

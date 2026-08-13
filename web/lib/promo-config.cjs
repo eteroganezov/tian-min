@@ -1,3 +1,5 @@
+const VERIFIED_PROVIDER_MINIMUM_RUB = 100;
+
 const INITIAL_PROMOS = Object.freeze([
   Object.freeze({
     code: "FAMILY0", normalizedCode: "FAMILY0", discountType: "target_final_amount", discountValue: 599,
@@ -6,13 +8,13 @@ const INITIAL_PROMOS = Object.freeze([
   }),
   Object.freeze({
     code: "FRIEND100", normalizedCode: "FRIEND100", discountType: "target_final_amount", discountValue: 499,
-    targetFinalAmount: 100, active: false, startsAt: null, expiresAt: null,
-    maxRedemptions: 100, redemptionCount: 0, perOrderLimit: 1, campaign: "early_friends", source: "product_foundation_v1",
+    targetFinalAmount: 100, active: VERIFIED_PROVIDER_MINIMUM_RUB <= 100, startsAt: null, expiresAt: null,
+    maxRedemptions: 100, redemptionCount: 0, perOrderLimit: 1, campaign: "early_friends", source: "lorentsen_partner_quote_100_verified_2026_08_13",
   }),
   Object.freeze({
     code: "SUPPORT399", normalizedCode: "SUPPORT399", discountType: "target_final_amount", discountValue: 200,
-    targetFinalAmount: 399, active: false, startsAt: null, expiresAt: null,
-    maxRedemptions: 100, redemptionCount: 0, perOrderLimit: 1, campaign: "early_supporters", source: "product_foundation_v1",
+    targetFinalAmount: 399, active: VERIFIED_PROVIDER_MINIMUM_RUB <= 399, startsAt: null, expiresAt: null,
+    maxRedemptions: 100, redemptionCount: 0, perOrderLimit: 1, campaign: "early_supporters", source: "lorentsen_partner_quote_100_verified_2026_08_13",
   }),
 ]);
 
@@ -43,4 +45,4 @@ function promoError(result) {
   return error;
 }
 
-module.exports = { INITIAL_PROMOS, initialPromoRecords, normalizePromoCode, promoAvailability, promoError };
+module.exports = { INITIAL_PROMOS, VERIFIED_PROVIDER_MINIMUM_RUB, initialPromoRecords, normalizePromoCode, promoAvailability, promoError };

@@ -221,7 +221,7 @@ function renderPremiumOffer(host, config, options = {}) {
   const baseAmount = pricing?.baseAmount ?? config.amount;
   const finalAmount = pricing?.finalAmount ?? config.amount;
   const promoSummary = pricing ? `<div class="promo-price-summary"><span><i>Стоимость</i><b>${e(formatPrice(baseAmount, config.currency))}</b></span><span><i>Промокод</i><b>−${e(formatPrice(pricing.discountAmount, config.currency))}</b></span><span><i>К оплате</i><b>${e(formatPrice(finalAmount, config.currency))}</b></span></div>` : `<div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div>`;
-  host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div>${promoSummary}<button type="button" class="promo-toggle" data-action="show-promo" ${pricing ? "hidden" : ""}>У меня есть промокод</button><div class="promo-entry" ${options.expanded || pricing ? "" : "hidden"}><label>Промокод<input type="text" name="promoCode" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${e(pricing?.promoCode || options.code || "")}"></label><button type="button" class="secondary-checkout-button" data-action="apply-promo">Применить</button><p class="promo-message" role="status" ${options.message ? "" : "hidden"}>${e(options.message || "")}</p></div><button type="button" class="premium-button" data-action="checkout">${finalAmount === 0 ? "Получить персональный разбор" : "Перейти к оплате"}</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
+  host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div>${promoSummary}<button type="button" class="promo-toggle" data-action="show-promo" ${pricing ? "hidden" : ""}>У меня есть промокод</button><div class="promo-entry" ${options.expanded || pricing ? "" : "hidden"}><label>Промокод<input type="text" name="promoCode" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${e(pricing?.promoCode || options.code || "")}"></label><button type="button" class="secondary-checkout-button" data-action="apply-promo">Применить</button><p class="promo-message${options.success ? " success" : ""}" role="status" ${options.message ? "" : "hidden"}>${e(options.message || "")}</p></div><button type="button" class="premium-button" data-action="checkout">${finalAmount === 0 ? "Получить персональный разбор" : "Перейти к оплате"}</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
   host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
   host.querySelector('[data-action="show-promo"]')?.addEventListener("click", () => {
     const entry = host.querySelector(".promo-entry");
@@ -234,12 +234,18 @@ function renderPremiumOffer(host, config, options = {}) {
 async function applyPromo(host, birthInput = currentBirthInput) {
   if (premiumBusy || (!birthInput && !activePremiumOrder?.orderId)) return;
   const code = host.querySelector('[name="promoCode"]')?.value || "";
+  const button = host.querySelector('[data-action="apply-promo"]');
+  const input = host.querySelector('[name="promoCode"]');
+  const message = host.querySelector(".promo-message");
   premiumBusy = true;
+  if (button) { button.disabled = true; button.textContent = "Проверяем промокод…"; }
+  if (input) input.disabled = true;
+  if (message) { message.hidden = false; message.className = "promo-message checking"; message.textContent = "Проверяем промокод…"; }
   try {
     const result = await api("/api/premium/promo/apply", { birthInput, orderId: activePremiumOrder?.orderId, code });
     activePremiumOrder = result.order;
     localStorage.setItem("tianMinOrderId", result.order.orderId);
-    renderPremiumOffer(host, premiumConfig, { pricing: result.pricing });
+    renderPremiumOffer(host, premiumConfig, { pricing: result.pricing, message: "✓ Промокод применён", success: true });
   } catch (error) { renderPremiumOffer(host, premiumConfig, { expanded: true, code, message: error.message }); }
   finally { premiumBusy = false; }
 }

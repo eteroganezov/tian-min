@@ -22,7 +22,7 @@
 
 Секреты нельзя добавлять в `.env.example`, Git, application logs или frontend. `payer_email` хранится только в закрытой consent/payment persistence и не возвращается браузеру.
 
-Production Premium price задаётся versioned server-константой в `web/lib/product-config.cjs`; текущая временная цена закрытого early-user теста — `599 RUB` (`59900` minor units). Цена `399 RUB` была отвергнута production API с HTTP `422` / `amount_out_of_range` и не должна использоваться с текущим Lorentsen contract. `PREMIUM_REPORT_PRICE_RUB` используется только для локальных DEV-сценариев и не может переопределить production price.
+Production Premium price задаётся versioned server-константой в `web/lib/product-config.cjs`; публичная цена — `599 RUB` (`59900` minor units). `FRIEND100` и `SUPPORT399` — отдельные server-owned paid promo prices `100 RUB` и `399 RUB`; они не меняют public price и требуют обычный Lorentsen checkout и authenticated `settled`. Минимум `100 RUB` подтверждён 2026-08-13 в authenticated partner quote form Tian Min: форма показала `Клиент оплатит 100,00 ₽` и разрешила генерацию ссылки. Ссылка не генерировалась, create-payment не отправлялся. `PREMIUM_REPORT_PRICE_RUB` используется только для локальных DEV-сценариев и не может переопределить production price.
 
 ## Manual activation sequence
 
