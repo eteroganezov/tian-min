@@ -153,5 +153,7 @@ test("frontend требует подтверждённое место и сод�
   assert.match(html, /role="combobox"/);
   assert.match(html, /aria-autocomplete="list"/);
   assert.match(script, /fetch\(`\/api\/places\?q=\$\{encodeURIComponent\(query\)\}`\)/);
-  assert.match(script, /renderPlaceOptions\(response\.ok \? payload\.places : \[\]\)/);
+  assert.match(script, /const places = response\.ok \? payload\.places : \[\]/);
+  assert.match(script, /renderPlaceOptions\(places\)/);
+  assert.match(script, /placeFallback\.hidden = places\.length > 0/);
 });

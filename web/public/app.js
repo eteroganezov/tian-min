@@ -5,6 +5,9 @@ const buttonLabel = submitButton.querySelector(".button-label");
 const resultRoot = document.querySelector("#result-root");
 const placeInput = document.querySelector("#birth-place");
 const placeOptions = document.querySelector("#place-options");
+const placeFallback = document.querySelector("#place-fallback");
+const timeZoneInput = document.querySelector("#birth-timezone");
+const timeZoneOptions = document.querySelector("#timezone-options");
 const ambiguityBox = document.querySelector("#ambiguity-box");
 const siteHeader = document.querySelector(".site-header");
 const heroLayout = document.querySelector(".hero-layout");
@@ -15,6 +18,10 @@ let searchTimer = null;
 let placeResults = [];
 let activePlaceIndex = -1;
 let placeSearchSequence = 0;
+let selectedTimeZone = "";
+let timeZoneResults = [];
+let timeZoneSearchTimer = null;
+let timeZoneSearchSequence = 0;
 let currentBirthInput = null;
 let premiumBusy = false;
 let premiumConfig = null;
@@ -46,6 +53,14 @@ placeInput.addEventListener("input", () => {
   if (query.length < 2) return renderPlaceOptions([]);
   searchTimer = setTimeout(() => searchPlaces(query, sequence), 180);
 });
+timeZoneInput.addEventListener("input", () => {
+  selectedTimeZone = "";
+  clearTimeout(timeZoneSearchTimer);
+  const query = timeZoneInput.value.trim();
+  const sequence = ++timeZoneSearchSequence;
+  if (query.length < 2) return renderTimeZoneOptions([]);
+  timeZoneSearchTimer = setTimeout(() => searchTimeZones(query, sequence), 180);
+});
 placeInput.addEventListener("keydown", event => {
   if (event.key === "Escape") return renderPlaceOptions([]);
   if (!["ArrowDown", "ArrowUp", "Enter"].includes(event.key) || placeResults.length === 0) return;
@@ -74,11 +89,13 @@ async function submitFreeCalculation(timeOccurrence) {
     birthTimeCertainty: String(data.get("birthTimeCertainty") || "exact"),
     gender: String(data.get("gender") || ""),
     placeId: selectedPlace?.id || "",
+    ...(selectedTimeZone ? { timeZoneOverride: selectedTimeZone } : {}),
     ...(timeOccurrence ? { timeOccurrence } : {}),
   };
   if (!input.date) return showError("Укажите дату рождения.");
   if (!input.time) return showError("Укажите время рождения.");
-  if (!selectedPlace) return showError("Выберите место из списка подсказок");
+  if (!selectedPlace) { placeFallback.hidden = false; return showError("Выберите место из списка подсказок. Если его нет, укажите ближайший крупный город."); }
+  if (timeZoneInput.value.trim() && !selectedTimeZone) return showError("Выберите часовой пояс из списка подсказок.");
   if (!input.gender) return showError("Выберите пол.");
 
   setState("CALCULATING");
@@ -383,8 +400,32 @@ async function searchPlaces(query, sequence) {
     const response = await fetch(`/api/places?q=${encodeURIComponent(query)}`);
     const payload = await response.json();
     if (sequence !== placeSearchSequence) return;
-    renderPlaceOptions(response.ok ? payload.places : []);
-  } catch { if (sequence === placeSearchSequence) renderPlaceOptions([]); }
+    const places = response.ok ? payload.places : [];
+    renderPlaceOptions(places);
+    placeFallback.hidden = places.length > 0;
+  } catch { if (sequence === placeSearchSequence) { renderPlaceOptions([]); placeFallback.hidden = false; } }
+}
+
+async function searchTimeZones(query, sequence) {
+  try {
+    const response = await fetch(`/api/timezones?q=${encodeURIComponent(query)}`);
+    const payload = await response.json();
+    if (sequence !== timeZoneSearchSequence) return;
+    renderTimeZoneOptions(response.ok ? payload.timeZones : []);
+  } catch { if (sequence === timeZoneSearchSequence) renderTimeZoneOptions([]); }
+}
+
+function renderTimeZoneOptions(zones) {
+  timeZoneResults = zones;
+  timeZoneOptions.innerHTML = zones.map((zone, index) => `<button type="button" role="option" data-index="${index}">${e(zone.label)}</button>`).join("");
+  timeZoneOptions.hidden = zones.length === 0;
+  timeZoneInput.setAttribute("aria-expanded", String(zones.length > 0));
+  timeZoneOptions.querySelectorAll("button").forEach((button, index) => button.addEventListener("click", () => {
+    selectedTimeZone = timeZoneResults[index]?.id || "";
+    if (!selectedTimeZone) return;
+    timeZoneInput.value = selectedTimeZone;
+    renderTimeZoneOptions([]);
+  }));
 }
 
 function renderPlaceOptions(places) {

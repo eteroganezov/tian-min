@@ -37,3 +37,24 @@ test("GET /api/places проходит реальную route → provider це�
     }
   } finally { server.close(); }
 });
+
+test("GET /api/places возвращает один канонический Ереван для Cyrillic/Latin", async () => {
+  const server = createServer();
+  try {
+    const russian = await requestJson(server, `/api/places?q=${encodeURIComponent("Ереван")}`);
+    const english = await requestJson(server, "/api/places?q=Yerevan");
+    assert.equal(russian.body.places[0].id, english.body.places[0].id);
+    assert.equal(russian.body.places[0].display.label, "Ереван, Армения");
+    assert.equal(russian.body.places[0].timeZone, "Asia/Yerevan");
+  } finally { server.close(); }
+});
+
+test("GET /api/timezones ищет IANA zone и не возвращает голый UTC offset", async () => {
+  const server = createServer();
+  try {
+    const response = await requestJson(server, "/api/timezones?q=yerevan");
+    assert.equal(response.status, 200);
+    assert.equal(response.body.timeZones[0].id, "Asia/Yerevan");
+    assert.ok(response.body.timeZones.every(zone => zone.id.includes("/")));
+  } finally { server.close(); }
+});

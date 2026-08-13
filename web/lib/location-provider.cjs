@@ -1,40 +1,45 @@
 const cityTimezones = require("city-timezones");
 
-// Небольшой словарь поиска: он переводит запрос, но не создаёт координаты сам.
-// Все возвращаемые координаты и зоны всегда берутся из установленного набора данных.
-const SEARCH_ALIASES = new Map([
-  ["москва", "Moscow Russia"], ["лондон", "London United Kingdom"],
-  ["санкт-петербург", "St. Petersburg Russia"], ["санкт петербург", "St. Petersburg Russia"],
-  ["петербург", "St. Petersburg Russia"], ["алматы", "Almaty Kazakhstan"],
-  ["екатеринбург", "Yekaterinburg Russia"], ["нижний новгород", "Nizhny Novgorod Russia"],
-  ["казань", "Kazan Russia"],
-  ["нью-йорк", "New York New York"], ["нью йорк", "New York New York"],
-  ["пекин", "Beijing China"], ["париж", "Paris France"],
-  ["владивосток", "Vladivostok Russia"], ["калининград", "Kaliningrad Russia"],
-]);
-
-// Это отдельный слой показа. Ключи привязаны к канонической записи набора данных,
-// поэтому локализация не влияет на id, координаты или IANA timezone.
-const LOCALIZED_CITY_NAMES = new Map([
-  ["Moscow|RU", "Москва"], ["St. Petersburg|RU", "Санкт-Петербург"],
-  ["Almaty|KZ", "Алматы"], ["London|GB", "Лондон"], ["New York|US", "Нью-Йорк"],
-  ["Beijing|CN", "Пекин"], ["Paris|FR", "Париж"], ["Vladivostok|RU", "Владивосток"],
-  ["Kaliningrad|RU", "Калининград"], ["Yekaterinburg|RU", "Екатеринбург"],
-  ["Nizhny Novgorod|RU", "Нижний Новгород"], ["Kazan|RU", "Казань"],
-]);
+// Reliable product localization is a display/search layer over the canonical dataset.
+// It does not provide coordinates or time zones; those always come from city-timezones.
+const LOCALIZED_PLACES = new Map(Object.entries({
+  "Moscow|RU": { ru: "Москва" },
+  "St. Petersburg|RU": { ru: "Санкт-Петербург", aliases: ["Петербург"] },
+  "Almaty|KZ": { ru: "Алматы" },
+  "Yerevan|AM": { ru: "Ереван" },
+  "Tbilisi|GE": { ru: "Тбилиси" },
+  "London|GB": { ru: "Лондон" },
+  "New York|US": { ru: "Нью-Йорк" },
+  "Beijing|CN": { ru: "Пекин", aliases: ["北京"] },
+  "Paris|FR": { ru: "Париж" },
+  "Vladivostok|RU": { ru: "Владивосток" },
+  "Kaliningrad|RU": { ru: "Калининград" },
+  "Yekaterinburg|RU": { ru: "Екатеринбург" },
+  "Nizhny Novgorod|RU": { ru: "Нижний Новгород" },
+  "Kazan|RU": { ru: "Казань" },
+}));
 
 const russianCountries = new Intl.DisplayNames(["ru"], { type: "region" });
+const CYRILLIC_TO_LATIN = Object.freeze({
+  а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"kh",ц:"ts",ч:"ch",ш:"sh",щ:"shch",ъ:"",ы:"y",ь:"",э:"e",ю:"yu",я:"ya",
+});
 
 function normalize(value) {
-  return String(value || "").trim().toLocaleLowerCase("ru-RU").replace(/\s+/g, " ");
+  return String(value || "").normalize("NFKD").replace(/\p{M}+/gu, "")
+    .toLocaleLowerCase("ru-RU").replace(/ё/g, "е").replace(/[^\p{L}\p{N}]+/gu, " ").trim().replace(/\s+/g, " ");
 }
 
-function translatedQuery(raw, original) {
-  if (SEARCH_ALIASES.has(raw)) return SEARCH_ALIASES.get(raw);
-  const partial = [...SEARCH_ALIASES.entries()]
-    .filter(([alias]) => alias.startsWith(raw))
-    .sort(([left], [right]) => left.length - right.length || left.localeCompare(right, "ru"))[0];
-  return partial?.[1] || String(original).trim();
+function transliterate(value) {
+  return normalize(value).replace(/[\u0400-\u04ff]/gu, character => CYRILLIC_TO_LATIN[character] ?? character);
+}
+
+function queryVariants(value) {
+  const normalized = normalize(value);
+  const transliterated = transliterate(normalized);
+  const variants = new Set([normalized, transliterated]);
+  // Common Russian transliteration writes initial Е as either E or Ye.
+  if (/^e/u.test(transliterated)) variants.add(`y${transliterated}`);
+  return [...variants].filter(Boolean);
 }
 
 function dataKey(city) {
@@ -45,8 +50,13 @@ function placeId(city) {
   return Buffer.from(dataKey(city), "utf8").toString("base64url");
 }
 
+function localization(city) {
+  return LOCALIZED_PLACES.get(`${city.city}|${city.iso2}`) || null;
+}
+
 function localizedDisplay(city) {
-  const localizedCity = LOCALIZED_CITY_NAMES.get(`${city.city}|${city.iso2}`) || city.city;
+  const localized = localization(city);
+  const localizedCity = localized?.ru || city.city;
   const localizedCountry = russianCountries.of(city.iso2) || city.country;
   return {
     city: localizedCity,
@@ -58,28 +68,51 @@ function localizedDisplay(city) {
 
 function toPlace(city) {
   const display = localizedDisplay(city);
+  const id = placeId(city);
   return {
-    id: placeId(city), city: city.city, region: city.province || "", country: city.country,
+    id, source: "city-timezones", sourceId: id, canonicalName: city.city,
+    city: city.city, region: city.province || "", country: city.country,
     countryCode: city.iso2, latitude: city.lat, longitude: city.lng, timeZone: city.timezone,
     label: [city.city, city.province, city.country].filter(Boolean).join(", "), display,
   };
 }
 
+function searchTerms(city) {
+  const localized = localization(city);
+  const terms = new Map();
+  const add = (value, weight) => queryVariants(value).forEach(term => terms.set(term, Math.max(weight, terms.get(term) || 0)));
+  [city.city, city.city_ascii].filter(Boolean).forEach(value => add(value, 50));
+  [city.province, city.country].filter(Boolean).forEach(value => add(value, 0));
+  [localized?.ru, ...(localized?.aliases || [])].filter(Boolean).forEach(value => add(value, 200));
+  add([city.city, city.province, city.country].filter(Boolean).join(" "), 80);
+  add([city.city, city.country].filter(Boolean).join(" "), 80);
+  if (localized?.ru) add([localized.ru, russianCountries.of(city.iso2)].filter(Boolean).join(" "), 220);
+  return [...terms].map(([term, weight]) => ({ term, weight }));
+}
+
+const SEARCH_INDEX = cityTimezones.cityMapping.map(city => ({ city, terms: searchTerms(city) }));
+
+function matchScore(terms, variants) {
+  let best = 0;
+  for (const needle of variants) for (const entry of terms) {
+    const { term, weight } = entry;
+    if (term === needle) best = Math.max(best, 400 + weight);
+    else if (term.startsWith(needle)) best = Math.max(best, 300 + weight);
+    else if (term.split(" ").some(token => token.startsWith(needle))) best = Math.max(best, 200 + weight);
+    else if (term.includes(needle)) best = Math.max(best, 100 + weight);
+  }
+  return best;
+}
+
 class LocalLocationProvider {
   search(query, limit = 10) {
-    const raw = normalize(query);
-    if (raw.length < 2) return [];
-    const translated = translatedQuery(raw, query);
-    const needle = normalize(translated);
-    const firstToken = needle.split(" ")[0];
-    return cityTimezones.findFromCityStateProvince(translated)
-      .sort((a, b) => {
-        const aExact = normalize(a.city) === firstToken ? 1 : 0;
-        const bExact = normalize(b.city) === firstToken ? 1 : 0;
-        return bExact - aExact || Number(b.pop || 0) - Number(a.pop || 0) || dataKey(a).localeCompare(dataKey(b));
-      })
+    const variants = queryVariants(query);
+    if (!variants.some(value => [...value].length >= 2)) return [];
+    return SEARCH_INDEX.map(entry => ({ ...entry, score: matchScore(entry.terms, variants) }))
+      .filter(entry => entry.score > 0)
+      .sort((a, b) => b.score - a.score || Number(b.city.pop || 0) - Number(a.city.pop || 0) || dataKey(a.city).localeCompare(dataKey(b.city)))
       .slice(0, Math.max(1, Math.min(limit, 20)))
-      .map(toPlace);
+      .map(entry => toPlace(entry.city));
   }
 
   resolve(id) {
@@ -92,4 +125,4 @@ class LocalLocationProvider {
 }
 
 const locationProvider = new LocalLocationProvider();
-module.exports = { LocalLocationProvider, localizedDisplay, locationProvider };
+module.exports = { LocalLocationProvider, localizedDisplay, locationProvider, normalize, transliterate };

@@ -30,7 +30,9 @@ function frontendHarness(fetchImpl) {
   const nodes = {
     "#birth-form": element(), "#form-error": element(), "#submit-button": element(),
     "#result-root": element(), "#birth-place": element(), "#place-options": element(), "#ambiguity-box": element(),
+    "#place-fallback": element(), "#birth-timezone": element(), "#timezone-options": element(),
   };
+  nodes["#place-fallback"].hidden = true;
   nodes["#submit-button"].querySelector = () => element();
   const document = { querySelector: selector => nodes[selector] || element(), addEventListener() {} };
   const context = {
@@ -38,7 +40,7 @@ function frontendHarness(fetchImpl) {
     setTimeout, clearTimeout, console, Intl, URLSearchParams, encodeURIComponent,
   };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8"), context);
-  return { input: nodes["#birth-place"], options: nodes["#place-options"] };
+  return { input: nodes["#birth-place"], options: nodes["#place-options"], fallback: nodes["#place-fallback"], timeZoneInput: nodes["#birth-timezone"], timeZoneOptions: nodes["#timezone-options"] };
 }
 
 const moscow = { id: "canonical-moscow", display: { label: "Москва, Россия" }, latitude: 55.75, longitude: 37.61, timeZone: "Europe/Moscow" };
@@ -79,6 +81,41 @@ test("frontend autocomplete сохраняет новый результат п�
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.equal(ui.options.hidden, false);
   assert.match(ui.options.innerHTML, /Москва, Россия/);
+});
+
+test("неизвестное место открывает secondary help, а обычный успешный поиск его скрывает", async () => {
+  const ui = frontendHarness(async url => ({ ok: true, json: async () => ({ places: url.includes("unknown") ? [] : [moscow] }) }));
+  assert.equal(ui.fallback.hidden, true);
+  ui.input.value = "unknown";
+  ui.input.dispatch("input");
+  await new Promise(resolve => setTimeout(resolve, 220));
+  assert.equal(ui.fallback.hidden, false);
+  ui.input.value = "москва";
+  ui.input.dispatch("input");
+  await new Promise(resolve => setTimeout(resolve, 220));
+  assert.equal(ui.fallback.hidden, true);
+});
+
+test("advanced fallback ищет зоны через IANA endpoint", async () => {
+  const urls = [];
+  const ui = frontendHarness(async url => {
+    urls.push(url);
+    return { ok: true, json: async () => String(url).startsWith("/api/timezones") ? { timeZones: [{ id: "Asia/Yerevan", label: "Asia/Yerevan" }] } : { places: [] } };
+  });
+  ui.timeZoneInput.value = "yerevan";
+  ui.timeZoneInput.dispatch("input");
+  await new Promise(resolve => setTimeout(resolve, 220));
+  assert.deepEqual(urls, ["/api/timezones?q=yerevan"]);
+  assert.equal(ui.timeZoneOptions.hidden, false);
+  assert.match(ui.timeZoneOptions.innerHTML, /Asia\/Yerevan/);
+});
+
+test("fallback copy не обещает точный solar calculation без координат", () => {
+  const html = fs.readFileSync(path.resolve(__dirname, "..", "public", "index.html"), "utf8");
+  assert.match(html, /id="place-fallback" hidden/);
+  assert.match(html, /Не нашли место рождения\?/);
+  assert.match(html, /ближайший крупный город/);
+  assert.match(html, /Часовой пояс не заменяет координаты/);
 });
 
 test("dropdown CSS не скрывает и не обрезает непустой список", () => {

@@ -46,6 +46,44 @@ test("русская подпись места не меняет канонич�
   }
 });
 
+test("русский и английский варианты ведут к одному canonical place", () => {
+  for (const [russian, english, expectedDisplay] of [
+    ["Ереван", "Yerevan", "Ереван, Армения"], ["Москва", "Moscow", "Москва, Россия"],
+    ["Алматы", "Almaty", "Алматы, Казахстан"], ["Тбилиси", "Tbilisi", "Тбилиси, Грузия"],
+    ["Пекин", "Beijing", "Пекин, Китай"],
+  ]) {
+    const localized = place(russian);
+    const canonical = place(english);
+    assert.equal(localized.id, canonical.id, russian);
+    assert.equal(localized.sourceId, canonical.sourceId, russian);
+    assert.equal(localized.canonicalName, canonical.canonicalName, russian);
+    assert.equal(localized.latitude, canonical.latitude, russian);
+    assert.equal(localized.longitude, canonical.longitude, russian);
+    assert.equal(localized.timeZone, canonical.timeZone, russian);
+    assert.equal(localized.display.label, expectedDisplay, russian);
+    assert.equal(calculateRequest({ date: "1990-05-15", time: "14:30", gender: "female", placeId: localized.id }).status, 200, russian);
+  }
+  assert.equal(place("北京").id, place("Beijing").id);
+});
+
+test("Unicode, ё/е, регистр и обычная транслитерация нормализуются", () => {
+  assert.equal(place("ЕРЕВАН").id, place("Yerevan").id);
+  assert.equal(place("Йорк").id, place("йорк").id);
+  assert.equal(place("Екатеринбург").id, place("ёкатеринбург").id);
+  assert.equal(place("Тбилиси").id, place("Tbilisi").id);
+});
+
+test("ручной IANA override меняет только timezone выбранного места и сохраняет его координаты", () => {
+  const yerevan = place("Ереван");
+  const result = calculateRequest({ date: "1990-05-15", time: "14:30", gender: "female", placeId: yerevan.id, timeZoneOverride: "Europe/Moscow" });
+  assert.equal(result.status, 200);
+  assert.equal(result.body.metadata.ianaTimeZone, "Europe/Moscow");
+  assert.equal(result.body.metadata.placeTimeZone, "Asia/Yerevan");
+  assert.equal(result.body.metadata.timeZoneSource, "USER_OVERRIDE");
+  assert.equal(result.body.metadata.longitude, yerevan.longitude);
+  assert.equal(calculateRequest({ date: "1990-05-15", time: "14:30", gender: "female", placeId: yerevan.id, timeZoneOverride: "UTC+04:00" }).body.code, "INVALID_TIME_ZONE");
+});
+
 test("неизвестный словарю город сохраняет каноническое имя и переводит страну", () => {
   const urumqi = place("Urumqi China");
   assert.equal(urumqi.display.city, urumqi.city);

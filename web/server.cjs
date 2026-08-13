@@ -5,6 +5,7 @@ require("dotenv").config({ path: path.join(__dirname, ".env"), quiet: true });
 const { calculateRequest } = require("./lib/calculate.cjs");
 const { createFreePreviewRequest } = require("./lib/free-preview.cjs");
 const { locationProvider } = require("./lib/location-provider.cjs");
+const { searchTimeZones } = require("./lib/timezone-provider.cjs");
 const { generateReportRequest } = require("./lib/report-service.cjs");
 const { createPdfFromSavedReport, createPdfRequest } = require("./lib/pdf-service.cjs");
 const { LocalReportStore } = require("./lib/report-store.cjs");
@@ -46,6 +47,7 @@ function createServer(options = {}) {
       if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
       if (request.method === "POST" && request.url === "/api/dev/reports/pdf") return await handleSavedPdf(request, response, reportStore);
       if (request.method === "GET" && request.url.startsWith("/api/places")) return handlePlaces(request, response);
+      if (request.method === "GET" && request.url.startsWith("/api/timezones")) return handleTimeZones(request, response);
       if (request.method !== "GET" && request.method !== "HEAD") return sendJson(response, 405, { error: "Метод не поддерживается." });
       return serveStatic(request, response, staticRoot);
     } catch {
@@ -89,6 +91,13 @@ function handlePlaces(request, response) {
   const query = url.searchParams.get("q") || "";
   if (query.length > 100) return sendJson(response, 400, { error: "Слишком длинный поисковый запрос." });
   return sendJson(response, 200, { places: locationProvider.search(query) });
+}
+
+function handleTimeZones(request, response) {
+  const url = new URL(request.url, "http://localhost");
+  const query = url.searchParams.get("q") || "";
+  if (query.length > 100) return sendJson(response, 400, { error: "Слишком длинный поисковый запрос." });
+  return sendJson(response, 200, { timeZones: searchTimeZones(query) });
 }
 
 async function handleCalculation(request, response) {

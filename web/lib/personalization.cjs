@@ -32,6 +32,7 @@ function canonicalBirthInput(input) {
     time: input?.time,
     gender: input?.gender,
     placeId: input?.placeId,
+    ...(input?.timeZoneOverride ? { timeZoneOverride: input.timeZoneOverride } : {}),
     birthTimeCertainty: normalizeBirthTimeCertainty(input?.birthTimeCertainty),
     ...(input?.timeOccurrence ? { timeOccurrence: input.timeOccurrence } : {}),
   };

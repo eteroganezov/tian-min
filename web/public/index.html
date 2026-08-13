@@ -47,6 +47,17 @@
             <label for="birth-place">Место рождения</label>
             <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" role="combobox" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false" required>
             <div class="place-options" id="place-options" role="listbox" hidden></div>
+            <div class="place-fallback" id="place-fallback" hidden>
+              <b>Не нашли место рождения?</b>
+              <p>Попробуйте указать ближайший крупный город. Если нужного места нет в списке, можно выбрать часовой пояс вручную.</p>
+              <details id="timezone-fallback">
+                <summary>Уточнить часовой пояс</summary>
+                <label for="birth-timezone">Часовой пояс IANA</label>
+                <input id="birth-timezone" type="search" autocomplete="off" placeholder="Например, Asia/Yerevan" role="combobox" aria-autocomplete="list" aria-controls="timezone-options" aria-expanded="false">
+                <div class="timezone-options" id="timezone-options" role="listbox" hidden></div>
+                <small>Сначала выберите ближайший город: его координаты нужны для поправки истинного солнечного времени. Часовой пояс не заменяет координаты.</small>
+              </details>
+            </div>
           </div>
           <fieldset class="gender-field"><legend>Пол</legend><div class="gender-options">
             <label><input type="radio" name="gender" value="male"><span>Мужской</span></label>

@@ -2,6 +2,7 @@ const { calculateLocalChart, calculateNormalizedSolarChart } = require("../../ca
 const { locationProvider } = require("./location-provider.cjs");
 const { resolveCivilTime } = require("./civil-time.cjs");
 const { calculateTrueSolarTime, formatParts } = require("./true-solar-time.cjs");
+const { isValidTimeZone } = require("./timezone-provider.cjs");
 
 function pad(value) { return String(value).padStart(2, "0"); }
 function dateOf(parts) { return `${parts.year}-${pad(parts.month)}-${pad(parts.day)}`; }
@@ -17,7 +18,11 @@ function beijingReference(utcMilliseconds) {
 function calculateBirthChart(input) {
   const place = locationProvider.resolve(input.placeId);
   if (!place) throw Object.assign(new Error("Выберите место рождения из списка подсказок."), { code: "INVALID_PLACE" });
-  const civil = resolveCivilTime(input.date, input.time, place.timeZone, input.timeOccurrence);
+  if (input.timeZoneOverride && !isValidTimeZone(input.timeZoneOverride)) {
+    throw Object.assign(new Error("Выберите часовой пояс из списка."), { code: "INVALID_TIME_ZONE" });
+  }
+  const timeZone = input.timeZoneOverride || place.timeZone;
+  const civil = resolveCivilTime(input.date, input.time, timeZone, input.timeOccurrence);
   const solar = calculateTrueSolarTime(civil, place.longitude);
   const trueParts = solar.parts;
   const birthInfo = { ...trueParts, gender: input.gender, isLunar: false, timeZone: 8 };
@@ -42,7 +47,9 @@ function calculateBirthChart(input) {
     place: { name: place.label, city: place.city, region: place.region, country: place.country, latitude: place.latitude, longitude: place.longitude },
     latitude: place.latitude,
     longitude: place.longitude,
-    ianaTimeZone: place.timeZone,
+    ianaTimeZone: timeZone,
+    placeTimeZone: place.timeZone,
+    timeZoneSource: input.timeZoneOverride ? "USER_OVERRIDE" : "PLACE_DATASET",
     historicalUtcOffset: civil.historicalUtcOffsetMinutes,
     standardUtcOffset: civil.standardOffsetMinutes,
     dstApplied: civil.dstApplied,
