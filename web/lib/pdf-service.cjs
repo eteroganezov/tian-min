@@ -10,9 +10,11 @@ const { locationProvider } = require("./location-provider.cjs");
 async function createPdfRequest(input, options = {}) {
   let calculation;
   let displayName;
+  let birthInput;
   try {
     displayName = normalizeDisplayName(input?.name);
-    calculation = calculateBirthChart(canonicalBirthInput(input));
+    birthInput = canonicalBirthInput(input);
+    calculation = calculateBirthChart(birthInput);
   }
   catch (error) { return { status: 400, error: safeMessage(error) }; }
   let report = input.report || null;
@@ -26,7 +28,8 @@ async function createPdfRequest(input, options = {}) {
   const full = options.hasFullReport ?? hasFullReport(options.env);
   const place = locationProvider.resolve(input.placeId);
   const presentation = { displayName, birthPlace: place?.display || null };
-  const buffer = await createReportPdf({ chart, metadata: calculation.metadata, presentation, report, evidenceCatalog, hasFullReport: full });
+  const metadata = { ...calculation.metadata, birthTimeCertainty: birthInput.birthTimeCertainty };
+  const buffer = await createReportPdf({ chart, metadata, presentation, report, evidenceCatalog, hasFullReport: full });
   return { status: 200, buffer, filename: createPdfFilename({ displayName, date: calculation.metadata.originalBirthDate, time: calculation.metadata.originalBirthTime }) };
 }
 

@@ -25,29 +25,35 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /ПЕРСОНАЛЬНЫЙ РАЗБОР/i);
   assert.match(parsed.text, /Содержание/);
   assert.match(parsed.text, /Ваш портрет в двух минутах/);
-  assert.match(parsed.text, /Как читать отчёт/);
-  assert.match(parsed.text, /Доказательная база Ба-цзы/);
-  assert.match(parsed.text, /Доказательная база Цзы Вэй/);
-  assert.match(parsed.text, /Общая временная шкала/);
+  assert.match(parsed.text, /Как читать этот отчёт/);
+  assert.match(parsed.text, /ОСНОВАНИЯ ВАШЕГО РАЗБОРА/i);
+  assert.match(parsed.text, /Паспорт Ба-цзы/);
+  assert.match(parsed.text, /Паспорт Цзы Вэй/);
+  assert.match(parsed.text, /Временные шкалы/);
   assert.match(parsed.text, /Характер и внутренние мотивы/);
   assert.match(parsed.text, /Сильные стороны/);
   assert.match(parsed.text, /Точки роста/);
   assert.match(parsed.text, /Роль, где можно влиять на качество/);
   assert.match(parsed.text, /Деньги и управление ресурсами/);
   assert.match(parsed.text, /Отношения и границы/);
+  assert.match(parsed.text, /Как вас видят/);
+  assert.match(parsed.text, /Ключевые переходы/);
+  assert.match(parsed.text, /Где Ба-цзы и Цзы Вэй/);
+  assert.match(parsed.text, /Возможные сценарии/);
   assert.match(parsed.text, /Ближайшие три года/);
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages >= 26 && parsed.numpages <= 32, true, `Получилось ${parsed.numpages} страниц`);
-  assert.equal(parsed.info.Title,"Эдуард — Ба-цзы + Цзы Вэй · Персональный разбор");
+  assert.equal(parsed.numpages >= 30 && parsed.numpages <= 38, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
   assert.equal(parsed.text.indexOf("Содержание") < parsed.text.indexOf("Ваш портрет в двух минутах"),true);
-  assert.equal(parsed.text.indexOf("Доказательная база Ба-цзы") < parsed.text.indexOf("Характер и внутренние мотивы"),true);
+  assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Паспорт Ба-цзы"),true);
+  assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
   assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
-  assert.match(parsed.text,/Хуа Лу[\s\S]{0,80}Возможности и ресурс/i);
+  assert.match(parsed.text,/Хуа Лу[\s\S]{0,100}РЕСУРС И ВОЗМОЖНОСТИ/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text, /(?:bazi|ziwei|time)\.[a-z0-9_.-]+/i);
   assert.doesNotMatch(parsed.text, /[\u0000\uFFFD\uFFFE\uFFFF]/u);
@@ -203,7 +209,7 @@ test("PDF-рендерер принимает короткие и длинные
   const longPdf = await createPdfRequest({ ...input, report: longReport }, { hasFullReport: true });
   assert.equal(longPdf.status, 200);
   const parsed = await pdfParse(longPdf.buffer);
-  assert.match(parsed.text, /Персональный информационно-развлекательный отчёт/);
+  assert.match(parsed.text, /Информационно-развлекательный персональный отчёт/);
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
 });
 
@@ -211,6 +217,11 @@ test("v4 renderer выдерживает standard, long и sensitivity fixtures 
   const variants=buildSampleVariants();
   assert.equal(variants.length,3);
   const sensitive=variants.find(value=>value.key==="sensitivity");
+  const standard=variants.find(value=>value.key==="standard");
+  const long=variants.find(value=>value.key==="long");
+  assert.equal(standard.input.birthTimeCertainty,"exact");
+  assert.equal(long.input.birthTimeCertainty,"exact");
+  assert.equal(sensitive.input.birthTimeCertainty,"approximate");
   assert.equal(sensitive.report.yearlyOutlook.every(year=>year.evidence.every(id=>!id.startsWith("ziwei.annual."))),true);
   for(const variant of variants){
     const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
@@ -225,6 +236,12 @@ test("v4 renderer выдерживает standard, long и sensitivity fixtures 
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
     assert.equal(parsed.numpages>=26&&parsed.numpages<=40,true,`${variant.key}: ${parsed.numpages} страниц`);
+    if(variant.key==="sensitivity"){
+      assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
+      assert.match(parsed.text,/чувствительн/i);
+    }else{
+      assert.doesNotMatch(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
+    }
   }
 });
 
