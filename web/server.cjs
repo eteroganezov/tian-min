@@ -43,7 +43,7 @@ function createServer(options = {}) {
       if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input));
       if (request.method === "POST" && request.url === "/api/premium/dev/payment") return await handlePremiumAction(request, response, input => premiumService.applyMockOutcome(input.orderId, input.outcome));
       if (request.method === "POST" && request.url === "/api/payments/lorentsen/webhook") return await handleLorentsenWebhook(request, response, premiumService);
-      if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId));
+      if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId,{ expectedAttempt:input.reportGenerationAttempt }));
       if (request.method === "GET" && request.url.startsWith("/api/premium/order/")) return await handlePremiumOrder(request, response, premiumService);
       if (request.method === "GET" && request.url.startsWith("/api/premium/report/")) return await handlePremiumDelivery(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);

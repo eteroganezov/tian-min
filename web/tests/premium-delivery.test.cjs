@@ -89,7 +89,7 @@ test("failed generation exposes safe state and retry reuses entitlement without 
   const redeemed=await ctx.service.redeemPromo({orderId:applied.body.order.orderId,code:"FAMILY0"});
   let order=await ready(ctx,redeemed.body.order.orderId); assert.equal(order.status,"REPORT_FAILED");
   assert.equal(ctx.orderStore.promoRedemptions.size,1);
-  await ctx.service.generate(order.orderId); order=await ready(ctx,order.orderId);
+  await ctx.service.generate(order.orderId,{ expectedAttempt:order.reportGenerationAttempt }); order=await ready(ctx,order.orderId);
   assert.equal(order.status,"REPORT_READY"); assert.equal(calls,2); assert.equal(ctx.orderStore.promoRedemptions.size,1);
 });
 
@@ -109,7 +109,8 @@ test("AI_NOT_CONFIGURED failure keeps FAMILY0 entitlement and retry reuses the s
 
   let retryCalls=0;
   ctx.service.reportGenerator=async order=>{retryCalls+=1;return semantic(order);};
-  const [first,second]=await Promise.all([ctx.service.generate(failed.orderId),ctx.service.generate(failed.orderId)]);
+  const retryOptions={ expectedAttempt:failed.reportGenerationAttempt };
+  const [first,second]=await Promise.all([ctx.service.generate(failed.orderId,retryOptions),ctx.service.generate(failed.orderId,retryOptions)]);
   assert.equal(first.body.order.reportId,failed.reportId);
   assert.equal(second.body.order.reportId,failed.reportId);
   const completed=await ready(ctx,failed.orderId);
@@ -120,6 +121,37 @@ test("AI_NOT_CONFIGURED failure keeps FAMILY0 entitlement and retry reuses the s
   assert.equal(ctx.orderStore.promoRedemptions.size,1);
   assert.equal(ctx.orderStore.orders.size,1);
   assert.equal(paymentCalls,0);
+});
+
+test("PDF failure persists validated semantic report and retry renders it without a second model call",async()=>{
+  let renderCalls=0;
+  const ctx=setup({pdfRenderer:async()=>{renderCalls+=1;if(renderCalls===1)throw Object.assign(new Error("font missing"),{code:"PDF_FONT_UNAVAILABLE"});return{status:200,buffer:Buffer.from("%PDF-recovered")};}});
+  const applied=await ctx.service.applyPromo({birthInput:input,code:"FAMILY0"});
+  const redeemed=await ctx.service.redeemPromo({orderId:applied.body.order.orderId,code:"FAMILY0"});
+  const failed=await ready(ctx,redeemed.body.order.orderId);
+  assert.equal(failed.status,"REPORT_FAILED");
+  assert.equal(ctx.generationCalls,1);
+  assert.equal(ctx.reportStore.writes,1);
+  const retry=await ctx.service.generate(failed.orderId,{expectedAttempt:failed.reportGenerationAttempt});
+  assert.equal(retry.status,202);
+  const completed=await ready(ctx,failed.orderId);
+  assert.equal(completed.status,"REPORT_READY");
+  assert.equal(ctx.generationCalls,1);
+  assert.equal(ctx.reportStore.writes,1);
+  assert.equal(renderCalls,2);
+});
+
+test("stale sequential retry cannot claim a second generation after the displayed attempt changed",async()=>{
+  const ctx=setup();
+  const applied=await ctx.service.applyPromo({birthInput:input,code:"FAMILY0"});
+  ctx.service.reportGenerator=async()=>{throw Object.assign(new Error("failed"),{code:"TEST_FAILURE"});};
+  const redeemed=await ctx.service.redeemPromo({orderId:applied.body.order.orderId,code:"FAMILY0"});
+  const failed=await ready(ctx,redeemed.body.order.orderId);
+  const displayedAttempt=failed.reportGenerationAttempt;
+  await ctx.service.generate(failed.orderId,{expectedAttempt:displayedAttempt});
+  const failedAgain=await ready(ctx,failed.orderId);
+  assert.equal(failedAgain.reportGenerationAttempt,displayedAttempt+1);
+  assert.equal((await ctx.service.generate(failed.orderId,{expectedAttempt:displayedAttempt})).status,409);
 });
 
 test("report capability is high-entropy, bound server-side and unauthorized tokens fail closed",async()=>{
@@ -170,8 +202,11 @@ test("customer UX contains generating, failed, ready, open/download and same-bro
   const source=fs.readFileSync(path.resolve(__dirname,"../public/app.js"),"utf8");
   assert.match(source,/Готовим ваш персональный разбор/); assert.match(source,/Обычно это занимает немного времени/);
   assert.match(source,/Не удалось подготовить отчёт\. Попробуйте ещё раз\./);
+  assert.match(source,/Вернуться к результату/); assert.match(source,/reportGenerationAttempt:order\.reportGenerationAttempt/);
   assert.match(source,/Ваш персональный разбор готов/); assert.match(source,/>Открыть отчёт</); assert.match(source,/>Скачать PDF</);
   assert.match(source,/\/api\/premium\/report\/\$\{encodeURIComponent\(order\.reportAccessToken\)\}/);
   assert.match(source,/localStorage\.getItem\("tianMinOrderId"\)/); assert.match(source,/scheduleGenerationPoll/);
   assert.doesNotMatch(source,/Тестовый отчёт сохранён|Открыть тестовый результат|Report ID:/);
+  const styles=fs.readFileSync(path.resolve(__dirname,"../public/styles.css"),"utf8");
+  assert.match(styles,/checkout-progress-indeterminate/); assert.doesNotMatch(styles,/\.checkout-progress i\{display:block;width:65%/);
 });

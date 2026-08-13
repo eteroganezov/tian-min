@@ -48,17 +48,25 @@ function createPremiumReportV4Pdf({ chart, metadata, presentation = {}, report, 
 }
 
 function choose(values){return values.filter(Boolean).find(value=>fs.existsSync(value));}
+function resolveFontPaths(env=process.env){return{
+  regular:choose([env.PDF_FONT_REGULAR,"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf","/System/Library/Fonts/Supplemental/Arial.ttf"]),
+  bold:choose([env.PDF_FONT_BOLD,"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","/System/Library/Fonts/Supplemental/Arial Bold.ttf"]),
+  serif:choose([env.PDF_FONT_SERIF,"/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf","/System/Library/Fonts/Supplemental/STIXTwoText-Regular.ttf","/System/Library/Fonts/Supplemental/Georgia.ttf"]),
+  serifBold:choose([env.PDF_FONT_SERIF_BOLD,"/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf","/System/Library/Fonts/Supplemental/STIXTwoText-Bold.ttf","/System/Library/Fonts/Supplemental/Georgia Bold.ttf"]),
+  cjk:choose([env.PDF_FONT_CJK,"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/opentype/noto/NotoSansCJKsc-Regular.otf","/System/Library/Fonts/Supplemental/Arial Unicode.ttf"]),
+};}
 function displayNumber(value){const number=Number(value);if(!Number.isFinite(number))return String(value??"");return String(Math.round((number+Number.EPSILON)*10)/10);}
-function registerFonts(doc){
-  const regular=choose([process.env.PDF_FONT_REGULAR,"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf","/System/Library/Fonts/Supplemental/Arial.ttf"]);
-  const bold=choose([process.env.PDF_FONT_BOLD,"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf","/System/Library/Fonts/Supplemental/Arial Bold.ttf"]);
-  const serif=choose([process.env.PDF_FONT_SERIF,"/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf","/System/Library/Fonts/Supplemental/STIXTwoText-Regular.ttf","/System/Library/Fonts/Supplemental/Georgia.ttf"]);
-  const serifBold=choose([process.env.PDF_FONT_SERIF_BOLD,"/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf","/System/Library/Fonts/Supplemental/STIXTwoText-Bold.ttf","/System/Library/Fonts/Supplemental/Georgia Bold.ttf"]);
-  const cjk=choose([process.env.PDF_FONT_CJK,"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc","/usr/share/fonts/opentype/noto/NotoSansCJKsc-Regular.otf","/System/Library/Fonts/Supplemental/Arial Unicode.ttf"]);
-  if(process.env.NODE_ENV==="production"&&(!regular||!bold||!serif||!serifBold||!cjk))throw Object.assign(new Error("Для production PDF нужны DejaVu/Noto или явно заданные PDF_FONT_* шрифты."),{code:"PDF_FONT_UNAVAILABLE"});
+function registerFonts(doc,env=process.env){
+  const resolved=resolveFontPaths(env);
+  const regular=resolved.regular;
+  const bold=resolved.bold;
+  const serif=resolved.serif;
+  const serifBold=resolved.serifBold;
+  const cjk=resolved.cjk;
+  if(env.NODE_ENV==="production"&&(!regular||!bold||!serif||!serifBold||!cjk))throw Object.assign(new Error("Для production PDF нужны DejaVu/Noto или явно заданные PDF_FONT_* шрифты."),{code:"PDF_FONT_UNAVAILABLE"});
   doc.registerFont("Body",regular||"Helvetica");doc.registerFont("Bold",bold||"Helvetica-Bold");doc.registerFont("Serif",serif||"Times-Roman");doc.registerFont("SerifBold",serifBold||"Times-Bold");
   let cjkReady=false;if(cjk){try{doc.registerFont("CJK",cjk);doc.font("CJK");cjkReady=true;}catch{cjkReady=false;}}
-  if(process.env.NODE_ENV==="production"&&!cjkReady)throw Object.assign(new Error("Production CJK-шрифт не удалось зарегистрировать."),{code:"PDF_CJK_FONT_INVALID"});
+  if(env.NODE_ENV==="production"&&!cjkReady)throw Object.assign(new Error("Production CJK-шрифт не удалось зарегистрировать."),{code:"PDF_CJK_FONT_INVALID"});
   return{cjkReady,paths:{regular,bold,serif,serifBold,cjk}};
 }
 function humanizeText(value){return String(displayValue(value))
@@ -212,4 +220,4 @@ function displayValue(value){if(value&&typeof value==="object"&&("gan" in value|
 function technicalText(value){return String(displayValue(value)).replace(/—\s*中(?=[.,;]|$)/gu,"— Средняя (中)").replace(/—\s*低(?=[.,;]|$)/gu,"— Низкая (低)").replace(/—\s*高(?=[.,;]|$)/gu,"— Высокая (高)").replace(/—\s*HIGH(?=[.,;]|$)/giu,"— Высокая чувствительность").replace(/—\s*NORMAL(?=[.,;]|$)/giu,"— Обычная чувствительность").replace(/\bscore\s+(-?\d+(?:\.\d+)?)/giu,"числовой индекс $1 по расчётной шкале");}
 function pageNumbers(ctx){const{doc}=ctx,range=doc.bufferedPageRange();for(let i=0;i<range.count;i++){doc.switchToPage(range.start+i);const dark=i===0||i===range.count-1||i===ctx.sections.find(value=>value.title.startsWith("Итоговая"))?.page-1||i===ctx.sections.find(value=>value.title.startsWith("Приложение"))?.page-1;doc.fillColor(dark?"#82978f":C.muted).font("Body").fontSize(6.8).text(`${i+1} / ${range.count}`,P.x,799,{width:P.width,align:"right",lineBreak:false});}}
 
-module.exports={VERSION,createPremiumReportV4Pdf,registerFonts,certaintyState};
+module.exports={VERSION,createPremiumReportV4Pdf,registerFonts,resolveFontPaths,certaintyState};

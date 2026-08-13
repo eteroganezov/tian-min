@@ -88,8 +88,11 @@ async function generateReportRequest(input, options = {}) {
     try {
       const providerType = provider.providerType || "custom";
       onStage({ stage: providerType === "unavailable" ? "provider_unavailable" : "model_request_started", model, providerType, attempt: attempt + 1 });
+      const requestStartedAt = Date.now();
       report = sanitizePersonalReport(await provider.generate(context, attempt ? validation.errors.slice(0, 4).join("; ") : undefined));
-      onStage({ stage: "model_response_received", model, providerType: provider.providerType || "custom", attempt: attempt + 1 });
+      onStage({ stage: "model_response_received", model, providerType: provider.providerType || "custom", attempt: attempt + 1,
+        durationMs: Date.now() - requestStartedAt, requestId: provider.lastResponseMetadata?.requestId || null,
+        responseStatus: provider.lastResponseMetadata?.responseStatus || null });
     } catch (error) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
         return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints }, internal: { failure: safeAiFailure(error, "provider_configuration") } };

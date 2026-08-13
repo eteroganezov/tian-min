@@ -11,7 +11,7 @@ function element() {
   const node = {
     hidden: false, value: "", checked: false, disabled: false, validity: { valid: true }, dataset: {}, parentElement: null,
     addEventListener(type, listener) { listeners.set(type, listener); },
-    dispatch(type, event = {}) { return listeners.get(type)?.({ preventDefault() {}, key: "", target: node, ...event }); },
+    dispatch(type, event = {}) { return listeners.get(type)?.({ preventDefault() {}, key: "", target: node, currentTarget:node, ...event }); },
     appendChild() {}, setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, insertAdjacentHTML() {}, closest() { return null; },
     querySelector(selector) {
       if (selector === ".checkout-panel") return html.includes("checkout-panel") ? element() : null;
@@ -85,6 +85,34 @@ test("expired/failed показывают terminal UX, а возврат не в
   ui.context.renderLorentsenState(ui.host, order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed" }));
   assert.match(ui.host.innerHTML, /Платёж не завершён/);
   assert.match(ui.host.innerHTML, /Попробовать снова/);
+});
+
+test("REPORT_FAILED retry sends the displayed attempt once and return preserves the entitlement locally", async()=>{
+  const calls=[];
+  const failed={orderId:"order_family",reportId:"report_family",status:"REPORT_FAILED",accessReason:"complimentary_promo",reportGenerationAttempt:4};
+  const ui=harness(async(url,options={})=>{
+    calls.push({url,options});
+    if(url==="/api/premium/generate")return{ok:true,json:async()=>({order:{...failed,status:"REPORT_GENERATING",reportGenerationAttempt:5}})};
+    if(url==="/api/premium/config")return{ok:true,json:async()=>config};
+    if(url.startsWith("/api/premium/order/"))return{ok:true,json:async()=>({order:failed})};
+    throw new Error(`unexpected ${url}`);
+  });
+  ui.context.renderPaymentState(failed);
+  assert.match(ui.host.innerHTML,/Вернуться к результату/);
+  const retry=ui.host.querySelector('[data-action="retry-generation"]');
+  await Promise.all([retry.dispatch("click"),retry.dispatch("click")]);
+  const generationCalls=calls.filter(call=>call.url==="/api/premium/generate");
+  assert.equal(generationCalls.length,1);
+  assert.deepEqual(JSON.parse(generationCalls[0].options.body),{orderId:failed.orderId,reportGenerationAttempt:4});
+
+  ui.context.renderPaymentState(failed);
+  calls.length=0;
+  ui.host.querySelector('[data-action="leave-generation"]').dispatch("click");
+  assert.match(ui.host.innerHTML,/Получить персональный разбор/);
+  assert.deepEqual(calls,[]);
+  await ui.context.openPremiumOffer();
+  assert.match(ui.host.innerHTML,/REPORT_FAILED/);
+  assert.equal(calls.some(call=>call.url==="/api/premium/generate"),false);
 });
 
 test("failed/expired retry возвращает в offer и double-click не создаёт payment", async () => {

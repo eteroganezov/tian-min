@@ -75,6 +75,10 @@ class OpenAIReportProvider {
     } catch (error) {
       throw markAiStage(error, "responses.create");
     }
+    this.lastResponseMetadata = {
+      requestId: response?._request_id || response?.request_id || null,
+      responseStatus: response?.status || null,
+    };
     if (!response.output_text) throw markAiStage(new Error("OpenAI response did not contain output text"), "responses.output_text");
     try { return JSON.parse(response.output_text); }
     catch (error) { throw markAiStage(error, "responses.parse_json"); }

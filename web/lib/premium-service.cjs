@@ -326,46 +326,50 @@ class PremiumService {
       }
     }
     if (order.status === "REPORT_GENERATING") {
-      const saved=await this.reportStore?.load(order.reportId);
-      if(saved?.kind === "semantic-report") {
-        order=await this.saveOrder(order,{ status:"REPORT_READY",reportGenerationCompletedAt:saved.savedAt,reportGenerationLeaseUntil:null });
-      } else if(Date.parse(order.reportGenerationLeaseUntil || 0) <= this.now().getTime()) {
+      if(Date.parse(order.reportGenerationLeaseUntil || 0) <= this.now().getTime()) {
         return this.generate(order.orderId);
       }
     }
     return success(200, order);
   }
 
-  async generate(orderId) {
+  async generate(orderId, options = {}) {
     let order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
     order=await this.ensureReportAccess(order);
     if (!await this.hasLegitimateEntitlement(order)) return failure(403, "Персональный разбор доступен только после подтверждённой оплаты или специального доступа.");
     const saved = await this.reportStore?.load(order.reportId);
-    if (saved?.kind === "semantic-report") return success(200, await this.saveOrder(order, { status:"REPORT_READY", reportGenerationCompletedAt:saved.savedAt, reportGenerationLeaseUntil:null }));
-    if (order.status === "REPORT_READY") return failure(503, "Сохранённый отчёт временно недоступен.");
+    if (order.status === "REPORT_READY") return saved?.kind === "semantic-report" ? success(200, order) : failure(503, "Сохранённый отчёт временно недоступен.");
+    if (order.status === "REPORT_FAILED" && Number(options.expectedAttempt) !== Number(order.reportGenerationAttempt)) {
+      return failure(409, "Состояние подготовки отчёта изменилось. Обновите страницу и попробуйте снова.");
+    }
     const now=this.isoNow(), runId=randomId("generation"), leaseUntil=new Date(this.now().getTime()+30*60*1000).toISOString();
     const claim=await this.orderStore.claimReportGeneration({ orderId,now,leaseUntil,runId });
     if (!claim.claimed) return success(claim.order?.status === "REPORT_READY" ? 200 : 202, claim.order || order);
     order=claim.order;
     this.logGenerationStage(order, "generation_claimed", { attempt: order.reportGenerationAttempt });
     if (!this.generationPromises.has(order.reportId)) {
-      const job=this.finishGeneration(order).finally(()=>this.generationPromises.delete(order.reportId));
+      const job=this.finishGeneration(order,saved?.kind === "semantic-report" ? saved : null).finally(()=>this.generationPromises.delete(order.reportId));
       this.generationPromises.set(order.reportId,job);
     }
     return success(202,order);
   }
 
-  async finishGeneration(order) {
+  async finishGeneration(order, savedEnvelope = null) {
     try {
-      const envelope=await this.reportGenerator(order);
+      const envelope=savedEnvelope || await this.reportGenerator(order);
       if (envelope?.kind !== "semantic-report" || envelope.reportId !== order.reportId || envelope.chartId !== order.chartId) throw generationError("REPORT_BINDING_MISMATCH");
+      if (!savedEnvelope) {
+        try { await this.reportStore.saveImmutable(envelope); }
+        catch(error) { if(!error.generationStage) error.generationStage="report_persistence"; throw error; }
+        this.logGenerationStage(order, "report_persisted");
+      } else this.logGenerationStage(order, "report_reused");
       this.logGenerationStage(order, "pdf_render_started");
-      const rendered=await this.pdfRenderer(envelope);
-      if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer) || rendered.buffer.subarray(0,5).toString() !== "%PDF-") throw generationError("PDF_RENDER_FAILED");
+      let rendered;
+      try { rendered=await this.pdfRenderer(envelope); }
+      catch(error) { if(!error.generationStage) error.generationStage="pdf_render"; throw error; }
+      if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer) || rendered.buffer.subarray(0,5).toString() !== "%PDF-") throw generationError("PDF_RENDER_FAILED",{generationStage:"pdf_render"});
       this.logGenerationStage(order, "pdf_rendered");
-      await this.reportStore.saveImmutable(envelope);
-      this.logGenerationStage(order, "report_persisted");
       const current=await this.orderStore.load(order.orderId);
       if (current?.reportGenerationRunId === order.reportGenerationRunId) {
         await this.saveOrder(current,{ status:"REPORT_READY",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:null,generationFailureStage:null,generationFailureHttpStatus:null });
@@ -380,7 +384,7 @@ class PremiumService {
   }
 
   logGenerationStage(order, stage, details = {}) {
-    this.logger.info?.("[REPORT_GENERATION_STAGE]",JSON.stringify({ orderId:order.orderId,reportId:order.reportId,stage,attempt:details.attempt || null,model:details.model || null,providerType:details.providerType || null }));
+    this.logger.info?.("[REPORT_GENERATION_STAGE]",JSON.stringify({ orderId:order.orderId,reportId:order.reportId,stage,attempt:details.attempt || null,model:details.model || null,providerType:details.providerType || null,durationMs:Number.isFinite(details.durationMs)?details.durationMs:null,requestId:details.requestId || null,responseStatus:details.responseStatus || null }));
   }
 
   async waitForGenerationJobs() { await Promise.allSettled([...this.generationPromises.values()]); }

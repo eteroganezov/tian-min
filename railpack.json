@@ -1,0 +1,10 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "provider": "node",
+  "deploy": {
+    "aptPackages": [
+      "fonts-dejavu-core",
+      "fonts-noto-cjk"
+    ]
+  }
+}

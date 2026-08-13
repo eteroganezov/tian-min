@@ -189,8 +189,9 @@ test("REPORT_FAILED можно повторить без новой оплаты
     await context.service.startPayment(order.orderId);
     await context.service.applyMockOutcome(order.orderId, "succeeded");
     await context.service.generate(order.orderId); await context.service.waitForGenerationJobs();
-    assert.equal((await context.service.getOrder(order.orderId)).body.order.status, "REPORT_FAILED");
-    await context.service.generate(order.orderId); await context.service.waitForGenerationJobs();
+    const failed=(await context.service.getOrder(order.orderId)).body.order;
+    assert.equal(failed.status, "REPORT_FAILED");
+    await context.service.generate(order.orderId,{expectedAttempt:failed.reportGenerationAttempt}); await context.service.waitForGenerationJobs();
     assert.equal((await context.service.getOrder(order.orderId)).body.order.status, "REPORT_READY");
     assert.equal(calls, 2);
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
