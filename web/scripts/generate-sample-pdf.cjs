@@ -34,7 +34,7 @@ function buildLongStressVariant() {
       report.career.headline="Роль, в которой можно не только отвечать за качество результата, но и влиять на правила, критерии и способ совместного исполнения";
       report.relationships.summary+=` ${report.relationships.insights[3].text}`;
       report.environment.communication+=` ${report.leadership.negotiation}`;
-      report.money.insights[0].text+=` ${report.money.insights[1].text}`;
+      report.money.insights[0].text+=" Ценность становится понятнее, когда путь от исходной неопределённости до принятого решения можно показать на одном завершённом примере.";
       report.strengths[0].essence+=" Особенно заметен навык удерживать связь между исходным вопросом, выбранным критерием и конечным результатом даже в длинной задаче.";
     } }) };
 }

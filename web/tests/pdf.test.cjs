@@ -75,7 +75,7 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
   const normalizedText=parsed.text.replace(/\s+/gu," ");
-  const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Ваш портрет в двух минутах","Как читать этот отчёт"].map((title,index)=>index===0?normalizedText.indexOf(title):normalizedText.lastIndexOf(title));
+  const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Как читать этот отчёт","Ваш портрет в двух минутах"].map((title,index)=>index===0?normalizedText.indexOf(title):normalizedText.lastIndexOf(title));
   assert.equal(opening.every((position,index)=>position>=0&&(index===0||position>opening[index-1])),true,opening.join(" < "));
   assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Баланс и структура Ба-цзы"),true);
   assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
@@ -87,8 +87,10 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.doesNotMatch(parsed.text, /[\u0000\uFFFD\uFFFE\uFFFF]/u);
   assert.doesNotMatch(parsed.text, /\b(?:произойдёт|вас ждёт|точно случится)\b/iu);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI-интерпретация/);
-  assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
-  assert.match(parsed.text,/Легенда технической силы[\s\S]{0,120}得令\s*[—-]\s*сезонная поддержка[\s\S]{0,260}得势\s*[—-]\s*поддержка\s+общей конфигурации/i);
+  assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
+  assert.match(parsed.text,/Как читать техническую оценку/i);
+  assert.match(parsed.text,/得令\s*[—-]\s*сезонная поддержка/i);
+  assert.match(parsed.text,/得势\s*[—-]\s*вклад\s+общей\s+картины/i);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -258,12 +260,12 @@ test("review pair использует единую текущую точку и
   assert.equal(exact.report.money.summary.endsWith("заранее определять предел финансового риска."),true);
   const result=await createPdfRequest({ ...exact.input,report:exact.report },{ hasFullReport:true });
   const parsed=await pdfParse(result.buffer);
-  assert.match(parsed.text,/Это\s+не\s+обещание дохода:[\s\S]{0,760}заранее определять\s+предел финансового риска\./i);
+  assert.match(parsed.text,/Практический результат зависит[\s\S]{0,760}заранее определять\s+предел финансового риска\./i);
   assert.match(parsed.text,new RegExp(`ТОЧКА ОТСЧ[ЕЁ]ТА[\\s\\S]{0,80}${referenceYear}`));
   assert.match(parsed.text,new RegExp(`Ближайшие три года[\\s\\S]{0,900}${referenceYear}[\\s\\S]{0,900}${referenceYear+1}[\\s\\S]{0,900}${referenceYear+2}`));
-  assert.match(parsed.text,/уверенность\s+расчёта\s*[—-]\s*Средняя \(中\)/i);
-  assert.match(parsed.text,/уверенность\s+расчёта\s*[—-]\s*Низкая \(低\)/i);
-  assert.match(parsed.text,/Уровень чувствительности расчёта\s*[—-]\s*Высокая \(HIGH\)/i);
+  assert.match(parsed.text,/уверенность\s*[—-]\s*Средняя \(中\)/i);
+  assert.match(parsed.text,/уверенность\s*[—-]\s*Низкая \(低\)/i);
+  assert.match(parsed.text,/КАК РЕАГИРУЕТ РАСЧЁТ[\s\S]{0,80}Высокая чувствительность/i);
 });
 
 test("v4 renderer выдерживает exact, approximate и внутренний long stress-test без пустых страниц", async () => {
@@ -273,6 +275,8 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
   assert.equal(review.length,2);
   const exact=review.find(value=>value.key==="exact");
   const approximate=review.find(value=>value.key==="approximate");
+  const longStressSentence="Ценность становится понятнее, когда путь от исходной неопределённости до принятого решения можно показать на одном завершённом примере.";
+  assert.equal((JSON.stringify(long.report).match(new RegExp(longStressSentence.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"))||[]).length,1);
   assert.deepEqual(
     { ...exact.input,birthTimeCertainty:undefined },
     { ...approximate.input,birthTimeCertainty:undefined },
@@ -296,10 +300,10 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
     assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`${variant.key}: ${parsed.numpages} страниц`);
-    assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
+    assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
+    assert.equal((parsed.text.match(/Зависит от времени рождения/gu)||[]).length,2,`${variant.key}: знак чувствительности должен быть только в руководстве и текущем периоде`);
     if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
-      assert.match(parsed.text,/Часозависимый акцент/i);
     }else{
       assert.doesNotMatch(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
     }
