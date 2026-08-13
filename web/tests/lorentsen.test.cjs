@@ -67,6 +67,64 @@ test("provider принимает фактический nested create contract 
   assert.equal(result.traceId, "trace_2");
 });
 
+test("актуальный direct data contract одинаково работает для create 201 и authenticated GET 200", async () => {
+  const responses = [
+    response(201, { data: {
+      payment_public_id: "01DIRECTCREATE", external_order_id: "order_direct_1", payment_status: "preparing",
+      payment_method: null, retry_after_seconds: 4, created_at: "2026-08-13T00:00:00Z",
+    }, meta: {}, request_id: "request-create" }),
+    response(200, { data: {
+      payment_public_id: "01DIRECTCREATE", external_order_id: "order_direct_1", payment_status: "requires_action",
+      payment_method: { link: "https://pay.example.test/direct", image: "https://cdn.example.test/direct.png", expires_at: "2026-08-13T00:15:00Z" },
+      retry_after_seconds: 5, updated_at: "2026-08-13T00:00:05Z",
+    }, meta: {}, request_id: "request-get" }),
+  ];
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => responses.shift() });
+  const created = await provider.createPayment({ requestBody: { external_order_id: "order_direct_1" }, idempotencyKey: "idem-direct" });
+  assert.equal(created.httpStatus, 201);
+  assert.equal(created.paymentPublicId, "01DIRECTCREATE");
+  assert.equal(created.status, "preparing");
+  assert.equal(created.paymentMethod, null);
+  const fetched = await provider.getPaymentStatus(created.paymentPublicId);
+  assert.equal(fetched.httpStatus, 200);
+  assert.equal(fetched.status, "requires_action");
+  assert.deepEqual(fetched.paymentMethod, {
+    link: "https://pay.example.test/direct",
+    image: "https://cdn.example.test/direct.png",
+    expiresAt: "2026-08-13T00:15:00.000Z",
+  });
+});
+
+test("валидный nested payment_method не становится INVALID_PROVIDER_RESPONSE и логируется без QR payload", async () => {
+  const entries = [];
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: { info: (...args) => entries.push(args) }, fetch: async () => response(200, {
+    data: {
+      payment_public_id: "01SAFELOG", external_order_id: "order_safe_1", payment_status: "requires_action",
+      payment_method: { link: "https://pay.example.test/private-path", image: "data:image/png;base64,cHJpdmF0ZS1xcg==", expires_at: "2026-08-13T00:15:00Z" },
+      retry_after_seconds: 5,
+    },
+    meta: { trace_id: "trace-safe" }, request_id: "request-safe",
+  }) });
+  const result = await provider.createPayment({ requestBody: {}, idempotencyKey: "idem-safe" });
+  assert.equal(result.status, "requires_action");
+  assert.equal(entries[0][0], "[PAYMENT_PROVIDER_RESPONSE]");
+  const diagnostic = JSON.parse(entries[0][1]);
+  assert.equal(diagnostic.httpStatus, 200);
+  assert.equal(diagnostic.paymentPublicId, "01SAFELOG");
+  assert.equal(diagnostic.externalOrderId, "order_safe_1");
+  assert.equal(diagnostic.paymentStatus, "requires_action");
+  assert.equal(diagnostic.hasPaymentMethod, true);
+  assert.equal(diagnostic.hasPaymentLink, true);
+  assert.equal(diagnostic.hasPaymentImage, true);
+  assert.equal(diagnostic.hasPaymentMethodExpiry, true);
+  assert.deepEqual(diagnostic.topLevelFields, ["data", "meta", "request_id"]);
+  assert.deepEqual(diagnostic.dataFields, ["payment_public_id", "external_order_id", "payment_status", "payment_method", "retry_after_seconds"]);
+  assert.equal(diagnostic.requestId, "request-safe");
+  assert.equal(diagnostic.traceId, "trace-safe");
+  assert.match(diagnostic.timestamp, /^\d{4}-\d{2}-\d{2}T/);
+  assert.doesNotMatch(entries[0][1], /private-path|cHJpdmF0ZS1xcg|test-token/);
+});
+
 test("structural diagnostics содержит только имена полей, а не provider values", () => {
   const shape = describePaymentPayload({ data: { payment: { payment_public_id: "pay_private", payer_email: "private@example.test", payment_status: "preparing" } } });
   assert.deepEqual(shape.fields, ["$.data", "$.data.payment", "$.data.payment.payment_public_id", "$.data.payment.payer_email", "$.data.payment.payment_status"]);
@@ -105,8 +163,14 @@ test("422 сохраняет безопасную provider-диагностик�
 
 test("все документированные provider statuses поддержаны, неизвестный становится provider_result_unknown", async () => {
   assert.deepEqual(PROVIDER_STATUSES, ["preparing", "processing", "requires_action", "succeeded_pending", "settled", "manual_review", "failed", "expired", "provider_result_unknown"]);
+  for (const status of PROVIDER_STATUSES) {
+    const providerForStatus = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { data: { payment_public_id: `pay_${status}`, external_order_id: `ext_${status}`, payment_status: status } }) });
+    assert.equal((await providerForStatus.getPaymentStatus(`pay_${status}`)).status, status);
+  }
   const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { payment_public_id: "pay_unknown", external_order_id: "ext_unknown", payment_status: "invented" }) });
   assert.equal((await provider.getPaymentStatus("pay_unknown")).status, "provider_result_unknown");
+  const initialized = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { data: { payment_public_id: "pay_initialized", external_order_id: "ext_initialized", payment_status: "INITIALIZED" } }) });
+  assert.equal((await initialized.getPaymentStatus("pay_initialized")).status, "provider_result_unknown");
 });
 
 test("production Lorentsen configuration fail-closed и API base защищён от SSRF", () => {
@@ -189,6 +253,46 @@ function serviceSetup(statuses, options = {}) {
   return { service, orderStore, provider };
 }
 const validConsent = { email: "payer@example.test", termsAccepted: true, autoRedemptionAccepted: true };
+
+test("INITIALIZED-equivalent через nested create запускает GET polling и reload получает usable QR", async () => {
+  let externalOrderId;
+  const calls = [];
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async (url, options) => {
+    calls.push({ url: String(url), method: options.method });
+    if (options.method === "POST") {
+      externalOrderId = JSON.parse(options.body).external_order_id;
+      return response(201, { data: {
+        payment_public_id: "01POLLTHENQR", external_order_id: externalOrderId, payment_status: "INITIALIZED",
+        payment_method: null, retry_after_seconds: 3,
+      }, request_id: "request-initialized" });
+    }
+    return response(200, { data: {
+      payment_public_id: "01POLLTHENQR", external_order_id: externalOrderId, payment_status: "requires_action",
+      payment_method: { link: "https://pay.example.test/poll-result", image: "https://cdn.example.test/poll-result.png", expires_at: "2026-08-12T10:15:00Z" },
+      retry_after_seconds: 5,
+    }, request_id: "request-action" });
+  } });
+  let current = new Date("2026-08-12T10:00:01Z");
+  const ctx = serviceSetup([], { provider, now: () => current });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  assert.equal(started.body.order.status, "PAYMENT_PENDING");
+  assert.equal(started.body.order.providerStatus, "provider_result_unknown");
+  assert.equal(started.body.order.paymentId, "01POLLTHENQR");
+  assert.equal(started.body.order.paymentMethod, null);
+  current = new Date("2026-08-12T10:00:05Z");
+  const recovered = await ctx.service.getOrder(order.orderId);
+  assert.equal(recovered.body.order.providerStatus, "requires_action");
+  assert.deepEqual(recovered.body.order.paymentMethod, {
+    link: "https://pay.example.test/poll-result",
+    image: "https://cdn.example.test/poll-result.png",
+    expiresAt: "2026-08-12T10:15:00.000Z",
+  });
+  assert.deepEqual(calls.map(call => call.method), ["POST", "GET"]);
+  const reloadedBeforeNextPoll = await ctx.service.getOrder(order.orderId);
+  assert.deepEqual(reloadedBeforeNextPoll.body.order.paymentMethod, recovered.body.order.paymentMethod);
+  assert.deepEqual(calls.map(call => call.method), ["POST", "GET"]);
+});
 
 test("production checkout хранит 59900 minor units, exact consent schema и server-side amount", async () => {
   const ctx = serviceSetup(["preparing"]);

@@ -45,8 +45,10 @@ class LorentsenPaymentProvider {
     const retryAfterSeconds = parseRetryAfter(response.headers?.get?.("retry-after"));
     const payload = await readSafeJson(response);
     this.logger.info?.("[PAYMENT_PROVIDER_RESPONSE]", JSON.stringify({
+      timestamp: new Date().toISOString(),
       stage: method === "POST" ? "create_payment" : "get_payment",
       httpStatus: response.status,
+      ...describePaymentResponse(payload),
       responseShape: describePaymentPayload(payload),
     }));
     if (!options.acceptedStatuses.includes(response.status)) {
@@ -148,6 +150,26 @@ function describePaymentPayload(payload) {
   return { kind: "object", fields };
 }
 
+function describePaymentResponse(payload) {
+  const payment = findPaymentRecord(payload);
+  const method = payment?.payment_method && typeof payment.payment_method === "object" && !Array.isArray(payment.payment_method)
+    ? payment.payment_method
+    : null;
+  return {
+    paymentPublicId: safeLogIdentifier(payment?.payment_public_id),
+    externalOrderId: safeLogIdentifier(payment?.external_order_id),
+    paymentStatus: safeDiagnosticToken(payment?.payment_status ?? payment?.status),
+    hasPaymentMethod: Boolean(method),
+    hasPaymentLink: Boolean(method && typeof method.link === "string" && method.link.trim()),
+    hasPaymentImage: Boolean(method && typeof method.image === "string" && method.image.trim()),
+    hasPaymentMethodExpiry: Boolean(method && typeof method.expires_at === "string" && method.expires_at.trim()),
+    topLevelFields: safeFieldNames(payload),
+    dataFields: safeFieldNames(payload?.data),
+    requestId: safeLogIdentifier(payload?.request_id ?? payload?.meta?.request_id),
+    traceId: safeLogIdentifier(payment?.trace_id ?? payload?.trace_id ?? payload?.meta?.trace_id),
+  };
+}
+
 function normalizePaymentMethod(value) {
   if (value == null) return null;
   if (typeof value !== "object") return null;
@@ -223,6 +245,11 @@ function collectDiagnosticFields(value) {
   return candidates.map(safeDiagnosticField).filter(Boolean);
 }
 function safeDiagnosticToken(value) { const string = String(value || "").trim(); return /^[A-Za-z0-9_.:-]{1,120}$/.test(string) ? string : null; }
+function safeLogIdentifier(value) { const string = String(value || "").trim(); return /^[A-Za-z0-9_.:-]{1,200}$/.test(string) ? string : null; }
+function safeFieldNames(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  return Object.keys(value).filter(key => /^[A-Za-z0-9_.-]{1,120}$/.test(key)).slice(0, 80);
+}
 function safeDiagnosticField(value) { const string = String(value || "").trim(); return /^[A-Za-z0-9_.\[\]-]{1,160}$/.test(string) ? string : null; }
 function safeDiagnosticText(value) {
   if (typeof value !== "string") return null;
@@ -232,4 +259,4 @@ function safeDiagnosticText(value) {
 function providerError(message, status, retryable, code) { const error = new Error(message); error.status = status; error.retryable = retryable; error.code = code; return error; }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
 
-module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, describePaymentPayload, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };
+module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, describePaymentPayload, describePaymentResponse, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };
