@@ -17,6 +17,11 @@ The free calculation accepts an optional name, local Gregorian birth date, local
 
 Premium is a separate one-time purchase: **«Ба-цзы + Цзы Вэй · Персональный разбор · Полный PDF-отчёт»**. The public price is **599 RUB** (`59900` minor units). Production price is server-owned; the frontend only displays `/api/premium/config`. The default development/mock price may remain `100 RUB` when no explicit development override is set. Lower amounts are available only through explicitly active server-owned promo codes.
 
+Current product principle:
+
+- **FREE:** several understandable personal calculated points, proof that BaZi and Zi Wei were actually calculated, and technical details on demand;
+- **PREMIUM:** explains how the calculated data works together and what it means personally: strengths, growth areas, work and money, relationships, the current life stage, upcoming periods and practical orientation.
+
 ## Calculation and time architecture
 
 - `calculator/` contains the TypeScript BaZi/Zi Wei algorithms, the vendored Yiqi core, enrichment logic and `lunar-typescript` integration.
@@ -38,11 +43,15 @@ The calculation core, `local-chart.ts`, `TRUE_SOLAR_TIME_V1`, historical-time ru
 
 Future user-facing Premium/PDF wording must account for both signals without treating either as the other.
 
+In the first two real-user tests, both users selected `approximate` / ±30 minutes. This is a research observation, not evidence of general behavior. For the next 5–10 users, ask: **«Почему вы выбрали примерное время, а не точное?»** Distinguish people who genuinely do not know their precise time from people made uncertain by the wording or UI. Do not change the current certainty logic without further evidence.
+
 ## Web application
 
 - `web/server.cjs` serves the application and API; production binds to `0.0.0.0` and uses `process.env.PORT`.
 - `web/public/` is the Russian frontend; `web/scripts/build.cjs` copies it to `web/dist/` after checks.
 - The mobile-first free funnel, sticky navigation, Telegram/WebView fallback, mobile Safari input protection, location autocomplete, free preview and Premium offer are implemented.
+- Production uses the personal-first **Free Result Variant B** (`b31bcbe2494351cb11756c5fe244c174914eb372`). It presents personal meaning first, calculation proof second, Premium value next and professional detail through progressive disclosure. Technical depth was not removed.
+- The technical-first Variant A remains preserved at commit `34f7358d4e3f1dc704cdfedc9439a9d4ea36920b` and tag `free-result-v1-technical-first`. Do not build automated A/B infrastructure yet; compare qualitative observations after 3–5 additional Variant B tests.
 - The free Zi Wei result explains the 12 life-area palaces in human language. Palace cards use local static accessible disclosures for generic sphere meanings; calculated stars and age periods remain unchanged, while the Premium bridge clearly reserves personal interpretation for the existing paid flow.
 - WEB visual v1 is **FROZEN**. Do not continue cosmetic polish without a separate material requirement.
 
@@ -70,11 +79,13 @@ After backend changes, restart Node fully and confirm an old process did not sur
 
 The deterministic calculation remains authoritative. AI only interprets the supplied evidence. Real OpenAI generation is opt-in and must never be used for visual QA. Premium Generation & Delivery v1 connects this existing pipeline only after a server-verified legitimate entitlement: authenticated Lorentsen `settled`/paid access or a separate `complimentary_promo` entitlement. Generation uses an atomic persisted claim and explicit `REPORT_GENERATING` / `REPORT_READY` / `REPORT_FAILED` lifecycle. The immutable `personal-report-v4` semantic artifact is stored in the existing report store; PDF is deterministically rendered from that saved artifact and never requires another OpenAI generation.
 
+The first real Premium user successfully completed the full production path: `FAMILY0` → `complimentary_promo` entitlement → real OpenAI generation → Report v4 validation → immutable semantic persistence → PDF render → `REPORT_READY` → secure open/download. No user PII is recorded here. Once the semantic report has been persisted, a PDF retry or re-render must reuse it and make **zero** additional OpenAI generation calls.
+
 ## Premium PDF
 
 `web/lib/pdf-template.cjs` routes full `personal-report-v4` documents to the shared renderer in `web/lib/pdf-template-v4.cjs`; `web/lib/pdf-service.cjs` supplies the same validated semantic report, calculated chart view, evidence catalog and birth metadata. Legacy rendering exists only for saved-report compatibility.
 
-The current PDF design uses one shared v4 renderer/design system. The older “Premium PDF v5.2” work is a visual/reference source, not the current semantic schema. A final editorial/product polish and exact/approximate review PDFs are active in a separate workstream. Do not call the current PDF finally approved until human review is complete, and do not edit PDF files during unrelated work.
+The current PDF design uses one shared v4 renderer/design system. The older “Premium PDF v5.2” work is a visual/reference source, not the current semantic schema. **Premium PDF v4 is FROZEN.** Change it only for an objective bug/regression or concrete real-user feedback; do not start internal visual iterations without a user signal. Railway runtime includes the verified Unicode/CJK font fix required by the frozen renderer.
 
 Ready Premium reports are delivered through a separate high-entropy capability token. Open and download routes recheck entitlement and report/chart binding server-side, use a privacy-safe filename and disclose no birth, order or payment ID in the URL. Same-browser recovery stores the order capability in local browser storage and restores generating/ready/failed state; email and cross-device recovery remain out of scope.
 
@@ -102,7 +113,17 @@ Promo Codes v1 is server-owned and bound to one exact order/report. `FAMILY0` ta
 - Local DEV orders/reports use ignored filesystem stores; production Lorentsen records use PostgreSQL.
 - Secrets belong only in environment/deployment secret storage and must never enter Git, logs or frontend payloads.
 
-Deployment exists, but launch readiness is not complete while payment is in external `manual_review`, controlled `settled` validation is absent, and final PDF human review is open. Premium generation is implemented behind the legitimate entitlement gate; a real production FAMILY0 generation is intentionally left for a separately authorized manual test.
+Production OpenAI configuration, immutable PostgreSQL semantic-report persistence, deterministic PDF re-render and Railway Unicode/CJK font support are deployed. The real complimentary `FAMILY0` path has completed successfully. The paid path remains architecturally tested but is **not verified with real money** until a controlled `FRIEND100` attempt reaches authenticated Lorentsen `settled`; `SUPPORT399` and the normal `599 RUB` path are likewise not yet real-payment verified. A separate old `manual_review` attempt remains blocked on authoritative provider clarification.
+
+## First-user product research
+
+The first two users showed that the technical-first Variant A created excessive cognitive load: people saw many professional calculated values before understanding why they mattered, what they meant personally or what additional value Premium would provide. Variant B therefore follows:
+
+**PERSONAL MEANING → TRUST / CALCULATION PROOF → PREMIUM VALUE → TECHNICAL DETAILS ON DEMAND.**
+
+Repeated feedback shows that users do not understand terms such as Four Pillars, Heavenly Stem / Earthly Branch, Ten Gods, «Грабитель богатства», «Семь убийц», Four Transformations, palace age ranges and traditional Chinese labels without context. Emotionally loaded traditional terms may be interpreted literally. Free should not try to teach the whole field of Chinese metaphysics: technical terminology is a secondary, progressively disclosed professional layer, while Premium explains combinations and personal meaning.
+
+The underlying questions are: **«Что это означает лично для меня? Почему это важно? На что обратить внимание? Как это связано с отношениями, работой, деньгами и текущим жизненным этапом?»** The product should offer actionable reflection, focus and practical orientation—not deterministic commands to divorce, relocate, have children, change a name, place an object or plant, or make major life decisions solely from the chart.
 
 ## Product and engineering decisions
 
@@ -112,7 +133,7 @@ Deployment exists, but launch readiness is not complete while payment is in exte
 - Frontend state can never prove payment or set `PAID`.
 - Reports must be evidence-backed; unsupported predictive claims are rejected rather than softened into apparent facts.
 - Ready reports must be persisted and reused; retries after generation failure must not require another payment or unnecessary AI call.
-- WEB visual v1 is frozen. Premium PDF is a separate layer and is not yet human-approved.
+- WEB visual v1 and Premium PDF v4 are frozen; change either only for a material requirement, objective regression or concrete user feedback.
 - `birthTimeCertainty` and calculated sensitivity are independent signals.
 - Promo discounts, availability and redemption limits are server/database-owned. A complimentary entitlement is not a payment and never sets `PAID`; paid promos retain the authenticated `settled` requirement.
 - Brand architecture is `Tian Min / Тянь Мин`, Chinese wordmark `天命`, standalone symbol `命`, primary lockup `[命] ТЯНЬ МИН 天命`. The site includes scalable and 16/32/180 favicon assets without changing the main logo.
@@ -128,7 +149,7 @@ Main external/runtime dependencies:
 - `city-timezones` and `timezonecomplete` for location/time handling;
 - PostgreSQL (`pg`) for production order/payment/report persistence;
 - Lorentsen API/webhooks for production payment;
-- OpenAI Responses API for future real Premium generation;
+- OpenAI Responses API for legitimate real Premium generation;
 - `pdfkit` and fonts available to the runtime for PDF generation;
 - Railway for the current production deployment.
 
