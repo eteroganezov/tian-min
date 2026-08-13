@@ -49,6 +49,7 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Ваша карта · Ба-цзы/);
   assert.match(parsed.text, /Ваша карта · Пять элементов/);
   assert.match(parsed.text, /Ваша карта · Цзы Вэй/);
+  assert.match(parsed.text, /Ваше место на временной карте/);
   assert.match(parsed.text, /Как читать этот отчёт/);
   assert.match(parsed.text, /ОСНОВАНИЯ ВАШЕГО РАЗБОРА/i);
   assert.match(parsed.text, /Паспорт Ба-цзы/);
@@ -68,24 +69,25 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages >= 33 && parsed.numpages <= 42, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 34 && parsed.numpages <= 47, true, `Получилось ${parsed.numpages} страниц`);
   assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
-  assert.equal(parsed.text.indexOf("Содержание") < parsed.text.indexOf("Ваш портрет в двух минутах"),true);
-  assert.equal(parsed.text.indexOf("Ваш портрет в двух минутах") < parsed.text.indexOf("Ваша карта · Ба-цзы"),true);
-  assert.equal(parsed.text.indexOf("Ваша карта · Цзы Вэй") < parsed.text.indexOf("Как читать этот отчёт"),true);
+  const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Ваш портрет в двух минутах","Как читать этот отчёт"].map(title=>parsed.text.indexOf(title));
+  assert.equal(opening.every((position,index)=>position>=0&&(index===0||position>opening[index-1])),true,opening.join(" < "));
   assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Паспорт Ба-цзы"),true);
   assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
   assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
   assert.match(parsed.text,/Хуа Лу[\s\S]{0,100}РЕСУРС И ВОЗМОЖНОСТИ/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
+  assert.doesNotMatch(parsed.text,/\[object Object\]/i);
   assert.doesNotMatch(parsed.text, /(?:bazi|ziwei|time)\.[a-z0-9_.-]+/i);
   assert.doesNotMatch(parsed.text, /[\u0000\uFFFD\uFFFE\uFFFF]/u);
   assert.doesNotMatch(parsed.text, /\b(?:произойдёт|вас ждёт|точно случится)\b/iu);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI-интерпретация/);
   assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
+  assert.match(parsed.text,/Легенда технической силы[\s\S]{0,120}得令\s*[—-]\s*сезонная поддержка[\s\S]{0,260}得势\s*[—-]\s*поддержка\s+общей конфигурации/i);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -240,6 +242,29 @@ test("PDF-рендерер принимает короткие и длинные
   assert.match(parsed.text, /Раньше проговаривать ожидания/);
 });
 
+test("review pair использует единую текущую точку и не обрывает critical hero copy", async () => {
+  const [exact,approximate]=buildReviewVariants();
+  const referenceYear=new Date().getUTCFullYear();
+  assert.deepEqual(exact.report.yearlyOutlook.map(value=>value.year),[referenceYear,referenceYear+1,referenceYear+2]);
+  assert.deepEqual(exact.report,approximate.report,"certainty metadata не должна менять рассчитанное содержание карты");
+  assert.deepEqual(exact.evidenceCatalog,approximate.evidenceCatalog);
+  const byId=new Map(exact.evidenceCatalog.items.map(value=>[value.id,value]));
+  const currentBazi=(exact.report.currentPeriod.evidence||[]).map(id=>byId.get(id)).find(value=>value?.id.startsWith("bazi.luck_period."));
+  const currentZiwei=byId.get("ziwei.current_palace");
+  assert.ok(currentBazi?.data.startYear<=referenceYear&&currentBazi?.data.endYear>=referenceYear,currentBazi?.fact);
+  const calculatedAge=referenceYear-Number(exact.input.date.slice(0,4))+1;
+  assert.ok(currentZiwei?.data.agePeriod.startAge<=calculatedAge&&currentZiwei?.data.agePeriod.endAge>=calculatedAge,currentZiwei?.fact);
+  assert.equal(exact.report.money.summary.endsWith("заранее определять предел финансового риска."),true);
+  const result=await createPdfRequest({ ...exact.input,report:exact.report },{ hasFullReport:true });
+  const parsed=await pdfParse(result.buffer);
+  assert.match(parsed.text,/Это\s+не\s+обещание дохода:[\s\S]{0,760}заранее определять\s+предел финансового риска\./i);
+  assert.match(parsed.text,new RegExp(`ТОЧКА ОТСЧ[ЕЁ]ТА[\\s\\S]{0,80}${referenceYear}`));
+  assert.match(parsed.text,new RegExp(`Ближайшие три года[\\s\\S]{0,900}${referenceYear}[\\s\\S]{0,900}${referenceYear+1}[\\s\\S]{0,900}${referenceYear+2}`));
+  assert.match(parsed.text,/уверенность\s+расчёта\s*[—-]\s*Средняя \(中\)/i);
+  assert.match(parsed.text,/уверенность\s+расчёта\s*[—-]\s*Низкая \(低\)/i);
+  assert.match(parsed.text,/Уровень чувствительности расчёта\s*[—-]\s*Высокая \(HIGH\)/i);
+});
+
 test("v4 renderer выдерживает exact, approximate и внутренний long stress-test без пустых страниц", async () => {
   const review=buildReviewVariants();
   const long=buildLongStressVariant();
@@ -255,7 +280,7 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
   assert.equal(approximate.input.birthTimeCertainty,"approximate");
   assert.equal(exact.calculationMetadata.calculationSensitivity,approximate.calculationMetadata.calculationSensitivity);
   assert.deepEqual(exact.calculationMetadata.sensitivityFlags,approximate.calculationMetadata.sensitivityFlags);
-  assert.equal(approximate.report.yearlyOutlook.every(year=>year.evidence.every(id=>!id.startsWith("ziwei.annual."))),true);
+  assert.deepEqual(exact.report.yearlyOutlook.map(year=>year.evidence),approximate.report.yearlyOutlook.map(year=>year.evidence));
   for(const variant of variants){
     assert.deepEqual(consecutiveTextDuplicates(variant.report),[],`${variant.key}: найдены соседние дубли`);
     const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
@@ -268,8 +293,8 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.equal(pages.length,parsed.numpages,variant.key);
     assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
     assert.match(parsed.text,/Итоговая персональная линия/i);
-    assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
-    assert.equal(parsed.numpages>=29&&parsed.numpages<=44,true,`${variant.key}: ${parsed.numpages} страниц`);
+    assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
+    assert.equal(parsed.numpages>=30&&parsed.numpages<=49,true,`${variant.key}: ${parsed.numpages} страниц`);
     assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
     if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);

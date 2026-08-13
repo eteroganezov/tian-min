@@ -2,7 +2,7 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { locationProvider } = require("../lib/location-provider.cjs");
 const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
-const { buildReportContext } = require("../lib/report-service.cjs");
+const { buildReportContext, currentReportYears } = require("../lib/report-service.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
 const { createPdfRequest } = require("../lib/pdf-service.cjs");
 const { canonicalBirthInput } = require("../lib/personalization.cjs");
@@ -11,23 +11,25 @@ const moscow = locationProvider.search("Москва")[0];
 
 function buildVariant({ input, reportYears, mutate }) {
   const calculation = calculateBirthChart(canonicalBirthInput(input));
-  const report = createMockReport(buildReportContext(calculation,{ displayName:input.name },{ model:"mock-v1",reportYears }));
+  const context = buildReportContext(calculation,{ displayName:input.name },{ model:"mock-v1",reportYears });
+  const report = createMockReport(context);
   if(mutate) mutate(report);
-  return { input, report, calculationMetadata:calculation.metadata };
+  return { input, report, calculationMetadata:calculation.metadata, evidenceCatalog:context.evidenceCatalog };
 }
 
 function buildReviewVariants() {
   const baseInput={ name:"Александра",date:"1995-09-03",time:"05:50",gender:"female",placeId:moscow.id };
+  const reportYears=currentReportYears();
   return ["exact","approximate"].map(birthTimeCertainty=>({
     key:birthTimeCertainty,
     filename:`sample-personal-report-v4-${birthTimeCertainty}.pdf`,
-    ...buildVariant({ input:{ ...baseInput,birthTimeCertainty },reportYears:[2036,2037,2038] }),
+    ...buildVariant({ input:{ ...baseInput,birthTimeCertainty },reportYears }),
   }));
 }
 
 function buildLongStressVariant() {
   const input={ name:"Александра-Мария Константиновна Мирославская",date:"1995-09-03",time:"05:50",gender:"female",placeId:moscow.id,birthTimeCertainty:"exact" };
-  return { key:"long",...buildVariant({ input,reportYears:[2036,2037,2038],mutate:report=>{
+  return { key:"long",...buildVariant({ input,reportYears:currentReportYears(),mutate:report=>{
       report.executiveInsights[0].title="Сначала собрать разрозненные факты в единую проверяемую систему, затем определить достаточный критерий и перейти к действию";
       report.career.headline="Роль, в которой можно не только отвечать за качество результата, но и влиять на правила, критерии и способ совместного исполнения";
       report.relationships.summary+=` ${report.relationships.insights[3].text}`;
