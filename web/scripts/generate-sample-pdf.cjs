@@ -29,7 +29,7 @@ function buildReviewVariants() {
 
 function buildLongStressVariant() {
   const input={ name:"Александра-Мария Константиновна Мирославская",date:"1995-09-03",time:"05:50",gender:"female",placeId:moscow.id,birthTimeCertainty:"exact" };
-  return { key:"long",...buildVariant({ input,reportYears:currentReportYears(),mutate:report=>{
+  return { key:"long",filename:"sample-personal-report-v4-long.pdf",...buildVariant({ input,reportYears:currentReportYears(),mutate:report=>{
       report.executiveInsights[0].title="Сначала собрать разрозненные факты в единую проверяемую систему, затем определить достаточный критерий и перейти к действию";
       report.career.headline="Роль, в которой можно не только отвечать за качество результата, но и влиять на правила, критерии и способ совместного исполнения";
       report.relationships.summary+=` ${report.relationships.insights[3].text}`;
@@ -41,7 +41,7 @@ function buildLongStressVariant() {
 
 async function main() {
   const outputDir=path.resolve(__dirname,"..","..","output","pdf");await fs.mkdir(outputDir,{recursive:true});
-  for(const variant of buildReviewVariants()){
+  for(const variant of [...buildReviewVariants(),buildLongStressVariant()]){
     const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
     if(result.status!==200)throw new Error(result.error||`Не удалось создать PDF ${variant.key}`);
     const outputPath=path.join(outputDir,variant.filename);await fs.writeFile(outputPath,result.buffer);process.stdout.write(`${variant.key}: ${outputPath}\n`);

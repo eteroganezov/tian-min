@@ -52,8 +52,8 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Ваше место на временной карте/);
   assert.match(parsed.text, /Как читать этот отчёт/);
   assert.match(parsed.text, /ОСНОВАНИЯ ВАШЕГО РАЗБОРА/i);
-  assert.match(parsed.text, /Паспорт Ба-цзы/);
-  assert.match(parsed.text, /Паспорт Цзы Вэй/);
+  assert.match(parsed.text, /Баланс и структура Ба-цзы/);
+  assert.match(parsed.text, /Двенадцать дворцов Цзы Вэй/);
   assert.match(parsed.text, /Временные шкалы/);
   assert.match(parsed.text, /Характер и внутренние мотивы/);
   assert.match(parsed.text, /Сильные стороны/);
@@ -69,14 +69,15 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages >= 34 && parsed.numpages <= 47, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages >= 30 && parsed.numpages <= 36, true, `Получилось ${parsed.numpages} страниц`);
   assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
-  const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Ваш портрет в двух минутах","Как читать этот отчёт"].map(title=>parsed.text.indexOf(title));
+  const normalizedText=parsed.text.replace(/\s+/gu," ");
+  const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Ваш портрет в двух минутах","Как читать этот отчёт"].map((title,index)=>index===0?normalizedText.indexOf(title):normalizedText.lastIndexOf(title));
   assert.equal(opening.every((position,index)=>position>=0&&(index===0||position>opening[index-1])),true,opening.join(" < "));
-  assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Паспорт Ба-цзы"),true);
+  assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Баланс и структура Ба-цзы"),true);
   assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
   assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
   assert.match(parsed.text,/Хуа Лу[\s\S]{0,100}РЕСУРС И ВОЗМОЖНОСТИ/i);
@@ -294,7 +295,7 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
-    assert.equal(parsed.numpages>=30&&parsed.numpages<=49,true,`${variant.key}: ${parsed.numpages} страниц`);
+    assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`${variant.key}: ${parsed.numpages} страниц`);
     assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer/i);
     if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
