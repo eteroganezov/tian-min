@@ -9,7 +9,6 @@
 - `PAYMENT_MODE=lorentsen`
 - `DATABASE_URL`
 - `PUBLIC_BASE_URL`
-- `PREMIUM_REPORT_PRICE_RUB=399`
 - `LORENTSEN_API_BASE_URL=https://api.lorentsen.pro`
 - `LORENTSEN_API_TOKEN`
 - `LORENTSEN_WEBHOOK_ENDPOINT_ID`
@@ -22,6 +21,8 @@
 - `LORENTSEN_AUTO_REDEMPTION_TERMS_URL`
 
 Секреты нельзя добавлять в `.env.example`, Git, application logs или frontend. `payer_email` хранится только в закрытой consent/payment persistence и не возвращается браузеру.
+
+Production Premium price задаётся versioned server-константой в `web/lib/product-config.cjs`; текущая временная цена закрытого early-user теста — `399 RUB`. `PREMIUM_REPORT_PRICE_RUB` используется только для локальных DEV-сценариев и не может переопределить production price.
 
 ## Manual activation sequence
 

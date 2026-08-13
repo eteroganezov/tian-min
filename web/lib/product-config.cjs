@@ -5,7 +5,7 @@ function getProductConfig(env = process.env) {
   const production = env.NODE_ENV === "production";
   const configured = Number(env.PREMIUM_REPORT_PRICE_RUB);
   const validConfigured = Number.isSafeInteger(configured) && configured > 0 && Number.isSafeInteger(configured * 100);
-  const amount = validConfigured ? configured : (production ? PRODUCTION_PRICE_RUB : DEFAULT_DEV_PRICE_RUB);
+  const amount = production ? PRODUCTION_PRICE_RUB : (validConfigured ? configured : DEFAULT_DEV_PRICE_RUB);
   return Object.freeze({
     productId: "premium-personal-report",
     amount,
