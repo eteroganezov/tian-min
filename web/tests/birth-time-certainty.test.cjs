@@ -60,7 +60,8 @@ test("форма показывает вопрос, обе опции и зам�
   assert.match(css, /\.time-certainty-options\{[^}]*gap:9px\}/);
   assert.match(css, /\.time-certainty-options span\{[^}]*border:1px solid rgba\(24,34,31,\.16\)[^}]*border-radius:8px[^}]*background:#fffefa/);
   assert.match(css, /\.time-certainty-options input:checked\+span\{[^}]*background:var\(--jade\)[^}]*color:#fff/);
-  assert.match(css, /\.time-certainty-helper\[hidden\]\{display:block;visibility:hidden\}/);
+  assert.match(css, /\.time-certainty-helper\[hidden\]\{display:none\}/);
+  assert.doesNotMatch(css, /\.time-certainty-helper\{[^}]*min-height/);
   assert.doesNotMatch(css, /\.time-certainty-options\{[^}]*background:var\(--paper\)/);
 });
 
