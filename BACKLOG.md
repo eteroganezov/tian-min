@@ -8,6 +8,7 @@
 ## BLOCKED / WAITING
 
 - Lorentsen production payment: the existing authenticated provider state is `manual_review`; no QR/link was issued. Wait for provider resolution and do not create a new real attempt while it remains non-terminal.
+- Lorentsen account profile still exposes the external organization label `Edward`; request a provider-side rename to `Тянь Мин`. Tian Min-controlled checkout copy already uses the canonical product name.
 - Controlled production payment validation: the flow is not end-to-end proven until a deliberately supervised attempt reaches authenticated GET `settled`. No real payment should be initiated without a separate explicit task.
 - Independent specialist verification remains required for the explicitly skipped Zi Wei star/bureau/period cases, late 子-hour school rule and selected `TRUE_SOLAR_TIME_V1` astrological references.
 
@@ -35,4 +36,4 @@
 - Lorentsen response parser/recovery for nested payment records, `payment_public_id`, provider status, optional payment method, retry timing and trace ID.
 - Premium Report `personal-report-v4`: deterministic evidence catalog, strict Structured Outputs schema, evidence validation, unsupported-claim protection and legacy compatibility.
 - Shared Premium PDF v4 renderer/design system and saved-report compatibility. Final editorial approval remains in NOW, not DONE.
-- Production launch price set to **599 RUB** (`59900` minor units), owned by server configuration.
+- Temporary closed early-user Premium price set to **399 RUB** (`39900` minor units), owned by server configuration; the previous 599 RUB test price is not current.

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("node:crypto");
-const { LorentsenPaymentProvider, PROVIDER_STATUSES, describePaymentPayload, parseRetryAfter } = require("../lib/lorentsen-provider.cjs");
+const { LorentsenPaymentProvider, PARTNER_PUBLIC_NAME, PROVIDER_STATUSES, describePaymentPayload, parseRetryAfter } = require("../lib/lorentsen-provider.cjs");
 const { verifyLorentsenWebhook } = require("../lib/lorentsen-webhook.cjs");
 const { MemoryOrderStore } = require("../lib/order-store.cjs");
 const { PremiumService } = require("../lib/premium-service.cjs");
@@ -11,7 +11,7 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const birthInput = { name: "Тест", date: "1995-09-03", time: "05:50", gender: "male", placeId: locationProvider.search("Москва")[0].id };
 const providerConfig = {
   apiBaseUrl: "https://api.lorentsen.pro/", apiToken: "test-token", webhookEndpointId: "endpoint-test",
-  webhookSecret: "webhook-test-secret", webhookSigningKeyVersion: "v-test", partnerPublicName: "Edward",
+  webhookSecret: "webhook-test-secret", webhookSigningKeyVersion: "v-test", partnerPublicName: PARTNER_PUBLIC_NAME,
   publicBaseUrl: "https://example.test", termsUrl: "https://example.test/terms", privacyUrl: "https://example.test/privacy",
   autoRedemptionTermsUrl: "https://example.test/redemption", consentVersion: "certificate_purchase_terms_v1",
   autoRedemptionConsentVersion: "partner_auto_redemption_consent_v1", requestTimeoutMs: 1_000,
@@ -37,7 +37,7 @@ test("Lorentsen create использует exact endpoint, bearer и stable ide
     calls.push({ url: String(url), options });
     return response(201, { payment_public_id: "pay_1", external_order_id: "ext_1", payment_status: "preparing", payment_method: null, retry_after_seconds: 7, trace_id: "trace_1" });
   } });
-  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 59900 };
+  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 39900 };
   const result = await provider.createPayment({ requestBody, idempotencyKey: "idem_1" });
   assert.equal(calls[0].url, "https://api.lorentsen.pro/api/v1/integration/payments");
   assert.equal(calls[0].options.headers.Authorization, "Bearer test-token");
@@ -176,6 +176,7 @@ test("все документированные provider statuses поддерж
 test("production Lorentsen configuration fail-closed и API base защищён от SSRF", () => {
   assert.throws(() => new LorentsenPaymentProvider({ env: { NODE_ENV: "production", PAYMENT_MODE: "lorentsen" } }), /не настроены/);
   assert.throws(() => new LorentsenPaymentProvider({ env: lorentsenEnv({ LORENTSEN_API_BASE_URL: "https://evil.example" }) }), /api\.lorentsen\.pro/);
+  assert.equal(new LorentsenPaymentProvider({ env: lorentsenEnv({ LORENTSEN_PARTNER_PUBLIC_NAME: "Edward" }) }).config.partnerPublicName, "Тянь Мин");
 });
 
 test("PostgreSQL production store создаёт durable orders, attempts, consent, inbox, anomalies и reports tables", async () => {
@@ -294,19 +295,20 @@ test("INITIALIZED-equivalent через nested create запускает GET pol
   assert.deepEqual(calls.map(call => call.method), ["POST", "GET"]);
 });
 
-test("production checkout хранит 59900 minor units, exact consent schema и server-side amount", async () => {
+test("production checkout хранит 39900 minor units, exact consent schema и server-side amount", async () => {
   const ctx = serviceSetup(["preparing"]);
   const order = (await ctx.service.createCheckout({ ...birthInput, amount: 1 })).body.order;
-  assert.equal(order.amount, 599);
+  assert.equal(ctx.service.getConfig().amount, 399);
+  assert.equal(order.amount, 399);
   const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(started.body.order.status, "PAYMENT_PENDING");
   const attempt = ctx.provider.createCalls[0];
-  assert.equal(attempt.requestBody.customer_amount_minor, 59900);
+  assert.equal(attempt.requestBody.customer_amount_minor, 39900);
   assert.equal(attempt.requestBody.customer_currency, "RUB");
   assert.equal(attempt.requestBody.consent_version, "certificate_purchase_terms_v1");
   assert.equal(attempt.requestBody.auto_redemption_consent_version, "partner_auto_redemption_consent_v1");
   assert.equal(ctx.orderStore.consents.size, 1);
-  assert.equal([...ctx.orderStore.consents.values()][0].displayedPartnerPublicName, "Edward");
+  assert.equal([...ctx.orderStore.consents.values()][0].displayedPartnerPublicName, "Тянь Мин");
 });
 
 test("email и две отдельные consent actions обязательны", async () => {

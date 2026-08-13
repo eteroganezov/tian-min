@@ -3,6 +3,7 @@ const PROVIDER_STATUSES = Object.freeze([
   "manual_review", "failed", "expired", "provider_result_unknown",
 ]);
 const TERMINAL_STATUSES = new Set(["failed", "expired"]);
+const PARTNER_PUBLIC_NAME = "Тянь Мин";
 
 class LorentsenPaymentProvider {
   constructor(options = {}) {
@@ -72,7 +73,6 @@ function resolveLorentsenConfig(env = process.env) {
     webhookEndpointId: "LORENTSEN_WEBHOOK_ENDPOINT_ID",
     webhookSecret: "LORENTSEN_WEBHOOK_SECRET",
     webhookSigningKeyVersion: "LORENTSEN_WEBHOOK_SIGNING_KEY_VERSION",
-    partnerPublicName: "LORENTSEN_PARTNER_PUBLIC_NAME",
     publicBaseUrl: "PUBLIC_BASE_URL",
     termsUrl: "LORENTSEN_TERMS_URL",
     privacyUrl: "LORENTSEN_PRIVACY_URL",
@@ -91,6 +91,7 @@ function resolveLorentsenConfig(env = process.env) {
   return Object.freeze({
     apiBaseUrl: new URL(apiBaseUrl).toString(),
     ...values,
+    partnerPublicName: PARTNER_PUBLIC_NAME,
     consentVersion: env.LORENTSEN_CONSENT_VERSION || "certificate_purchase_terms_v1",
     autoRedemptionConsentVersion: env.LORENTSEN_AUTO_REDEMPTION_CONSENT_VERSION || "partner_auto_redemption_consent_v1",
     requestTimeoutMs: positiveInteger(env.LORENTSEN_REQUEST_TIMEOUT_MS, 10_000),
@@ -259,4 +260,4 @@ function safeDiagnosticText(value) {
 function providerError(message, status, retryable, code) { const error = new Error(message); error.status = status; error.retryable = retryable; error.code = code; return error; }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
 
-module.exports = { LorentsenPaymentProvider, PROVIDER_STATUSES, TERMINAL_STATUSES, describePaymentPayload, describePaymentResponse, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };
+module.exports = { LorentsenPaymentProvider, PARTNER_PUBLIC_NAME, PROVIDER_STATUSES, TERMINAL_STATUSES, describePaymentPayload, describePaymentResponse, normalizePayment, parseRetryAfter, resolveLorentsenConfig, safeProviderErrorDetails };

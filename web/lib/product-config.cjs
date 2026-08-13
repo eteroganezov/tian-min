@@ -1,5 +1,5 @@
 const DEFAULT_DEV_PRICE_RUB = 100;
-const PRODUCTION_PRICE_RUB = 599;
+const PRODUCTION_PRICE_RUB = 399;
 
 function getProductConfig(env = process.env) {
   const production = env.NODE_ENV === "production";

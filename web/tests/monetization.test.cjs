@@ -70,6 +70,34 @@ test("checkout сохраняет birthTimeCertainty как metadata с legacy d
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
 });
 
+test("оплата старого order не открывает Premium для изменённых birth data или birthTimeCertainty", async () => {
+  const context = setup();
+  try {
+    const original = (await context.service.createCheckout(input)).body.order;
+    const changedBirthData = (await context.service.createCheckout({
+      ...input,
+      date: "1996-10-04",
+      time: "06:40",
+      placeId: locationProvider.search("Санкт-Петербург")[0].id,
+    })).body.order;
+    const changedCertainty = (await context.service.createCheckout({ ...input, birthTimeCertainty: "approximate" })).body.order;
+
+    assert.notEqual(changedBirthData.orderId, original.orderId);
+    assert.notEqual(changedBirthData.reportId, original.reportId);
+    assert.notEqual(changedCertainty.orderId, original.orderId);
+    assert.notEqual(changedCertainty.reportId, original.reportId);
+
+    await context.service.startPayment(original.orderId);
+    await context.service.applyMockOutcome(original.orderId, "succeeded");
+
+    assert.equal((await context.service.getOrder(original.orderId)).body.order.status, "PAID");
+    assert.equal((await context.service.getOrder(changedBirthData.orderId)).body.order.status, "CHECKOUT_STARTED");
+    assert.equal((await context.service.getOrder(changedCertainty.orderId)).body.order.status, "CHECKOUT_STARTED");
+    assert.equal((await context.service.generate(changedBirthData.orderId)).status, 403);
+    assert.equal((await context.service.generate(changedCertainty.orderId)).status, 403);
+  } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
+});
+
 test("неоплаченный order не проходит generation gate, provider success выставляет PAID", async () => {
   const context = setup();
   try {
@@ -207,7 +235,7 @@ test("REPORT_READY восстанавливается из persistence без п
 test("production price и local order storage работают fail-closed", () => {
   const env = { NODE_ENV: "production" };
   assert.equal(getProductConfig(env).available, true);
-  assert.equal(getProductConfig(env).amount, 599);
+  assert.equal(getProductConfig(env).amount, 399);
   const store = new LocalOrderStore({ root: path.join(os.tmpdir(), "unused-production-orders"), env });
   assert.throws(() => store.save({ orderId: "order_1234567890abcdef1234567890abcdef" }), /Production order storage/);
 });
