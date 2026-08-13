@@ -13,9 +13,10 @@ function calculateRequest(input) {
   if (typeof input.placeId !== "string" || !input.placeId) return failure("Выберите место рождения из списка подсказок.");
   try {
     const displayName = normalizeDisplayName(input.name);
-    const result = calculateBirthChart(canonicalBirthInput(input));
+    const birthInput = canonicalBirthInput(input);
+    const result = calculateBirthChart(birthInput);
     const place = locationProvider.resolve(input.placeId);
-    return { status: 200, body: { chart: toChartView(result.chart), metadata: result.metadata, presentation: { displayName, birthPlace: place?.display || null }, ...(input.audit === true && process.env.NODE_ENV !== "production" ? { auditTrail: result.auditTrail } : {}) } };
+    return { status: 200, body: { chart: toChartView(result.chart), metadata: { ...result.metadata, birthTimeCertainty: birthInput.birthTimeCertainty }, presentation: { displayName, birthPlace: place?.display || null }, ...(input.audit === true && process.env.NODE_ENV !== "production" ? { auditTrail: result.auditTrail } : {}) } };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Некорректные данные рождения.";
     const body = { error: message.replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, "") || "Некорректные данные рождения." };

@@ -18,6 +18,7 @@
 
 ## Premium PDF
 
+- В будущей интерпретации времени объединить `birthTimeCertainty` и calculated sensitivity как два независимых сигнала: approximate влияет только на осторожность часозависимых формулировок; legacy missing certainty читать как exact.
 - После фиксации web design system провести отдельный visual refresh Premium PDF, приблизив его к финальной premium web design system без буквального копирования web.
 - Стр. 3: отполировать типографику и композицию блока «12 дворцов Цзы Вэй».
 - Стр. 3: уменьшить вертикальный воздух и проверить spacing блока четырёх трансформаций.

@@ -28,6 +28,7 @@ function createFreePreviewRequest(input, options = {}) {
         birthPlace: presentation.birthPlace,
         date: input.date,
         time: input.time,
+        birthTimeCertainty: result.body.metadata.birthTimeCertainty,
         gender: chart.input.gender,
       },
       bazi: {

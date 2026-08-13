@@ -53,6 +53,23 @@ test("checkout создаёт один заказ, использует server p
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
 });
 
+test("checkout сохраняет birthTimeCertainty как metadata с legacy default exact", async () => {
+  const context = setup();
+  try {
+    const exactOrder = (await context.service.createCheckout(input)).body.order;
+    const storedExact = await context.orderStore.load(exactOrder.orderId);
+    assert.equal(storedExact.birthInput.birthTimeCertainty, "exact");
+
+    const approximateContext = setup();
+    try {
+      const approximateOrder = (await approximateContext.service.createCheckout({ ...input, birthTimeCertainty: "approximate" })).body.order;
+      const storedApproximate = await approximateContext.orderStore.load(approximateOrder.orderId);
+      assert.equal(storedApproximate.birthInput.birthTimeCertainty, "approximate");
+      assert.equal(storedApproximate.birthInput.time, input.time);
+    } finally { fs.rmSync(approximateContext.root, { recursive: true, force: true }); }
+  } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
+});
+
 test("неоплаченный order не проходит generation gate, provider success выставляет PAID", async () => {
   const context = setup();
   try {

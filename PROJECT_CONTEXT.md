@@ -64,6 +64,10 @@ Autocomplete must support partial case-insensitive search from 2+ characters, Ru
 
 After backend changes, restart Node fully. A stale process can serve fresh static `app.js` from disk while retaining an old `location-provider.cjs` in memory. Verify that a new `npm start` did not fail with `EADDRINUSE`.
 
+### Birth-time certainty metadata
+
+The birth form sends `birthTimeCertainty: "exact" | "approximate"`. It describes how confidently the user knows the entered civil time; it never changes `time`, timezone handling, true-solar correction or the calculation core. `canonicalBirthInput()` in `web/lib/personalization.cjs` validates and persists it, with missing legacy values read as `exact`. Free-preview data exposes it as `person.birthTimeCertainty`, while calculated `metadata.calculationSensitivity` and `metadata.sensitivityFlags` remain separate signals.
+
 ### Web design
 
 The current design system is effectively frozen: premium editorial, dark green, warm light background, gold accents, serif display typography, restrained spacing and softly rounded cards. Free preview is the visual benchmark. Calculated compact objects may be centered when natural; explanatory/editorial content is normally left-aligned. Do not turn the product into a generic SaaS dashboard or start a redesign without an explicit request.

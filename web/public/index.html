@@ -35,6 +35,14 @@
             <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31" required></label>
             <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time" required></label>
           </div>
+          <fieldset class="time-certainty-field">
+            <legend>Насколько точно вы знаете время рождения?</legend>
+            <div class="time-certainty-options" role="radiogroup" aria-label="Точность времени рождения">
+              <label><input type="radio" name="birthTimeCertainty" value="exact" checked><span>Знаю точно</span></label>
+              <label><input type="radio" name="birthTimeCertainty" value="approximate"><span>Знаю примерно</span></label>
+            </div>
+            <p class="time-certainty-helper" id="time-certainty-helper" hidden>Ничего страшного — мы учтём это при интерпретации карты.</p>
+          </fieldset>
           <div class="field place-field">
             <label for="birth-place">Место рождения</label>
             <input id="birth-place" type="search" autocomplete="off" placeholder="Например, Москва" role="combobox" aria-autocomplete="list" aria-controls="place-options" aria-expanded="false" required>

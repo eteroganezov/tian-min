@@ -9,6 +9,7 @@ const ambiguityBox = document.querySelector("#ambiguity-box");
 const siteHeader = document.querySelector(".site-header");
 const heroLayout = document.querySelector(".hero-layout");
 const mobileFormSlot = document.querySelector("#mobile-form-slot");
+const timeCertaintyHelper = document.querySelector("#time-certainty-helper");
 let selectedPlace = null;
 let searchTimer = null;
 let placeResults = [];
@@ -57,6 +58,10 @@ placeInput.addEventListener("keydown", event => {
 });
 document.addEventListener("click", event => { if (!event.target.closest(".place-field")) renderPlaceOptions([]); });
 form.addEventListener("submit", async event => { event.preventDefault(); await submitFreeCalculation(); });
+form.addEventListener("change", event => {
+  if (event.target?.name !== "birthTimeCertainty") return;
+  timeCertaintyHelper.hidden = event.target.value !== "approximate";
+});
 
 async function submitFreeCalculation(timeOccurrence) {
   showError("");
@@ -66,6 +71,7 @@ async function submitFreeCalculation(timeOccurrence) {
     name: String(data.get("name") || "").trim().replace(/\s+/g, " "),
     date: String(data.get("date") || ""),
     time: String(data.get("time") || ""),
+    birthTimeCertainty: String(data.get("birthTimeCertainty") || "exact"),
     gender: String(data.get("gender") || ""),
     placeId: selectedPlace?.id || "",
     ...(timeOccurrence ? { timeOccurrence } : {}),
@@ -107,7 +113,7 @@ function renderFreePreview(data) {
       <p class="section-label">Базовая персональная карта</p>
       <h2>${name ? `${e(name)}, ваша карта готова` : "Ваша карта готова"}</h2>
       <p>Мы рассчитали Ба-цзы и Цзы Вэй Доу Шу по вашим данным рождения.</p>
-      <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
+      <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}${data.person.birthTimeCertainty === "approximate" ? " · указано примерно" : ""}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
     </header>
 
     <div class="preview-body shell">

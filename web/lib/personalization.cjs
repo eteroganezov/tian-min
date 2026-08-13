@@ -6,6 +6,14 @@ class PersonalizationError extends Error {
   }
 }
 
+class BirthTimeCertaintyError extends Error {
+  constructor() {
+    super("Выберите, насколько точно вы знаете время рождения.");
+    this.name = "BirthTimeCertaintyError";
+    this.code = "INVALID_BIRTH_TIME_CERTAINTY";
+  }
+}
+
 function normalizeDisplayName(value) {
   if (value == null || value === "") return "";
   if (typeof value !== "string") throw new PersonalizationError("Имя должно быть текстом.");
@@ -24,9 +32,15 @@ function canonicalBirthInput(input) {
     time: input?.time,
     gender: input?.gender,
     placeId: input?.placeId,
+    birthTimeCertainty: normalizeBirthTimeCertainty(input?.birthTimeCertainty),
     ...(input?.timeOccurrence ? { timeOccurrence: input.timeOccurrence } : {}),
   };
 }
 
-module.exports = { PersonalizationError, canonicalBirthInput, normalizeDisplayName };
+function normalizeBirthTimeCertainty(value) {
+  if (value == null || value === "") return "exact";
+  if (value === "exact" || value === "approximate") return value;
+  throw new BirthTimeCertaintyError();
+}
 
+module.exports = { BirthTimeCertaintyError, PersonalizationError, canonicalBirthInput, normalizeBirthTimeCertainty, normalizeDisplayName };
