@@ -71,7 +71,7 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages >= 30 && parsed.numpages <= 36, true, `Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages,36,`Получилось ${parsed.numpages} страниц`);
   assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
@@ -138,10 +138,15 @@ test("systemic renderer использует динамические Day Master
     if(present.has(original)){assert.match(glossary,new RegExp(name));assert.ok(tenGodMeaning(original));}
     else assert.doesNotMatch(glossary,new RegExp(name));
   }
-  assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`distinct: ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages,36,`distinct: ${parsed.numpages} страниц`);
   const renderer=require("node:fs").readFileSync(require("node:path").join(__dirname,"../lib/pdf-template-v4.cjs"),"utf8");
   assert.doesNotMatch(renderer,/Александр|1995-09-03|05:50/u);
   assert.match(renderer,/function row\([^)]*metaWidth=145/u);
+  assert.match(renderer,/metaWidth,color:accent,size:6\.7,align:"center"/u);
+  assert.match(renderer,/bodyWidth,lineGap:2\.4,align:"left"/u);
+  assert.match(renderer,/fillAndStroke\(fill,border\)/u);
+  assert.match(renderer,/progress=Math\.max\(0,Math\.min\(1,\(reportYear-currentStart\)/u);
+  assert.match(renderer,/markerX=currentNodeX\+progress/u);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -351,7 +356,7 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
-    assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`${variant.key}: ${parsed.numpages} страниц`);
+    assert.equal(parsed.numpages,36,`${variant.key}: ${parsed.numpages} страниц`);
     assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
     const highSensitivity=String(variant.calculationMetadata.calculationSensitivity).toUpperCase()==="HIGH"||Object.values(variant.calculationMetadata.sensitivityFlags||{}).some(Boolean);
     assert.equal((parsed.text.match(/Зависит от времени рождения/gu)||[]).length,highSensitivity?2:0,`${variant.key}: знак чувствительности должен быть только в руководстве и текущем периоде`);
