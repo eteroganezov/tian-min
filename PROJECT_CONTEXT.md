@@ -43,6 +43,7 @@ Future user-facing Premium/PDF wording must account for both signals without tre
 - `web/server.cjs` serves the application and API; production binds to `0.0.0.0` and uses `process.env.PORT`.
 - `web/public/` is the Russian frontend; `web/scripts/build.cjs` copies it to `web/dist/` after checks.
 - The mobile-first free funnel, sticky navigation, Telegram/WebView fallback, mobile Safari input protection, location autocomplete, free preview and Premium offer are implemented.
+- The free Zi Wei result explains the 12 life-area palaces in human language. Palace cards use local static accessible disclosures for generic sphere meanings; calculated stars and age periods remain unchanged, while the Premium bridge clearly reserves personal interpretation for the existing paid flow.
 - WEB visual v1 is **FROZEN**. Do not continue cosmetic polish without a separate material requirement.
 
 Run from `web/`:

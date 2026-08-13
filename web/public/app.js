@@ -150,23 +150,25 @@ function renderFreePreview(data) {
 
       <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
         <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
-        <div class="ziwei-summary-intro"><span>Ключевые параметры карты Цзы Вэй</span><p>Здесь собраны ключевые рассчитанные параметры карты Цзы Вэй.</p></div>
+        <div class="ziwei-summary-intro"><span>Как читать этот раздел</span><p>Цзы Вэй показывает жизненные сферы и рассчитанные звёзды внутри них. Ниже — опорные данные вашей карты, а не готовая персональная интерпретация.</p></div>
         <div class="ziwei-facts">
           <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
           <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
           <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
           <article><span>Система элементов</span><b>${e(conciseBureauName(data.ziwei.fiveElementBureau.name))}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
         </div>
-        <div class="transformations"><header><span>Четыре трансформации</span><p>Четыре трансформации показывают, какие звёзды получают в карте дополнительные акценты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
-        <article class="current-palace"><div><span>Текущий дворец · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small></div></article>
-        <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Все жизненные сферы и рассчитанные звёзды</small></span><i aria-hidden="true"></i></summary><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+        <div class="transformations"><header><span>Четыре трансформации</span><p><b>Что ещё выделяется в карте.</b> Традиционные трансформации отмечают звёзды, на которые стоит обратить внимание при интерпретации.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+        <div class="palaces-guide"><h3>Что показывают 12 дворцов?</h3><p>Карта Цзы Вэй делит жизненный путь на 12 сфер: отношения, работу, деньги, окружение, внутреннее состояние и другие области. Звёзды внутри показывают рассчитанные акценты каждой сферы.</p><p>Здесь вы видите структуру карты. Персональный разбор объясняет, что эти дворцы и звёзды означают именно для вас и как они связаны с Ба-цзы.</p></div>
+        <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Нажмите на дворец, чтобы узнать значение жизненной сферы</small></span><i aria-hidden="true"></i></summary><div class="palaces-direction-note">Возрастные периоды проходят по дворцам в рассчитанном для вашей карты направлении, поэтому соседние карточки не всегда идут по возрастанию.</div><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+        <a class="result-continuation" href="#current-life-period">Дальше — ваш текущий жизненный период <span aria-hidden="true">↓</span></a>
+        <article class="current-palace" id="current-life-period"><div><span>Где вы находитесь сейчас · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует ваш текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
       </section>
     </div>
 
     <section class="premium-teaser" data-state="PREMIUM_LOCKED">
-      <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Карта рассчитана. Теперь можно понять, что она говорит именно о вас.</h2><p>Полный персональный разбор соединяет обе традиции и объясняет, как особенности карты могут проявляться в характере, работе, деньгах, отношениях и текущем жизненном периоде.</p></header>
+      <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Вы увидели, из чего состоит ваша карта. Теперь — что всё это означает именно для вас.</h2><p>Полный разбор соединяет Ба-цзы и Цзы Вэй в один персональный портрет: сильные стороны, отношения, работу и деньги, текущий жизненный период, ближайшие годы и практические ориентиры.</p></header>
         <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
-        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить полный персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
+        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
     </section>
   </section>`;
@@ -174,7 +176,28 @@ function renderFreePreview(data) {
 
 function renderPalace(palace) {
   const stars = palace.mainStars.length ? palace.mainStars.map(star => `<span>${e(star.name)} <small>${e(star.original)}</small></span>`).join("") : "<span>Основные звёзды не указаны</span>";
-  return `<article class="${palace.isCurrentPeriod ? "active" : ""}"><header><b>${e(palace.displayName.name)}</b><span>${e(palace.ganZhi)}</span></header><p>${stars}</p><footer>${e(palace.majorPeriod)} лет${palace.isMing ? " · Дворец судьбы" : ""}${palace.isShen ? " · Дворец тела" : ""}</footer></article>`;
+  const key = palace.displayName?.original || palace.name;
+  const explanationId = `palace-explanation-${String(key || "palace").codePointAt(0)?.toString(16) || "unknown"}`;
+  return `<article class="palace-card${palace.isCurrentPeriod ? " active" : ""}"><button type="button" class="palace-trigger" aria-expanded="false" aria-controls="${e(explanationId)}"><span class="palace-card-heading"><b>${e(palace.displayName.name)}</b><i>${e(palace.ganZhi)}</i></span><span class="palace-stars">${stars}</span><span class="palace-period">${e(palace.majorPeriod)} лет${palace.isMing ? " · Дворец судьбы" : ""}${palace.isShen ? " · Дворец тела" : ""}</span><span class="palace-expand-label">Что означает эта сфера <i aria-hidden="true">+</i></span></button><div class="palace-explanation" id="${e(explanationId)}" hidden><p>${e(palaceExplanation(key))}</p><small>Что означают звёзды именно в вашей карте — раскрывается в персональном разборе.</small></div></article>`;
+}
+
+const PALACE_EXPLANATIONS = Object.freeze({
+  "命宫": "Сфера личности, самоощущения и того, как человек проявляет себя в жизни.",
+  "兄弟宫": "Сфера братьев, сестёр, близкого окружения и привычного взаимодействия с равными.",
+  "夫妻宫": "Сфера близких отношений, партнёрства и того, как человек строит связь с другим.",
+  "子女宫": "Сфера детей, творчества, самовыражения и результатов, которые человек создаёт.",
+  "财帛宫": "Сфера денег, материальных ресурсов и привычного способа обращаться с ними.",
+  "疾厄宫": "Сфера телесного ресурса, уязвимостей и отношения к восстановлению. Это не медицинская диагностика.",
+  "迁移宫": "Сфера перемен, поездок и взаимодействия с миром за пределами привычной среды.",
+  "交友宫": "Сфера друзей, социальных связей, команд и людей, на которых человек опирается.",
+  "官禄宫": "Сфера работы, профессиональной роли, реализации и отношения к ответственности.",
+  "田宅宫": "Сфера дома, имущества, личной опоры и ощущения своего пространства.",
+  "福德宫": "Сфера внутреннего состояния, отдыха, удовлетворённости и эмоционального ресурса.",
+  "父母宫": "Сфера родителей, старших, наставников и опыта взаимодействия с авторитетами.",
+});
+
+function palaceExplanation(key) {
+  return PALACE_EXPLANATIONS[key] || "Одна из двенадцати жизненных сфер, которые рассматривает карта Цзы Вэй.";
 }
 
 function premiumSections() {
@@ -194,6 +217,19 @@ function premiumSections() {
 
 function bindPreviewActions() {
   document.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
+  document.querySelectorAll(".palace-trigger").forEach(button => button.addEventListener("click", () => togglePalaceExplanation(button)));
+}
+
+function togglePalaceExplanation(button) {
+  const willOpen = button.getAttribute("aria-expanded") !== "true";
+  document.querySelectorAll(".palace-trigger[aria-expanded='true']").forEach(openButton => {
+    openButton.setAttribute("aria-expanded", "false");
+    const openPanel = document.getElementById(openButton.getAttribute("aria-controls"));
+    if (openPanel) openPanel.hidden = true;
+  });
+  button.setAttribute("aria-expanded", String(willOpen));
+  const panel = document.getElementById(button.getAttribute("aria-controls"));
+  if (panel) panel.hidden = !willOpen;
 }
 
 async function openPremiumOffer() {
@@ -204,6 +240,10 @@ async function openPremiumOffer() {
     const host = document.querySelector(".premium-action");
     if (!config.available) {
       host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
+      return;
+    }
+    if (activePremiumOrder && (activePremiumOrder.accessReason === "complimentary_promo" || ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(activePremiumOrder.status))) {
+      renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(activePremiumOrder.orderId)}`)).order);
       return;
     }
     if (isActivePaymentOrder(activePremiumOrder)) {
@@ -280,8 +320,16 @@ function renderPaymentState(order) {
   clearTimeout(paymentPollTimer);
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
   if (order.status === "REPORT_FAILED") {
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Персональный разбор</p><h3>Не удалось подготовить отчёт. Попробуйте ещё раз.</h3><p>Доступ сохранён. Повторная попытка не создаст новый заказ, платёж или промокод.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать ещё раз</button></section>`;
-    host.querySelector('[data-action="retry-generation"]').addEventListener("click", async () => { try { renderPaymentState((await api("/api/premium/generate", { orderId: order.orderId })).order); } catch(error) { showPremiumError(error.message); } });
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Персональный разбор</p><h3>Не удалось подготовить отчёт. Попробуйте ещё раз.</h3><p>Доступ сохранён. Повторная попытка не создаст новый заказ, платёж или промокод.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать ещё раз</button><button type="button" class="secondary-checkout-button" data-action="leave-generation">Вернуться к результату</button></section>`;
+    host.querySelector('[data-action="retry-generation"]').addEventListener("click", async event => {
+      if (premiumBusy) return;
+      premiumBusy = true;
+      event.currentTarget.disabled = true;
+      try { renderPaymentState((await api("/api/premium/generate", { orderId: order.orderId, reportGenerationAttempt:order.reportGenerationAttempt })).order); }
+      catch(error) { showPremiumError(error.message); }
+      finally { premiumBusy = false; }
+    });
+    host.querySelector('[data-action="leave-generation"]').addEventListener("click", leaveGenerationFailure);
     return;
   }
   if (order.status === "REPORT_GENERATING") return renderGeneratingState(host,order);
@@ -295,6 +343,14 @@ function renderPaymentState(order) {
   }
   host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="${e(order.status)}"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Проверка платёжного сценария</h3><p>Реальные деньги не списываются. Эта панель недоступна в production.</p><div class="payment-notice">Статус оплаты: ожидает подтверждения</div><button type="button" class="premium-button" data-outcome="succeeded">Симулировать успешную оплату</button><button type="button" class="secondary-checkout-button" data-outcome="failed">Симулировать ошибку оплаты</button></section>`;
   host.querySelectorAll("[data-outcome]").forEach(button => button.addEventListener("click", () => simulatePayment(order.orderId, button.dataset.outcome)));
+}
+
+function leaveGenerationFailure() {
+  clearTimeout(paymentPollTimer);
+  const host = document.querySelector(".premium-action") || resultRoot;
+  host.innerHTML = `<button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden></div>`;
+  host.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
+  document.querySelector(".preview-cover, #result-root")?.scrollIntoView?.({ behavior:"smooth", block:"start" });
 }
 
 function renderConsentCheckout(order, options = {}) {

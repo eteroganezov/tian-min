@@ -81,13 +81,13 @@ test("production build содержит бесплатную воронку и �
   assert.match(script, /Пять элементов/);
   assert.match(script, /Ваша карта Цзы Вэй/);
   assert.match(script, /Текущий большой период/);
-  assert.match(script, /Получить полный персональный разбор/);
+  assert.match(script, /Получить персональный разбор/);
   assert.match(script, /Полный разбор скоро будет доступен/);
   assert.match(script, /Посмотреть полную карту 12 дворцов/);
   assert.match(script, /Скрыть полную карту 12 дворцов/);
-  assert.match(script, /Все жизненные сферы и рассчитанные звёзды/);
-  assert.match(script, /Ключевые параметры карты Цзы Вэй/);
-  assert.match(script, /Четыре трансформации показывают/);
+  assert.match(script, /Нажмите на дворец, чтобы узнать значение жизненной сферы/);
+  assert.match(script, /Как читать этот раздел/);
+  assert.match(script, /Что ещё выделяется в карте/);
   assert.match(script, /Находится во дворце/);
   assert.doesNotMatch(script, /◇|Посмотреть подробные данные карты/);
   assert.doesNotMatch(script, /padStart\(2, "0"\)/);

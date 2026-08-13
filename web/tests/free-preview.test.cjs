@@ -130,7 +130,7 @@ test("два расчёта free preview не вызывают provider полн
 test("клиент free preview не содержит вызовов premium API и показывает CTA placeholder", () => {
   const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
   assert.match(script, /fetch\("\/api\/free-preview"/);
-  assert.match(script, /Получить полный персональный разбор/);
+  assert.match(script, /Получить персональный разбор/);
   assert.match(script, /Полный разбор скоро будет доступен/);
   assert.doesNotMatch(script, /fetch\("\/api\/(?:report|pdf)"/);
 });
