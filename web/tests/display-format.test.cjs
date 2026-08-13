@@ -35,7 +35,7 @@ test("верхняя группа Zi Wei сохраняет три строки 
   assert.match(script, /lunarDateLines\(data\.ziwei\)\.map\(line => `<i class="lunar-date-line">/);
   assert.match(script, /conciseBureauName\(data\.ziwei\.fiveElementBureau\.name\)/);
   assert.match(script, /Двенадцать дворцов описывают разные жизненные сферы/);
-  assert.match(script, /Подробная карта Цзы Вэй/);
+  assert.match(script, /Карта Цзы Вэй/);
   assert.doesNotMatch(script, /Здесь собраны основные ориентиры карты:/);
   const source = script.match(/function conciseBureauName\(value\) \{[\s\S]*?\n\}/u)?.[0];
   assert.ok(source);
@@ -62,8 +62,10 @@ test("mobile landing переносит одну форму после объя�
   assert.match(styles, /body\{overflow-x:clip\}/);
   assert.match(styles, /\.field input,\.place-field>input,\.checkout-field input\{display:block;width:100%;max-width:100%;min-width:0;box-sizing:border-box\}/);
   assert.match(styles, /@media\(max-width:620px\)[\s\S]*\.field input,\.place-field>input,\.checkout-field input,select,textarea\{font-size:16px\}/);
-  assert.match(styles, /input\[type="date"\],\.field input\[type="time"\]\{-webkit-appearance:none;appearance:none;[^}]*min-inline-size:0/);
-  assert.match(styles, /::-webkit-date-and-time-value\{min-height:54px;margin:0;text-align:left\}/);
+  assert.match(html, /id="birth-day"[^>]*inputmode="numeric"/);
+  assert.match(html, /id="birth-month"[^>]*>[\s\S]*?<option value="12">12 · Декабрь<\/option>/);
+  assert.match(html, /id="birth-year"[^>]*inputmode="numeric"/);
+  assert.match(styles, /\.birth-date-parts\{display:grid;grid-template-columns:/);
   assert.match(styles, /\.locked-grid\{grid-template-columns:1fr 1fr/);
   assert.match(script, /input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done"/);
   assert.match(script, /if \(event\.key !== "Enter"\) return;[\s\S]*event\.preventDefault\(\);[\s\S]*email\.blur\(\)/);

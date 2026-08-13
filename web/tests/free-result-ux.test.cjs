@@ -9,16 +9,14 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
-test("Variant B ставит три dynamic personal facts и Premium bridge до technical depth", () => {
-  assert.match(script, /Ваш персональный расчёт готов/);
-  assert.match(script, /Главный знак вашей карты[\s\S]*data\.bazi\.dayMaster/);
+test("Variant B iteration 2 интегрирует два dynamic orientation facts без отдельной сухой секции", () => {
+  assert.match(script, /ваша персональная карта готова/);
+  assert.match(script, /Главный знак[\s\S]*data\.bazi\.dayMaster/);
   assert.match(script, /personalStemName\(data\.bazi\.dayMasterDisplay\?\.name\)/);
-  assert.match(script, /Ваш текущий жизненный этап[\s\S]*current\.years/);
-  assert.match(script, /Ваша текущая сфера Цзы Вэй[\s\S]*currentPalace/);
-  assert.ok(script.indexOf('data-action="premium"') < script.indexOf('id="technical-bazi-panel"'));
-  assert.ok(script.indexOf('data-action="premium"') < script.indexOf('id="technical-ziwei-panel"'));
-  assert.match(script, /Отдельные знаки — только части карты/);
-  assert.doesNotMatch(script.slice(script.indexOf('class="personal-first"'), script.indexOf('data-action="premium"')), /Грабитель богатства|Семь убийц|Небесный ствол|Земная ветвь|Хуа Лу|Хуа Цюань/);
+  assert.match(script, /Текущий жизненный этап[\s\S]*current\.years/);
+  assert.doesNotMatch(script, /Что карта показывает сейчас|class="personal-first"|Ваша текущая сфера Цзы Вэй/);
+  const opening = script.slice(script.indexOf('class="preview-cover'), script.indexOf('class="map-proof'));
+  assert.doesNotMatch(opening, /Грабитель богатства|Семь убийц|Небесный ствол|Земная ветвь|Хуа Лу|Хуа Цюань/);
 });
 
 test("technical proof сохраняет 12 дворцов и границу между generic data и Premium meaning", () => {
@@ -77,29 +75,41 @@ test("technical disclosures доступны с клавиатуры и пере
   const panel = { hidden: true };
   const button = {
     attrs: { "aria-controls": "panel", "aria-expanded": "false" },
+    action: { textContent: "Посмотреть карту" },
     getAttribute(name) { return this.attrs[name]; },
     setAttribute(name, value) { this.attrs[name] = value; },
+    querySelector() { return this.action; },
+    closest() { return { dataset: {} }; },
   };
   const toggle = vm.runInNewContext(`(${source.replace(/^function toggleTechnicalDisclosure/, "function")})`, { document: { getElementById: () => panel } });
   toggle(button);
   assert.equal(button.attrs["aria-expanded"], "true");
   assert.equal(panel.hidden, false);
+  assert.equal(button.action.textContent, "Скрыть карту");
   toggle(button);
   assert.equal(button.attrs["aria-expanded"], "false");
   assert.equal(panel.hidden, true);
+  assert.equal(button.action.textContent, "Посмотреть карту");
 });
 
-test("early bridge ведёт в существующий Premium flow, technical sections остаются optional", () => {
+test("две карты предшествуют synthesis bridge и ведут в существующий Premium flow", () => {
   assert.match(script, /data-action="premium">Получить персональный разбор/);
   assert.match(script, /data-action="premium"[^]*addEventListener\("click", openPremiumOffer\)/);
-  assert.match(script, /Посмотреть подробную карту и расчёты/);
+  assert.match(script, /<b>Карта Ба-цзы<\/b><small>Рассчитаны четыре столпа, элементы и жизненные периоды<\/small><em class="disclosure-action">Посмотреть карту<\/em>/);
+  assert.match(script, /<b>Карта Цзы Вэй<\/b><small>Рассчитаны 12 жизненных сфер и звёзды<\/small><em class="disclosure-action">Посмотреть карту<\/em>/);
+  assert.doesNotMatch(script, /Посмотреть подробную карту и расчёты|Подробная карта Ба-цзы|Подробная карта Цзы Вэй/);
+  assert.ok(script.indexOf('id="technical-bazi-panel"') < script.indexOf('class="premium-teaser early-premium-bridge"'));
+  assert.ok(script.indexOf('id="technical-ziwei-panel"') < script.indexOf('class="premium-teaser early-premium-bridge"'));
+  assert.match(script, /Отдельные знаки — только части картины/);
+  assert.match(script, /сочетание рассчитанных данных проявляется/);
   assert.equal((script.match(/class="technical-disclosure-trigger" aria-expanded="false"/g) || []).length, 2);
 });
 
-test("responsive CSS делает mandatory path компактным и не создаёт horizontal overflow", () => {
+test("responsive CSS использует two-column proof на desktop и compact stack на mobile", () => {
   assert.match(styles, /\.preview-body\{padding-bottom:0\}/);
-  assert.match(styles, /@media\(max-width:760px\)\{\.personal-points\{grid-template-columns:1fr\}/);
-  assert.match(styles, /\.technical-disclosure-trigger,.technical-disclosure-panel\{box-sizing:border-box\}/);
+  assert.match(styles, /\.map-disclosures\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(styles, /@media\(max-width:760px\)[^]*\.map-disclosures\{grid-template-columns:1fr/);
+  assert.match(styles, /\.technical-disclosure-panel\{[^}]*box-sizing:border-box/);
   assert.match(styles, /html\{overflow-x:hidden\}/);
 });
 

@@ -9,8 +9,8 @@
   <link rel="icon" href="/favicon-32.png" type="image/png" sizes="32x32">
   <link rel="icon" href="/favicon-16.png" type="image/png" sizes="16x16">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png" sizes="180x180">
-  <link rel="stylesheet" href="/styles.css?v=free-result-variant-b">
-  <script src="/app.js?v=free-result-variant-b" defer></script>
+  <link rel="stylesheet" href="/styles.css?v=free-result-variant-b-iteration-2-final">
+  <script src="/app.js?v=free-result-variant-b-iteration-2-final" defer></script>
 </head>
 <body>
   <header class="site-header">
@@ -36,7 +36,16 @@
           <div class="form-heading"><span>Базовая карта · без оплаты</span><h2 id="form-title">Ваши данные рождения</h2><p>Нужны для точного расчёта в обеих системах</p></div>
           <label class="field"><span>Имя <small>необязательно</small></span><input id="display-name" name="name" type="text" maxlength="60" autocomplete="name" placeholder="Введите имя"><small class="field-help">Только для обращения к вам в результате</small></label>
           <div class="form-row">
-            <label class="field"><span>Дата рождения</span><input id="birth-date" name="date" type="date" min="1900-01-01" max="2100-12-31" autocomplete="bday" required><small class="field-help">Выберите в календаре или введите день, месяц и год вручную</small></label>
+            <fieldset class="field birth-date-field">
+              <legend>Дата рождения</legend>
+              <div class="birth-date-parts">
+                <label><span>День</span><input id="birth-day" name="birthDay" type="text" inputmode="numeric" autocomplete="bday-day" maxlength="2" placeholder="ДД" aria-describedby="birth-date-help" required></label>
+                <label><span>Месяц</span><select id="birth-month" name="birthMonth" autocomplete="bday-month" aria-describedby="birth-date-help" required><option value="">ММ</option><option value="01">01 · Январь</option><option value="02">02 · Февраль</option><option value="03">03 · Март</option><option value="04">04 · Апрель</option><option value="05">05 · Май</option><option value="06">06 · Июнь</option><option value="07">07 · Июль</option><option value="08">08 · Август</option><option value="09">09 · Сентябрь</option><option value="10">10 · Октябрь</option><option value="11">11 · Ноябрь</option><option value="12">12 · Декабрь</option></select></label>
+                <label><span>Год</span><input id="birth-year" name="birthYear" type="text" inputmode="numeric" autocomplete="bday-year" maxlength="4" placeholder="ГГГГ" aria-describedby="birth-date-help" required></label>
+              </div>
+              <input id="birth-date" name="date" type="hidden">
+              <small class="field-help" id="birth-date-help">ДД.ММ.ГГГГ · дату можно ввести вручную или вставить целиком</small>
+            </fieldset>
             <label class="field"><span>Местное время рождения</span><input id="birth-time" name="time" type="time" required></label>
           </div>
           <fieldset class="time-certainty-field">

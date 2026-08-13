@@ -92,8 +92,12 @@ function frontendHarness() {
   const nodes = {
     "#birth-form": element(), "#form-error": element(), "#submit-button": element(), "#result-root": element(),
     "#birth-place": element(), "#place-options": element(), "#ambiguity-box": element(), "#time-certainty-helper": element(),
+    "#birth-date": element(), "#birth-day": element(), "#birth-month": element(), "#birth-year": element(),
   };
   nodes["#time-certainty-helper"].hidden = true;
+  nodes["#birth-day"].value = "03";
+  nodes["#birth-month"].value = "09";
+  nodes["#birth-year"].value = "1995";
   nodes["#submit-button"].querySelector = () => element();
   const values = new Map([["name", ""], ["date", base.date], ["time", base.time], ["gender", base.gender], ["birthTimeCertainty", "exact"]]);
   const requests = [];

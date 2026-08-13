@@ -89,7 +89,7 @@ test("compact pillar template отдельно показывает stem, branch
   assert.match(script, /<small><b>\$\{e\(pillar\.shiShenDisplay\.name\)\}<\/b><i>традиционная категория Ба-цзы<\/i><\/small>/);
 });
 
-test("personal-first факты получают значения из payload, а не из fixture", () => {
+test("compact orientation facts получают значения из payload, а не из fixture", () => {
   const second = createFreePreviewRequest({ ...eduard, date: "1990-05-15", time: "12:00", gender: "female" }, { currentYear: 2026 });
   const first = createFreePreviewRequest(eduard, { currentYear: 2026 });
   assert.notEqual(first.body.bazi.dayMaster, second.body.bazi.dayMaster);

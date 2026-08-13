@@ -13,6 +13,10 @@ const siteHeader = document.querySelector(".site-header");
 const heroLayout = document.querySelector(".hero-layout");
 const mobileFormSlot = document.querySelector("#mobile-form-slot");
 const timeCertaintyHelper = document.querySelector("#time-certainty-helper");
+const birthDateInput = document.querySelector("#birth-date");
+const birthDayInput = document.querySelector("#birth-day");
+const birthMonthInput = document.querySelector("#birth-month");
+const birthYearInput = document.querySelector("#birth-year");
 let selectedPlace = null;
 let searchTimer = null;
 let placeResults = [];
@@ -44,6 +48,13 @@ if (mobileFormMedia?.addEventListener) mobileFormMedia.addEventListener("change"
 else mobileFormMedia?.addListener?.(syncMobileFormPosition);
 if (typeof ResizeObserver === "function" && siteHeader) new ResizeObserver(syncHeaderHeight).observe(siteHeader);
 if (typeof addEventListener === "function") addEventListener("orientationchange", syncHeaderHeight);
+
+[birthDayInput, birthYearInput].forEach(input => input.addEventListener("input", () => {
+  input.value = input.value.replace(/\D/gu, "").slice(0, Number(input.maxLength) || 4);
+  syncBirthDateValue();
+}));
+birthMonthInput.addEventListener("change", syncBirthDateValue);
+[birthDayInput, birthMonthInput, birthYearInput].forEach(input => input.addEventListener("paste", pasteBirthDate));
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -83,6 +94,9 @@ async function submitFreeCalculation(timeOccurrence) {
   clearTimeout(paymentPollTimer);
   showError("");
   ambiguityBox.hidden = true;
+  const birthDate = normalizeBirthDateParts(birthDayInput.value, birthMonthInput.value, birthYearInput.value);
+  birthDateInput.value = birthDate.value;
+  if (birthDate.error) return showError(birthDate.error);
   const data = new FormData(form);
   const input = {
     name: String(data.get("name") || "").trim().replace(/\s+/g, " "),
@@ -94,7 +108,6 @@ async function submitFreeCalculation(timeOccurrence) {
     ...(selectedTimeZone ? { timeZoneOverride: selectedTimeZone } : {}),
     ...(timeOccurrence ? { timeOccurrence } : {}),
   };
-  if (!input.date) return showError("Укажите дату рождения.");
   if (!input.time) return showError("Укажите время рождения.");
   if (!selectedPlace) { placeFallback.hidden = false; return showError("Выберите место из списка подсказок. Если его нет, укажите ближайший крупный город."); }
   if (timeZoneInput.value.trim() && !selectedTimeZone) return showError("Выберите часовой пояс из списка подсказок.");
@@ -130,37 +143,25 @@ function renderFreePreview(data) {
   const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
   return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
     <header class="preview-cover shell">
-      <p class="section-label">Ваш персональный расчёт готов</p>
-      <h2>${name ? `${e(name)}, это ваша карта` : "Это ваша карта"}</h2>
-      <p>Ба-цзы и Цзы Вэй рассчитаны по вашим данным рождения. Сначала — три личных факта из карты.</p>
+      <p class="section-label">Расчёт завершён</p>
+      <h2>${name ? `${e(name)}, ваша персональная карта готова` : "Ваша персональная карта готова"}</h2>
+      <p>Обе системы рассчитаны по вашим данным рождения.</p>
       <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}${data.person.birthTimeCertainty === "approximate" ? " · указано примерно" : ""}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
+      <div class="result-orientation" aria-label="Короткие ориентиры карты">
+        <article><span>Главный знак</span><p><b>${e(data.bazi.dayMaster)}</b><strong>${e(personalStemName(data.bazi.dayMasterDisplay?.name))}</strong></p></article>
+        <article><span>Текущий жизненный этап</span><p><strong>${current ? e(current.years) : "Не определён"}</strong></p>${current ? `<small>${e(current.range)}</small>` : ""}</article>
+      </div>
     </header>
 
-    <div class="preview-body shell">
-      <section class="personal-first" aria-labelledby="personal-first-title">
-        <div class="preview-heading personal-first-heading"><div><span>Из вашего расчёта</span><h2 id="personal-first-title">Что карта показывает сейчас</h2></div><p>Это рассчитанные параметры, а не готовые предсказания или рекомендации.</p></div>
-        <div class="personal-points">
-          <article class="personal-point main-sign"><span>Главный знак вашей карты</span><div class="personal-sign"><b>${e(data.bazi.dayMaster)}</b><h3>${e(personalStemName(data.bazi.dayMasterDisplay?.name))}</h3></div><p>Это центральный знак дня рождения, от которого строится карта Ба-цзы.</p></article>
-          <article class="personal-point"><span>Ваш текущий жизненный этап</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<p>${e(current.range)}</p><small>${e(current.ganZhi)} · ${e(compactStemName(current.stemDisplay.name))} · ${e(compactBranchName(current.branchDisplay.name))}</small>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
-          <article class="personal-point"><span>Ваша текущая сфера Цзы Вэй</span><h3>${e(currentPalace?.displayName?.name || "Не определена")}</h3><p>Возрастной период · ${e(currentPalace?.majorPeriod || "—")} лет</p><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small></article>
-        </div>
-      </section>
-    </div>
-
-    <section class="premium-teaser early-premium-bridge" data-state="PREMIUM_LOCKED">
-      <div class="shell"><header><p class="section-label">От данных — к личному смыслу</p><h2>Отдельные знаки — только части карты. Главное — как они работают вместе.</h2><p>Полный разбор соединяет Ба-цзы и Цзы Вэй и объясняет, как сочетание карты проявляется в сильных сторонах, работе и деньгах, отношениях, текущем жизненном этапе и ближайших периодах.</p></header>
-        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
-      </div>
-    </section>
-
-    <section class="technical-depth shell" aria-labelledby="technical-depth-title">
-      <header><p class="section-label">Расчёт остаётся доступным</p><h2 id="technical-depth-title">Посмотреть подробную карту и расчёты</h2><p>Откройте тот раздел, который вам интересен. Эти данные не обязательны для понимания первых результатов.</p></header>
+    <section class="map-proof shell" aria-labelledby="map-proof-title">
+      <header class="map-proof-heading"><p class="section-label">Две карты рассчитаны</p><h2 id="map-proof-title">Ваши карты</h2><p>Можно открыть рассчитанные данные каждой системы. Это карта, а не персональная интерпретация.</p></header>
+      <div class="map-disclosures">
 
       <section class="technical-disclosure">
-        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-bazi-panel"><span><b>Подробная карта Ба-цзы</b><small>Четыре столпа, пять элементов и баланс карты</small></span><i aria-hidden="true">+</i></button>
+        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-bazi-panel"><span><b>Карта Ба-цзы</b><small>Рассчитаны четыре столпа, элементы и жизненные периоды</small><em class="disclosure-action">Посмотреть карту</em></span><i aria-hidden="true">+</i></button>
         <div class="technical-disclosure-panel" id="technical-bazi-panel" hidden>
           <section class="preview-section" aria-labelledby="bazi-title">
-            <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Подробная карта Ба-цзы</h2></div><div class="technical-explainer"><b>Что показывают четыре столпа?</b><p>Год, месяц, день и час рождения образуют четыре столпа. Каждый содержит ствол и ветвь; вместе они составляют основу карты Ба-цзы.</p></div></div>
+            <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Карта Ба-цзы</h2></div><div class="technical-explainer"><b>Что показывают четыре столпа?</b><p>Год, месяц, день и час рождения образуют четыре столпа. Каждый содержит ствол и ветвь; вместе они составляют основу карты Ба-цзы.</p></div></div>
             <div class="ten-gods-note"><b>О традиционных названиях</b><p>«Грабитель богатства», «Семь убийц» и другие подобные термины — названия категорий Ба-цзы, а не буквальные события или предсказания.</p></div>
             <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)} ·</i>${e(compactStemName(pillar.stemDisplay.name))}</b><b><i>${e(pillar.zhi)} ·</i>${e(compactBranchName(pillar.branchDisplay.name))}</b></div><small><b>${e(pillar.shiShenDisplay.name)}</b><i>традиционная категория Ба-цзы</i></small></article>`).join("")}</div>
             <div class="fact-grid">
@@ -174,10 +175,10 @@ function renderFreePreview(data) {
       </section>
 
       <section class="technical-disclosure">
-        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-ziwei-panel"><span><b>Подробная карта Цзы Вэй</b><small>12 жизненных сфер рассчитаны</small></span><i aria-hidden="true">+</i></button>
+        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-ziwei-panel"><span><b>Карта Цзы Вэй</b><small>Рассчитаны 12 жизненных сфер и звёзды</small><em class="disclosure-action">Посмотреть карту</em></span><i aria-hidden="true">+</i></button>
         <div class="technical-disclosure-panel" id="technical-ziwei-panel" hidden>
           <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
-            <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Подробная карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже сохранены рассчитанные параметры карты.</p></div>
+            <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже сохранены рассчитанные параметры карты.</p></div>
             <div class="ziwei-facts">
               <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
               <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
@@ -191,6 +192,13 @@ function renderFreePreview(data) {
           </section>
         </div>
       </section>
+      </div>
+    </section>
+
+    <section class="premium-teaser early-premium-bridge" data-state="PREMIUM_LOCKED">
+      <div class="shell"><header><p class="section-label">От карты — к личному смыслу</p><h2>Отдельные знаки — только части картины. Главное — как они работают вместе.</h2><p>Полный разбор соединяет Ба-цзы и Цзы Вэй и объясняет, как сочетание рассчитанных данных проявляется в сильных сторонах, работе и деньгах, отношениях, текущем жизненном этапе и ближайших периодах.</p></header>
+        <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
+      </div>
     </section>
   </section>`;
 }
@@ -245,6 +253,10 @@ function bindPreviewActions() {
 function toggleTechnicalDisclosure(button) {
   const expanded = button.getAttribute("aria-expanded") !== "true";
   button.setAttribute("aria-expanded", String(expanded));
+  const action = button.querySelector(".disclosure-action");
+  if (action) action.textContent = expanded ? "Скрыть карту" : "Посмотреть карту";
+  const disclosure = button.closest?.(".technical-disclosure");
+  if (disclosure) disclosure.dataset.expanded = String(expanded);
   const panel = document.getElementById(button.getAttribute("aria-controls"));
   if (panel) panel.hidden = !expanded;
 }
@@ -645,6 +657,39 @@ function showError(message) {
 function formatDate(value) {
   const [year, month, day] = String(value).split("-");
   return day && month && year ? `${day}.${month}.${year}` : value;
+}
+
+function normalizeBirthDateParts(dayValue, monthValue, yearValue, todayValue = new Date().toISOString().slice(0, 10)) {
+  const day = String(dayValue || "").replace(/\D/gu, "");
+  const month = String(monthValue || "").replace(/\D/gu, "");
+  const year = String(yearValue || "").replace(/\D/gu, "");
+  if (!day || !month || !year) return { value: "", error: "Укажите день, месяц и год рождения." };
+  if (year.length !== 4) return { value: "", error: "Укажите год рождения четырьмя цифрами." };
+  const dayNumber = Number(day);
+  const monthNumber = Number(month);
+  const yearNumber = Number(year);
+  if (yearNumber < 1900 || yearNumber > 2100) return { value: "", error: "Год рождения должен быть от 1900 до 2100." };
+  const date = new Date(Date.UTC(yearNumber, monthNumber - 1, dayNumber));
+  if (monthNumber < 1 || monthNumber > 12 || dayNumber < 1 || date.getUTCFullYear() !== yearNumber || date.getUTCMonth() !== monthNumber - 1 || date.getUTCDate() !== dayNumber) {
+    return { value: "", error: "Такой даты не существует. Проверьте день и месяц." };
+  }
+  const value = `${year}-${String(monthNumber).padStart(2, "0")}-${String(dayNumber).padStart(2, "0")}`;
+  if (value > todayValue) return { value: "", error: "Дата рождения не может быть в будущем." };
+  return { value, error: "" };
+}
+
+function syncBirthDateValue() {
+  birthDateInput.value = normalizeBirthDateParts(birthDayInput.value, birthMonthInput.value, birthYearInput.value).value;
+}
+
+function pasteBirthDate(event) {
+  const match = String(event.clipboardData?.getData("text") || "").trim().match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{4})$/u);
+  if (!match) return;
+  event.preventDefault();
+  birthDayInput.value = match[1].padStart(2, "0");
+  birthMonthInput.value = match[2].padStart(2, "0");
+  birthYearInput.value = match[3];
+  syncBirthDateValue();
 }
 
 function lunarDateLines(ziwei) {
