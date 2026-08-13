@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Тянь Мин">
+  <rect width="64" height="64" rx="12" fill="#173b34"/>
+  <rect x="3" y="3" width="58" height="58" rx="10" fill="none" stroke="#b18a4b" stroke-width="2"/>
+  <text x="32" y="46" fill="#fffaf0" font-family="PingFang SC, Hiragino Sans GB, Noto Sans CJK SC, sans-serif" font-size="42" font-weight="700" text-anchor="middle">命</text>
+</svg>

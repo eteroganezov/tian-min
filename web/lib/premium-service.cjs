@@ -4,6 +4,7 @@ const { canonicalBirthInput, normalizeDisplayName } = require("./personalization
 const { createFingerprints } = require("./report-fingerprint.cjs");
 const { currentReportYears } = require("./report-service.cjs");
 const { getProductConfig } = require("./product-config.cjs");
+const { normalizePromoCode, promoAvailability } = require("./promo-config.cjs");
 const { TERMINAL_STATUSES } = require("./lorentsen-provider.cjs");
 const { verifyLorentsenWebhook } = require("./lorentsen-webhook.cjs");
 
@@ -51,7 +52,7 @@ class PremiumService {
     const order = {
       orderId: randomId("order"), chartId: ids.chartId, reportId: ids.reportId,
       createdAt: now, updatedAt: now, status: "CHECKOUT_STARTED",
-      amount: this.config.amount, currency: this.config.currency,
+      baseAmount: this.config.amount, amount: this.config.amount, currency: this.config.currency,
       paymentProvider: this.paymentProvider.name, paymentId: null, currentAttemptId: null,
       providerStatus: null, paymentMethod: null, nextPollAt: null, paymentConfirmedAt: null,
       reportGenerationStartedAt: null, reportGenerationCompletedAt: null,
@@ -60,11 +61,43 @@ class PremiumService {
     return success(201, await this.orderStore.save(order));
   }
 
+  async applyPromo(input) {
+    const normalizedCode = normalizePromoCode(input?.code);
+    if (!normalizedCode) return failure(404, "Промокод не найден");
+    const promo = await this.orderStore.getPromo(normalizedCode);
+    const availability = promoAvailability(promo, this.now());
+    if (!availability.ok) return failure(availability.code === "PROMO_NOT_FOUND" ? 404 : 409, promoCustomerMessage(availability));
+    const checkout = await this.createCheckout(input?.birthInput);
+    if (checkout.status >= 400) return checkout;
+    try {
+      const applied = await this.orderStore.applyPromoToOrder({ orderId: checkout.body.order.orderId, code: normalizedCode, now: this.isoNow() });
+      return {
+        status: 200,
+        body: {
+          order: publicOrder(applied.order),
+          pricing: { baseAmount: applied.order.baseAmount, discountAmount: applied.order.baseAmount - applied.order.amount, finalAmount: applied.order.amount, currency: applied.order.currency, promoCode: applied.order.promoCode },
+        },
+      };
+    } catch (error) { return failure(error.status || 409, promoCustomerMessage(error)); }
+  }
+
+  async redeemPromo(input) {
+    const normalizedCode = normalizePromoCode(input?.code);
+    if (!normalizedCode) return failure(404, "Промокод не найден");
+    try {
+      const result = await this.orderStore.redeemComplimentaryPromo({ orderId: input?.orderId, code: normalizedCode, now: this.isoNow() });
+      return { status: result.duplicate ? 200 : 201, body: { order: publicOrder(result.order), entitlement: { accessReason: "complimentary_promo", reportId: result.order.reportId } } };
+    } catch (error) { return failure(error.status || 409, promoCustomerMessage(error)); }
+  }
+
   async startPayment(input) {
     const request = typeof input === "string" ? { orderId: input } : input || {};
     const order = await this.orderStore.load(request.orderId);
     if (!order) return failure(404, "Заказ не найден.");
     if (["PAID", "REPORT_GENERATING", "REPORT_READY"].includes(order.status)) return success(200, order);
+    const promoValidation = await this.validateAppliedPromo(order);
+    if (promoValidation) return promoValidation;
+    if (order.amount === 0) return failure(409, "Для этого промокода оплата не требуется.");
     if (this.paymentProvider.name === "mock") return this.startMockPayment(order);
     if (this.paymentProvider.name !== "lorentsen") return failure(503, "Платёжный способ пока не настроен.");
     return this.startLorentsenPayment(order, request);
@@ -73,6 +106,7 @@ class PremiumService {
   async startMockPayment(order) {
     if (order.status === "PAYMENT_PENDING" && order.paymentId) return success(200, order);
     try {
+      await this.recordPromoEvent(order, "payment_attempted");
       const payment = await this.paymentProvider.createPayment(order);
       return success(200, await this.saveOrder(order, { status: "PAYMENT_PENDING", paymentId: payment.paymentId, providerStatus: payment.status, paymentFailureReason: null }));
     } catch (error) { return failure(503, error.message || "Платёжный способ пока недоступен."); }
@@ -98,6 +132,7 @@ class PremiumService {
       if (error?.code === "23505") return failure(409, "Платёжная попытка уже создаётся. Обновите статус заказа.");
       throw error;
     }
+    await this.recordPromoEvent(order, "payment_attempted");
     return this.createProviderPayment(order, attempt);
   }
 
@@ -199,7 +234,9 @@ class PremiumService {
     } else if (alreadyFulfilled) {
       Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
     }
-    return success(200, await this.saveOrder(order, changes));
+    const saved = await this.saveOrder(order, changes);
+    if (attempt.providerStatus === "settled") await this.recordPromoEvent(saved, "settled");
+    return success(200, saved);
   }
 
   async handleLorentsenWebhook(rawBody, headers) {
@@ -257,7 +294,9 @@ class PremiumService {
     if (!event.verified || event.orderId !== order.orderId) return failure(400, "Платёжное событие не подтверждено провайдером.");
     if (event.status === "succeeded") {
       if (["PAID", "REPORT_GENERATING", "REPORT_READY"].includes(order.status)) return success(200, order);
-      return success(200, await this.saveOrder(order, { status: "PAID", paymentConfirmedAt: event.confirmedAt, paymentFailureReason: null }));
+      const saved = await this.saveOrder(order, { status: "PAID", paymentConfirmedAt: event.confirmedAt, paymentFailureReason: null });
+      await this.recordPromoEvent(saved, "settled");
+      return success(200, saved);
     }
     if (event.status === "failed" || event.status === "cancelled") return success(200, await this.saveOrder(order, { status: "CHECKOUT_STARTED", paymentId: null, paymentFailureReason: event.status }));
     return success(200, await this.saveOrder(order, { status: "PAYMENT_PENDING" }));
@@ -283,7 +322,7 @@ class PremiumService {
     if (this.env.NODE_ENV === "production" && this.paymentProvider.name === "lorentsen") return failure(503, "Автоматическая подготовка полного разбора пока не включена.");
     if (order.status === "REPORT_READY") return success(200, order);
     if (order.status === "REPORT_GENERATING") return success(202, order);
-    if (!["PAID", "REPORT_FAILED"].includes(order.status)) return failure(403, "Персональный разбор доступен только после подтверждённой оплаты.");
+    if (!["PAID", "REPORT_FAILED"].includes(order.status) && order.accessReason !== "complimentary_promo") return failure(403, "Персональный разбор доступен только после подтверждённой оплаты или специального доступа.");
     const saved = await this.reportStore?.load(order.reportId);
     if (saved?.kind === "premium-generation-stub") return success(200, await this.saveOrder(order, { status: "REPORT_READY", reportGenerationCompletedAt: saved.savedAt }));
     order = await this.saveOrder(order, { status: "REPORT_GENERATING", reportGenerationStartedAt: this.isoNow(), reportGenerationCompletedAt: null });
@@ -303,6 +342,17 @@ class PremiumService {
   }
 
   async saveOrder(order, changes) { return this.orderStore.save({ ...order, ...changes, updatedAt: this.isoNow() }); }
+  async validateAppliedPromo(order) {
+    if (!order.promoCode) return null;
+    const promo = await this.orderStore.getPromo(order.promoCode);
+    const availability = promoAvailability(promo, this.now());
+    if (!availability.ok || Number(promo.targetFinalAmount) !== Number(order.amount)) return failure(409, promoCustomerMessage(availability));
+    return null;
+  }
+  async recordPromoEvent(order, eventType) {
+    if (!order?.promoCode || !this.orderStore.recordPromoEvent) return;
+    await this.orderStore.recordPromoEvent({ promoCode: order.promoCode, eventType, orderId: order.orderId, reportId: order.reportId, createdAt: this.isoNow() });
+  }
   isoNow() { return this.now().toISOString(); }
 }
 
@@ -330,7 +380,7 @@ function updateAttempt(attempt, payment, now) {
 }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }
 async function defaultStubGenerator(order) { return { mode: "stub", reportId: order.reportId, message: "Тестовый полный разбор подготовлен без обращения к AI." }; }
-function publicOrder(order) { const { birthInput, checkoutKeyHash, displayName, ...safe } = order; return { ...safe, displayName: displayName || "" }; }
+function publicOrder(order) { const { birthInput, checkoutKeyHash, displayName, promoCampaign, ...safe } = order; return { ...safe, displayName: displayName || "" }; }
 function success(status, order) { return { status, body: { order: publicOrder(order) } }; }
 function failure(status, error) { return { status, body: { error } }; }
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
@@ -342,6 +392,13 @@ function customerPaymentError(error) {
   if (error?.status === 422 || error?.code === "PROVIDER_VALIDATION_ERROR") return "Не удалось создать оплату. Попробуйте снова.";
   return "Не удалось начать оплату. Попробуйте ещё раз чуть позже.";
 }
+function promoCustomerMessage(error) {
+  const code = error?.code;
+  if (code === "PROMO_NOT_FOUND") return "Промокод не найден";
+  if (code === "PROMO_EXPIRED") return "Срок действия промокода истёк";
+  if (code === "PROMO_UNAVAILABLE" || code === "PROMO_EXHAUSTED") return "Промокод больше недоступен";
+  return "Этот промокод нельзя применить";
+}
 function safeMessage(error) { return String(error?.message || "Некорректные данные рождения.").replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, ""); }
 
-module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, publicOrder, validatePaymentInput };
+module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, promoCustomerMessage, publicOrder, validatePaymentInput };

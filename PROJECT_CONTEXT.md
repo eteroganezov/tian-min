@@ -89,6 +89,8 @@ The available official Lorentsen production guide and granted client scopes docu
 
 Historical real provider attempts in `manual_review` remain non-terminal and must not be replaced automatically. Separate `399 RUB` attempts were rejected before payment creation with HTTP `422` / `amount_out_of_range`; they received no `payment_public_id` or payment method. The production payment flow is not considered end-to-end validated until one controlled provider-compatible payment reaches authenticated `settled`.
 
+Promo Codes v1 is server-owned and bound to one exact order/report. `FAMILY0` targets `0 RUB` and creates an atomic `complimentary_promo` entitlement without a provider payment and without setting `PAID`. It has an expiry, active toggle and redemption limit. `FRIEND100` (`100 RUB`) and `SUPPORT399` (`399 RUB`) are configured but inactive: neither may create a production payment until the actual Lorentsen minimum is independently confirmed at or below its target. A planned provider change is not treated as active configuration. Promo application, payment attempts, settlement and complimentary entitlement creation are stored as separate events.
+
 ## Deployment and persistence
 
 - Source repository: `eteroganezov/tian-min`, branch `main`.
@@ -109,6 +111,8 @@ Deployment exists, but launch readiness is not complete while payment is in exte
 - Ready reports must be persisted and reused; retries after generation failure must not require another payment or unnecessary AI call.
 - WEB visual v1 is frozen. Premium PDF is a separate layer and is not yet human-approved.
 - `birthTimeCertainty` and calculated sensitivity are independent signals.
+- Promo discounts, availability and redemption limits are server/database-owned. A complimentary entitlement is not a payment and never sets `PAID`; paid promos retain the authenticated `settled` requirement.
+- Brand architecture is `Tian Min / Тянь Мин`, Chinese wordmark `天命`, standalone symbol `命`, primary lockup `[命] ТЯНЬ МИН 天命`. The site includes scalable and 16/32/180 favicon assets without changing the main logo.
 
 ## Licensing and external dependencies
 

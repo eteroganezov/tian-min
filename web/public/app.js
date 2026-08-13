@@ -25,6 +25,7 @@ let timeZoneSearchSequence = 0;
 let currentBirthInput = null;
 let premiumBusy = false;
 let premiumConfig = null;
+let activePremiumOrder = null;
 let paymentPollTimer = null;
 
 const mobileFormMedia = typeof matchMedia === "function" ? matchMedia("(max-width: 620px)") : null;
@@ -110,6 +111,7 @@ async function submitFreeCalculation(timeOccurrence) {
     if (response.status === 409 && payload.code === "AMBIGUOUS_LOCAL_TIME") return showAmbiguity(payload.options || []);
     if (!response.ok) throw new Error(payload.error || "Не удалось выполнить расчёт.");
     currentBirthInput = input;
+    activePremiumOrder = null;
     resultRoot.innerHTML = renderFreePreview(payload);
     bindPreviewActions();
     setState("FREE_PREVIEW_READY");
@@ -204,20 +206,52 @@ async function openPremiumOffer() {
       host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
       return;
     }
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div><div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div><button type="button" class="premium-button" data-action="checkout">Перейти к оплате</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
-    host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
+    renderPremiumOffer(host, config);
     revealCheckout(host);
   } catch (error) { showPremiumError(error.message); }
   finally { premiumBusy = false; }
 }
 
-async function startCheckout() {
-  if (premiumBusy || !currentBirthInput) return;
+function renderPremiumOffer(host, config, options = {}) {
+  const pricing = options.pricing;
+  const baseAmount = pricing?.baseAmount ?? config.amount;
+  const finalAmount = pricing?.finalAmount ?? config.amount;
+  const promoSummary = pricing ? `<div class="promo-price-summary"><span><i>Стоимость</i><b>${e(formatPrice(baseAmount, config.currency))}</b></span><span><i>Промокод</i><b>−${e(formatPrice(pricing.discountAmount, config.currency))}</b></span><span><i>К оплате</i><b>${e(formatPrice(finalAmount, config.currency))}</b></span></div>` : `<div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div>`;
+  host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div>${promoSummary}<button type="button" class="promo-toggle" data-action="show-promo" ${pricing ? "hidden" : ""}>У меня есть промокод</button><div class="promo-entry" ${options.expanded || pricing ? "" : "hidden"}><label>Промокод<input type="text" name="promoCode" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${e(pricing?.promoCode || options.code || "")}"></label><button type="button" class="secondary-checkout-button" data-action="apply-promo">Применить</button><p class="promo-message" role="status" ${options.message ? "" : "hidden"}>${e(options.message || "")}</p></div><button type="button" class="premium-button" data-action="checkout">${finalAmount === 0 ? "Получить персональный разбор" : "Перейти к оплате"}</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
+  host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
+  host.querySelector('[data-action="show-promo"]')?.addEventListener("click", () => {
+    const entry = host.querySelector(".promo-entry");
+    entry.hidden = false;
+    host.querySelector('[name="promoCode"]')?.focus?.();
+  });
+  host.querySelector('[data-action="apply-promo"]')?.addEventListener("click", () => applyPromo(host));
+}
+
+async function applyPromo(host, birthInput = currentBirthInput) {
+  if (premiumBusy || !birthInput) return;
+  const code = host.querySelector('[name="promoCode"]')?.value || "";
   premiumBusy = true;
   try {
-    const checkout = await api("/api/premium/checkout", currentBirthInput);
+    const result = await api("/api/premium/promo/apply", { birthInput, code });
+    activePremiumOrder = result.order;
+    localStorage.setItem("tianMinOrderId", result.order.orderId);
+    renderPremiumOffer(host, premiumConfig, { pricing: result.pricing });
+  } catch (error) { renderPremiumOffer(host, premiumConfig, { expanded: true, code, message: error.message }); }
+  finally { premiumBusy = false; }
+}
+
+async function startCheckout() {
+  if (premiumBusy || (!currentBirthInput && !activePremiumOrder)) return;
+  premiumBusy = true;
+  try {
+    const checkout = activePremiumOrder ? { order: activePremiumOrder } : await api("/api/premium/checkout", currentBirthInput);
+    activePremiumOrder = checkout.order;
     localStorage.setItem("tianMinOrderId", checkout.order.orderId);
-    if (premiumConfig?.paymentMode === "lorentsen") renderConsentCheckout(checkout.order);
+    if (checkout.order.amount === 0 && checkout.order.promoCode) {
+      const redeemed = await api("/api/premium/promo/redeem", { orderId: checkout.order.orderId, code: checkout.order.promoCode });
+      activePremiumOrder = redeemed.order;
+      renderComplimentaryState(document.querySelector(".premium-action") || resultRoot, redeemed.order);
+    } else if (premiumConfig?.paymentMode === "lorentsen") renderConsentCheckout(checkout.order);
     else {
       const payment = await api("/api/premium/payment/start", { orderId: checkout.order.orderId });
       renderPaymentState(payment.order);
@@ -226,9 +260,14 @@ async function startCheckout() {
   finally { premiumBusy = false; }
 }
 
+function renderComplimentaryState(host, order) {
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="COMPLIMENTARY_ENTITLED"><p class="section-label">Специальный доступ</p><h3>Персональный разбор доступен</h3><p>Промокод применён к этой карте. Оплата не требуется.</p><div class="payment-notice">Доступ связан с текущими данными рождения и отчётом.</div></section>`;
+}
+
 function renderPaymentState(order) {
   const host = document.querySelector(".premium-action") || resultRoot;
   clearTimeout(paymentPollTimer);
+  if (order.accessReason === "complimentary_promo") return renderComplimentaryState(host, order);
   if (order.paymentProvider === "lorentsen") return renderLorentsenState(host, order);
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
   if (order.status === "REPORT_FAILED") {
@@ -362,7 +401,14 @@ async function restorePremiumOrder() {
   try {
     premiumConfig = await api("/api/premium/config");
     const result = await api(`/api/premium/order/${encodeURIComponent(orderId)}`);
-    if (["PAID", "REPORT_GENERATING"].includes(result.order.status)) {
+    activePremiumOrder = result.order;
+    if (result.order.accessReason === "complimentary_promo") {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderComplimentaryState(resultRoot.querySelector(".premium-action"), result.order);
+    } else if (result.order.amount === 0 && result.order.promoCode) {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig, { pricing: { baseAmount: result.order.baseAmount, discountAmount: result.order.baseAmount, finalAmount: 0, currency: result.order.currency, promoCode: result.order.promoCode } });
+    } else if (["PAID", "REPORT_GENERATING"].includes(result.order.status)) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderPaidState(resultRoot.querySelector(".premium-action"), result.order);
       if (result.order.paymentProvider === "lorentsen") renderPaymentState(result.order);

@@ -176,3 +176,50 @@ test("active QR имеет безопасный выход без fake cancel и
   assert.match(ui.host.innerHTML, /эта попытка останется связана только с прежними данными/);
   assert.deepEqual(calls, []);
 });
+
+test("promo UX скрыт по умолчанию, FAMILY0 показывает перерасчёт и не вызывает payment endpoint", async () => {
+  const calls = [];
+  const promoOrder = order(null, { status: "CHECKOUT_STARTED", baseAmount: 599, amount: 0, promoCode: "FAMILY0" });
+  const ui = harness(async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    if (url === "/api/premium/promo/apply") return { ok: true, json: async () => ({ order: promoOrder, pricing: { baseAmount: 599, discountAmount: 599, finalAmount: 0, currency: "RUB", promoCode: "FAMILY0" } }) };
+    if (url === "/api/premium/promo/redeem") return { ok: true, json: async () => ({ order: { ...promoOrder, accessReason: "complimentary_promo", premiumEntitledAt: "2026-08-13T12:00:00Z" } }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  await ui.context.openPremiumOffer();
+  assert.match(ui.host.innerHTML, /У меня есть промокод/);
+  assert.match(ui.host.innerHTML, /class="promo-entry" hidden/);
+
+  const code = ui.host.querySelector('[name="promoCode"]');
+  code.value = " family0 ";
+  await ui.context.applyPromo(ui.host, { date: "1995-09-03" });
+  assert.match(ui.host.innerHTML, /Стоимость/);
+  assert.match(ui.host.innerHTML, /Промокод/);
+  assert.match(ui.host.innerHTML, /К оплате/);
+  assert.match(ui.host.innerHTML, /Получить персональный разбор/);
+  assert.equal(JSON.parse(calls.find(call => call.url === "/api/premium/promo/apply").options.body).code, " family0 ");
+
+  await ui.host.querySelector('[data-action="checkout"]').dispatch("click");
+  assert.match(ui.host.innerHTML, /Специальный доступ/);
+  assert.match(ui.host.innerHTML, /Оплата не требуется/);
+  assert.equal(calls.filter(call => call.url === "/api/premium/promo/redeem").length, 1);
+  assert.equal(calls.filter(call => call.url === "/api/premium/payment/start").length, 0);
+});
+
+test("promo error показывается человеческим текстом без раскрытия внутренних деталей", async () => {
+  const ui = harness(async url => {
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    return { ok: false, json: async () => ({ error: "Промокод больше недоступен" }) };
+  });
+  await ui.context.openPremiumOffer();
+  ui.host.querySelector('[name="promoCode"]').value = "FRIEND100";
+  await ui.context.applyPromo(ui.host, { date: "1995-09-03" });
+  assert.match(ui.host.innerHTML, /Промокод больше недоступен/);
+  assert.doesNotMatch(ui.host.innerHTML, /database|provider|minim|internal/i);
+});
+
+test("успешный promo перерасчёт не возвращает скрытую кнопку раскрытия", () => {
+  const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
+  assert.match(styles, /\.promo-toggle\[hidden\]\{display:none\}/);
+});

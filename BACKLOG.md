@@ -11,7 +11,7 @@
 - Lorentsen account profile still exposes the external organization label `Edward`; request a provider-side rename to `Тянь Мин`. Tian Min-controlled checkout copy already uses the canonical product name.
 - Controlled production payment validation: the flow is not end-to-end proven until a deliberately supervised attempt reaches authenticated GET `settled`. No real payment should be initiated without a separate explicit task.
 - Independent specialist verification remains required for the explicitly skipped Zi Wei star/bureau/period cases, late 子-hour school rule and selected `TRUE_SOLAR_TIME_V1` astrological references.
-- Promo code `FRIEND100` is provisionally defined as a final price of `100 RUB` with real settlement, but the current Lorentsen minimum rejects amounts below `500 RUB`. Do not implement it until pricing/provider compatibility is redesigned and verified.
+- Promo codes `FRIEND100` (`100 RUB`) and `SUPPORT399` (`399 RUB`) are configured but inactive. The current verified Lorentsen minimum rejects both targets. A planned reduction to `100 RUB` must be verified separately before either code is activated; paid promos still require authenticated `settled`.
 
 ## NEXT
 
@@ -22,9 +22,7 @@
 
 ### Product foundation
 
-- Brand assets: prepare a standalone Tian Min `命` symbol as an SVG favicon with verified 16×16, 32×32 and Apple Touch Icon variants. Keep the main site lockup `[命] ТЯНЬ МИН 天命`; do not use the full wordmark as the favicon.
 - Chinese-symbol color language: first audit stems/branches, palace markers, transformations and personal Chinese signs on ivory and deep-jade surfaces; then extend the existing muted-red cultural accent selectively. Red must not imply error, success, good or bad, and Chinese text must not be recolored globally.
-- Promo-code architecture: add a collapsed checkout entry point «Есть промокод?» and server-only validation with code, discount type/value, active window, redemption limits, campaign/source and durable redemption records. Provisional `FAMILY0` means 100% discount, `0 RUB` final amount and a complimentary server entitlement with no Lorentsen call. Provisional `FRIEND100` semantics are recorded above but blocked by the provider minimum. Do not implement either code before a separate architecture task.
 - Premium delivery: after authenticated `settled` or a legitimate complimentary entitlement, show «Ваш персональный разбор готов» with primary «Открыть отчёт» and secondary «Скачать PDF»; mobile prioritizes opening.
 - Email delivery and purchase recovery research: compare low-cost transactional email options, consent/privacy requirements and secure report links so closing a browser or Telegram does not require a second purchase. Do not promise email delivery before implementation.
 - Report storage decision: compare immutable PDF object storage with persisted report data plus deterministic rendering. Account for storage, PDF size, render CPU, privacy/retention and versioning; an already purchased report must never require OpenAI regeneration.
@@ -56,3 +54,5 @@ Brand architecture note: brand `Tian Min / Тянь Мин`, Chinese wordmark `�
 - Premium Report `personal-report-v4`: deterministic evidence catalog, strict Structured Outputs schema, evidence validation, unsupported-claim protection and legacy compatibility.
 - Shared Premium PDF v4 renderer/design system and saved-report compatibility. Final editorial approval remains in NOW, not DONE.
 - Production incident diagnosed: three `399 RUB` attempts received HTTP `422` / `amount_out_of_range`, without `payment_public_id`, QR or payment link. The server-owned temporary early-user price was restored to the provider-compatible **599 RUB** (`59900` minor units).
+- Promo Codes v1: collapsed checkout UX, canonical server validation, durable promo/event/redemption schema, atomic limited `FAMILY0` complimentary entitlement bound to one order/report, and inactive configured `FRIEND100`/`SUPPORT399` paid targets.
+- Tian Min favicon set: standalone `命` in deep jade/ivory/gold as SVG, 16×16, 32×32 and Apple Touch Icon assets. The main site logo remains unchanged.

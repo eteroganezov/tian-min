@@ -185,7 +185,7 @@ test("PostgreSQL production store создаёт durable orders, attempts, conse
   const store = new PostgresPaymentStore({ pool });
   await store.ready;
   const schema = queries.join("\n");
-  for (const table of ["tian_min_orders", "tian_min_payment_attempts", "tian_min_consent_records", "tian_min_webhook_inbox", "tian_min_payment_anomalies", "tian_min_reports"]) assert.match(schema, new RegExp(table));
+  for (const table of ["tian_min_orders", "tian_min_payment_attempts", "tian_min_consent_records", "tian_min_webhook_inbox", "tian_min_payment_anomalies", "tian_min_reports", "tian_min_promos", "tian_min_promo_redemptions", "tian_min_promo_events"]) assert.match(schema, new RegExp(table));
   assert.throws(() => new PostgresPaymentStore({ env: {} }), /DATABASE_URL/);
 });
 
@@ -309,6 +309,23 @@ test("production checkout хранит 59900 minor units, exact consent schema �
   assert.equal(attempt.requestBody.auto_redemption_consent_version, "partner_auto_redemption_consent_v1");
   assert.equal(ctx.orderStore.consents.size, 1);
   assert.equal([...ctx.orderStore.consents.values()][0].displayedPartnerPublicName, "Тянь Мин");
+});
+
+test("активированный paid promo сохраняет server amount и только authenticated settled выставляет PAID", async () => {
+  const ctx = serviceSetup(["requires_action", "settled"]);
+  const promo = ctx.orderStore.promos.get("FRIEND100");
+  promo.active = true;
+  promo.startsAt = null;
+  const applied = await ctx.service.applyPromo({ birthInput, code: " friend100 " });
+  assert.equal(applied.body.order.baseAmount, 599);
+  assert.equal(applied.body.order.amount, 100);
+  const pending = await ctx.service.startPayment({ orderId: applied.body.order.orderId, ...validConsent });
+  assert.equal(pending.body.order.status, "PAYMENT_PENDING");
+  assert.equal(ctx.provider.createCalls[0].requestBody.customer_amount_minor, 10000);
+  assert.equal((await ctx.service.getOrder(applied.body.order.orderId)).body.order.status, "PAYMENT_PENDING");
+  const settled = await ctx.service.reconcilePayment(pending.body.order.paymentId);
+  assert.equal(settled.body.order.status, "PAID");
+  assert.equal(ctx.orderStore.promoEvents.has(`settled:FRIEND100:${applied.body.order.orderId}`), true);
 });
 
 test("email и две отдельные consent actions обязательны", async () => {

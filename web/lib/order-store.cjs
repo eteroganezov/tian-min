@@ -1,8 +1,14 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
+const { initialPromoRecords, normalizePromoCode, promoAvailability, promoError } = require("./promo-config.cjs");
 
 class MemoryOrderStore {
-  constructor() { this.orders = new Map(); this.attempts = new Map(); this.consents = new Map(); this.webhooks = new Map(); this.anomalies = []; }
+  constructor(options = {}) {
+    this.orders = new Map(); this.attempts = new Map(); this.consents = new Map(); this.webhooks = new Map(); this.anomalies = [];
+    this.promos = new Map((options.promos || initialPromoRecords()).map(promo => [promo.normalizedCode, structuredClone(promo)]));
+    this.promoRedemptions = new Map(); this.promoEvents = new Map();
+  }
   save(order) { this.orders.set(order.orderId, structuredClone(order)); return structuredClone(order); }
   load(orderId) { const order = this.orders.get(String(orderId)); return order ? structuredClone(order) : null; }
   findByCheckoutKey(checkoutKeyHash) {
@@ -20,11 +26,55 @@ class MemoryOrderStore {
   listPendingWebhooks(limit = 50) { const now = Date.now(); return [...this.webhooks.values()].filter(item => ((item.processingStatus === "pending" || item.processingStatus === "retry") && (!item.nextProcessingAt || Date.parse(item.nextProcessingAt) <= now)) || (item.processingStatus === "processing" && Date.parse(item.processingLeaseUntil || 0) <= now)).slice(0, limit).map(item => structuredClone(item)); }
   updateWebhook(eventId, changes) { const existing = this.webhooks.get(String(eventId)); if (!existing) return null; const updated = { ...existing, ...structuredClone(changes) }; this.webhooks.set(String(eventId), updated); return structuredClone(updated); }
   saveAnomaly(record) { this.anomalies.push(structuredClone(record)); return structuredClone(record); }
+  getPromo(code) { const promo = this.promos.get(normalizePromoCode(code)); return promo ? structuredClone(promo) : null; }
+  applyPromoToOrder({ orderId, code, now }) {
+    const normalizedCode = normalizePromoCode(code);
+    const promo = this.promos.get(normalizedCode);
+    const availability = promoAvailability(promo, new Date(now));
+    if (!availability.ok) throw promoError(availability);
+    const order = this.load(String(orderId));
+    if (!order || order.status !== "CHECKOUT_STARTED" || order.currentAttemptId || order.paymentId || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+    const updated = { ...order, baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, updatedAt: now };
+    this.save(updated);
+    this.recordPromoEvent({ promoCode: normalizedCode, eventType: "promo_applied", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+    this.recordPromoEvent({ promoCode: normalizedCode, eventType: "checkout_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+    return { order: structuredClone(updated), promo: structuredClone(promo) };
+  }
+  redeemComplimentaryPromo({ orderId, code, now }) {
+    const normalizedCode = normalizePromoCode(code);
+    const order = this.load(String(orderId));
+    const existing = this.promoRedemptions.get(String(orderId));
+    if (existing) {
+      if (existing.promoCode !== normalizedCode) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+      return { order: this.load(orderId), redemption: structuredClone(existing), duplicate: true };
+    }
+    if (order?.accessReason === "complimentary_promo" && order.promoCode === normalizedCode) {
+      return { order: structuredClone(order), redemption: { promoCode: normalizedCode, orderId: order.orderId, reportId: order.reportId, accessReason: "complimentary_promo", createdAt: order.promoRedeemedAt }, duplicate: true };
+    }
+    const promo = this.promos.get(normalizedCode);
+    const availability = promoAvailability(promo, new Date(now));
+    if (!availability.ok) throw promoError(availability);
+    if (!order || order.promoCode !== normalizedCode || promo.targetFinalAmount !== 0 || order.reportId == null || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+    promo.redemptionCount = Number(promo.redemptionCount || 0) + 1;
+    promo.updatedAt = now;
+    const redemption = { redemptionId: `promo_redemption_${crypto.randomBytes(16).toString("hex")}`, promoCode: normalizedCode, orderId: order.orderId, reportId: order.reportId, finalAmount: 0, accessReason: "complimentary_promo", createdAt: now };
+    const updated = { ...order, amount: 0, accessReason: "complimentary_promo", premiumEntitledAt: now, promoRedeemedAt: now, updatedAt: now };
+    this.promoRedemptions.set(order.orderId, structuredClone(redemption));
+    this.save(updated);
+    this.recordPromoEvent({ promoCode: normalizedCode, eventType: "complimentary_entitlement_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+    return { order: structuredClone(updated), redemption: structuredClone(redemption), duplicate: false };
+  }
+  recordPromoEvent(event) {
+    if (!event?.promoCode) return null;
+    const key = `${event.eventType}:${event.promoCode}:${event.orderId}`;
+    if (!this.promoEvents.has(key)) this.promoEvents.set(key, { eventId: `promo_event_${crypto.randomBytes(16).toString("hex")}`, ...structuredClone(event) });
+    return structuredClone(this.promoEvents.get(key));
+  }
 }
 
 class LocalOrderStore extends MemoryOrderStore {
   constructor(options = {}) {
-    super();
+    super(options);
     this.root = options.root || path.resolve(__dirname, "..", ".local-orders");
     this.enabled = options.enabled !== false && (options.env || process.env).NODE_ENV !== "production";
   }

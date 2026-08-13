@@ -1,4 +1,5 @@
 const crypto = require("node:crypto");
+const { initialPromoRecords, normalizePromoCode, promoAvailability, promoError } = require("./promo-config.cjs");
 
 class PostgresPaymentStore {
   constructor(options = {}) {
@@ -56,7 +57,51 @@ class PostgresPaymentStore {
         record JSONB NOT NULL,
         saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE TABLE IF NOT EXISTS tian_min_promos (
+        normalized_code TEXT PRIMARY KEY,
+        code TEXT NOT NULL,
+        discount_type TEXT NOT NULL,
+        discount_value INTEGER NOT NULL,
+        target_final_amount INTEGER NOT NULL,
+        active BOOLEAN NOT NULL,
+        starts_at TIMESTAMPTZ,
+        expires_at TIMESTAMPTZ,
+        max_redemptions INTEGER,
+        redemption_count INTEGER NOT NULL DEFAULT 0,
+        per_order_limit INTEGER,
+        campaign TEXT,
+        source TEXT,
+        record JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS tian_min_promo_redemptions (
+        redemption_id TEXT PRIMARY KEY,
+        promo_code TEXT NOT NULL REFERENCES tian_min_promos(normalized_code),
+        order_id TEXT NOT NULL UNIQUE,
+        report_id TEXT NOT NULL,
+        record JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE TABLE IF NOT EXISTS tian_min_promo_events (
+        event_id TEXT PRIMARY KEY,
+        promo_code TEXT NOT NULL REFERENCES tian_min_promos(normalized_code),
+        event_type TEXT NOT NULL,
+        order_id TEXT NOT NULL,
+        report_id TEXT NOT NULL,
+        record JSONB NOT NULL,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE(promo_code,event_type,order_id)
+      );
     `);
+    for (const promo of initialPromoRecords()) {
+      await this.pool.query(
+        `INSERT INTO tian_min_promos(normalized_code,code,discount_type,discount_value,target_final_amount,active,starts_at,expires_at,max_redemptions,redemption_count,per_order_limit,campaign,source,record,created_at,updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb,$15,$16)
+         ON CONFLICT(normalized_code) DO NOTHING`,
+        [promo.normalizedCode, promo.code, promo.discountType, promo.discountValue, promo.targetFinalAmount, promo.active, promo.startsAt, promo.expiresAt, promo.maxRedemptions, promo.redemptionCount, promo.perOrderLimit, promo.campaign, promo.source, JSON.stringify(promo), promo.createdAt, promo.updatedAt],
+      );
+    }
   }
 
   async save(order) {
@@ -178,6 +223,74 @@ class PostgresPaymentStore {
     );
     return anomaly;
   }
+
+  async getPromo(code, client = this.pool) {
+    await this.ready;
+    const result = await client.query("SELECT record || jsonb_build_object('redemptionCount',redemption_count,'active',active,'updatedAt',updated_at) AS record FROM tian_min_promos WHERE normalized_code=$1", [normalizePromoCode(code)]);
+    return result.rows[0] ? clone(result.rows[0].record) : null;
+  }
+
+  async applyPromoToOrder({ orderId, code, now }) {
+    await this.ready;
+    const normalizedCode = normalizePromoCode(code);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const promoResult = await client.query("SELECT record || jsonb_build_object('redemptionCount',redemption_count,'active',active,'updatedAt',updated_at) AS record FROM tian_min_promos WHERE normalized_code=$1 FOR UPDATE", [normalizedCode]);
+      const promo = promoResult.rows[0]?.record || null;
+      const availability = promoAvailability(promo, new Date(now));
+      if (!availability.ok) throw promoError(availability);
+      const orderResult = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1 FOR UPDATE", [String(orderId)]);
+      const order = orderResult.rows[0]?.record;
+      if (!order || order.status !== "CHECKOUT_STARTED" || order.currentAttemptId || order.paymentId || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+      const updated = { ...order, baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, updatedAt: now };
+      await client.query("UPDATE tian_min_orders SET record=$2::jsonb,updated_at=NOW() WHERE order_id=$1", [order.orderId, JSON.stringify(updated)]);
+      await insertPromoEvent(client, { promoCode: normalizedCode, eventType: "promo_applied", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+      await insertPromoEvent(client, { promoCode: normalizedCode, eventType: "checkout_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+      await client.query("COMMIT");
+      return { order: clone(updated), promo: clone(promo) };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async redeemComplimentaryPromo({ orderId, code, now }) {
+    await this.ready;
+    const normalizedCode = normalizePromoCode(code);
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const existing = await client.query("SELECT record FROM tian_min_promo_redemptions WHERE order_id=$1 FOR UPDATE", [String(orderId)]);
+      if (existing.rows[0]) {
+        const redemption = existing.rows[0].record;
+        if (redemption.promoCode !== normalizedCode) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+        const saved = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1", [String(orderId)]);
+        await client.query("COMMIT");
+        return { order: clone(saved.rows[0].record), redemption: clone(redemption), duplicate: true };
+      }
+      const promoResult = await client.query("SELECT record || jsonb_build_object('redemptionCount',redemption_count,'active',active,'updatedAt',updated_at) AS record FROM tian_min_promos WHERE normalized_code=$1 FOR UPDATE", [normalizedCode]);
+      const promo = promoResult.rows[0]?.record || null;
+      const availability = promoAvailability(promo, new Date(now));
+      if (!availability.ok) throw promoError(availability);
+      const orderResult = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1 FOR UPDATE", [String(orderId)]);
+      const order = orderResult.rows[0]?.record;
+      if (!order || order.promoCode !== normalizedCode || promo.targetFinalAmount !== 0 || !order.reportId || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+      const redemption = { redemptionId: `promo_redemption_${crypto.randomBytes(16).toString("hex")}`, promoCode: normalizedCode, orderId: order.orderId, reportId: order.reportId, finalAmount: 0, accessReason: "complimentary_promo", createdAt: now };
+      const updated = { ...order, amount: 0, accessReason: "complimentary_promo", premiumEntitledAt: now, promoRedeemedAt: now, updatedAt: now };
+      await client.query("INSERT INTO tian_min_promo_redemptions(redemption_id,promo_code,order_id,report_id,record,created_at) VALUES($1,$2,$3,$4,$5::jsonb,$6)", [redemption.redemptionId, normalizedCode, order.orderId, order.reportId, JSON.stringify(redemption), now]);
+      await client.query("UPDATE tian_min_promos SET redemption_count=redemption_count+1,record=record || jsonb_build_object('redemptionCount',redemption_count+1,'updatedAt',$2::text),updated_at=NOW() WHERE normalized_code=$1", [normalizedCode, now]);
+      await client.query("UPDATE tian_min_orders SET record=$2::jsonb,updated_at=NOW() WHERE order_id=$1", [order.orderId, JSON.stringify(updated)]);
+      await insertPromoEvent(client, { promoCode: normalizedCode, eventType: "complimentary_entitlement_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });
+      await client.query("COMMIT");
+      return { order: clone(updated), redemption: clone(redemption), duplicate: false };
+    } catch (error) { await client.query("ROLLBACK"); throw error; }
+    finally { client.release(); }
+  }
+
+  async recordPromoEvent(event) {
+    if (!event?.promoCode) return null;
+    await this.ready;
+    return insertPromoEvent(this.pool, event);
+  }
 }
 
 class PostgresReportStore {
@@ -199,5 +312,14 @@ function createPool(connectionString) { const { Pool } = require("pg"); return n
 function recordOrNull(result) { return result.rows[0] ? clone(result.rows[0].record) : null; }
 function clone(value) { return value == null ? null : structuredClone(value); }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
+async function insertPromoEvent(client, event) {
+  const record = { eventId: `promo_event_${crypto.randomBytes(16).toString("hex")}`, ...event };
+  await client.query(
+    `INSERT INTO tian_min_promo_events(event_id,promo_code,event_type,order_id,report_id,record,created_at)
+     VALUES($1,$2,$3,$4,$5,$6::jsonb,$7) ON CONFLICT(promo_code,event_type,order_id) DO NOTHING`,
+    [record.eventId, record.promoCode, record.eventType, record.orderId, record.reportId, JSON.stringify(record), record.createdAt],
+  );
+  return record;
+}
 
 module.exports = { PostgresPaymentStore, PostgresReportStore };

@@ -14,7 +14,7 @@ const { createPaymentProvider } = require("./lib/payment-provider.cjs");
 const { PremiumService } = require("./lib/premium-service.cjs");
 const { PostgresPaymentStore, PostgresReportStore } = require("./lib/production-store.cjs");
 
-const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
 
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
@@ -37,6 +37,8 @@ function createServer(options = {}) {
       if (request.method === "POST" && request.url === "/api/report") return sendJson(response, 403, { error: "Прямая генерация отключена. Персональный разбор запускается сервером только после подтверждённой оплаты." });
       if (request.method === "GET" && request.url === "/api/premium/config") return sendJson(response, 200, premiumService.getConfig());
       if (request.method === "POST" && request.url === "/api/premium/checkout") return await handlePremiumAction(request, response, input => premiumService.createCheckout(input), 30_000);
+      if (request.method === "POST" && request.url === "/api/premium/promo/apply") return await handlePremiumAction(request, response, input => premiumService.applyPromo(input), 30_000);
+      if (request.method === "POST" && request.url === "/api/premium/promo/redeem") return await handlePremiumAction(request, response, input => premiumService.redeemPromo(input));
       if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input));
       if (request.method === "POST" && request.url === "/api/premium/dev/payment") return await handlePremiumAction(request, response, input => premiumService.applyMockOutcome(input.orderId, input.outcome));
       if (request.method === "POST" && request.url === "/api/payments/lorentsen/webhook") return await handleLorentsenWebhook(request, response, premiumService);
