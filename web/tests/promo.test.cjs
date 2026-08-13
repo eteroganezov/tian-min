@@ -43,7 +43,7 @@ test("FAMILY0 даёт final amount 0 и complimentary entitlement без PAID �
   assert.deepEqual(applied.body.pricing, { baseAmount: 100, discountAmount: 100, finalAmount: 0, currency: "RUB", promoCode: "FAMILY0" });
   const redeemed = await ctx.service.redeemPromo({ orderId: applied.body.order.orderId, code: "FAMILY0" });
   assert.equal(redeemed.status, 201);
-  assert.equal(redeemed.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(redeemed.body.order.status, "REPORT_GENERATING");
   assert.equal(redeemed.body.order.accessReason, "complimentary_promo");
   assert.equal(redeemed.body.order.paymentId, null);
   assert.equal(redeemed.body.order.providerStatus, null);
@@ -82,7 +82,7 @@ test("terminal payment сохраняется в истории, но тот ж�
   assert.equal((await ctx.orderStore.loadAttempt(attempt.attemptId)).providerStatus, "failed");
   const redeemed = await ctx.service.redeemPromo({ orderId: order.orderId, code: "FAMILY0" });
   assert.equal(redeemed.body.order.accessReason, "complimentary_promo");
-  assert.equal(redeemed.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(redeemed.body.order.status, "REPORT_GENERATING");
   assert.equal(ctx.providerCalls, 0);
 });
 

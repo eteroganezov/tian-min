@@ -3,6 +3,8 @@ const { calculateBirthChart } = require("./birth-chart-pipeline.cjs");
 const { canonicalBirthInput, normalizeDisplayName } = require("./personalization.cjs");
 const { createFingerprints } = require("./report-fingerprint.cjs");
 const { currentReportYears } = require("./report-service.cjs");
+const { generateReportRequest } = require("./report-service.cjs");
+const { createPdfFromSavedReport } = require("./pdf-service.cjs");
 const { getProductConfig } = require("./product-config.cjs");
 const { normalizePromoCode, promoAvailability } = require("./promo-config.cjs");
 const { TERMINAL_STATUSES } = require("./lorentsen-provider.cjs");
@@ -18,7 +20,8 @@ class PremiumService {
     this.reportStore = options.reportStore;
     this.paymentProvider = options.paymentProvider;
     this.config = options.config || getProductConfig(this.env);
-    this.stubGenerator = options.stubGenerator || defaultStubGenerator;
+    this.reportGenerator = options.reportGenerator || (order => generatePremiumReport(order, this.env));
+    this.pdfRenderer = options.pdfRenderer || createPdfFromSavedReport;
     this.logger = options.logger || console;
     this.generationPromises = new Map();
     this.webhookJobs = new Set();
@@ -56,8 +59,11 @@ class PremiumService {
       paymentProvider: this.paymentProvider.name, paymentId: null, currentAttemptId: null,
       providerStatus: null, paymentMethod: null, nextPollAt: null, paymentConfirmedAt: null,
       reportGenerationStartedAt: null, reportGenerationCompletedAt: null,
+      reportGenerationLeaseUntil: null, reportGenerationAttempt: 0,
+      reportAccessToken: randomToken(), reportAccessTokenHash: null,
       checkoutKeyHash, birthInput, displayName: normalizeDisplayName(input?.name), paymentFailureReason: null,
     };
+    order.reportAccessTokenHash = hash(order.reportAccessToken);
     return success(201, await this.orderStore.save(order));
   }
 
@@ -88,7 +94,8 @@ class PremiumService {
     if (!normalizedCode) return failure(404, "Промокод не найден");
     try {
       const result = await this.orderStore.redeemComplimentaryPromo({ orderId: input?.orderId, code: normalizedCode, now: this.isoNow() });
-      return { status: result.duplicate ? 200 : 201, body: { order: publicOrder(result.order), entitlement: { accessReason: "complimentary_promo", reportId: result.order.reportId } } };
+      const generation=await this.generate(result.order.orderId);
+      return { status: result.duplicate ? 200 : 201, body: { order:generation.body.order || publicOrder(result.order), entitlement: { accessReason: "complimentary_promo", reportId: result.order.reportId } } };
     } catch (error) { return failure(error.status || 409, promoCustomerMessage(error)); }
   }
 
@@ -237,7 +244,9 @@ class PremiumService {
       Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
     }
     const saved = await this.saveOrder(order, changes);
-    if (attempt.providerStatus === "settled") await this.recordPromoEvent(saved, "settled");
+    if (attempt.providerStatus === "settled") {
+      await this.recordPromoEvent(saved, "settled");
+    }
     return success(200, saved);
   }
 
@@ -305,8 +314,9 @@ class PremiumService {
   }
 
   async getOrder(orderId) {
-    const order = await this.orderStore.load(orderId);
+    let order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
+    order=await this.ensureReportAccess(order);
     if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && (!order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) {
       if (order.paymentId) return this.reconcilePayment(order.paymentId);
       const attempt = order.currentAttemptId ? await this.orderStore.loadAttempt(order.currentAttemptId) : null;
@@ -315,32 +325,78 @@ class PremiumService {
         return this.createProviderPayment(order, attempt);
       }
     }
+    if (order.status === "REPORT_GENERATING") {
+      const saved=await this.reportStore?.load(order.reportId);
+      if(saved?.kind === "semantic-report") {
+        order=await this.saveOrder(order,{ status:"REPORT_READY",reportGenerationCompletedAt:saved.savedAt,reportGenerationLeaseUntil:null });
+      } else if(Date.parse(order.reportGenerationLeaseUntil || 0) <= this.now().getTime()) {
+        return this.generate(order.orderId);
+      }
+    }
     return success(200, order);
   }
 
   async generate(orderId) {
     let order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
-    if (this.env.NODE_ENV === "production" && this.paymentProvider.name === "lorentsen") return failure(503, "Автоматическая подготовка полного разбора пока не включена.");
-    if (order.status === "REPORT_READY") return success(200, order);
-    if (order.status === "REPORT_GENERATING") return success(202, order);
-    if (!["PAID", "REPORT_FAILED"].includes(order.status) && order.accessReason !== "complimentary_promo") return failure(403, "Персональный разбор доступен только после подтверждённой оплаты или специального доступа.");
+    order=await this.ensureReportAccess(order);
+    if (!await this.hasLegitimateEntitlement(order)) return failure(403, "Персональный разбор доступен только после подтверждённой оплаты или специального доступа.");
     const saved = await this.reportStore?.load(order.reportId);
-    if (saved?.kind === "premium-generation-stub") return success(200, await this.saveOrder(order, { status: "REPORT_READY", reportGenerationCompletedAt: saved.savedAt }));
-    order = await this.saveOrder(order, { status: "REPORT_GENERATING", reportGenerationStartedAt: this.isoNow(), reportGenerationCompletedAt: null });
-    if (!this.generationPromises.has(order.reportId)) this.generationPromises.set(order.reportId, this.finishStubGeneration(order).finally(() => this.generationPromises.delete(order.reportId)));
-    await this.generationPromises.get(order.reportId);
-    return success(200, await this.orderStore.load(orderId));
+    if (saved?.kind === "semantic-report") return success(200, await this.saveOrder(order, { status:"REPORT_READY", reportGenerationCompletedAt:saved.savedAt, reportGenerationLeaseUntil:null }));
+    if (order.status === "REPORT_READY") return failure(503, "Сохранённый отчёт временно недоступен.");
+    const now=this.isoNow(), runId=randomId("generation"), leaseUntil=new Date(this.now().getTime()+30*60*1000).toISOString();
+    const claim=await this.orderStore.claimReportGeneration({ orderId,now,leaseUntil,runId });
+    if (!claim.claimed) return success(claim.order?.status === "REPORT_READY" ? 200 : 202, claim.order || order);
+    order=claim.order;
+    if (!this.generationPromises.has(order.reportId)) {
+      const job=this.finishGeneration(order).finally(()=>this.generationPromises.delete(order.reportId));
+      this.generationPromises.set(order.reportId,job);
+    }
+    return success(202,order);
   }
 
-  async finishStubGeneration(order) {
+  async finishGeneration(order) {
     try {
-      const stub = await this.stubGenerator(publicOrder(order));
-      await this.reportStore?.save({ kind: "premium-generation-stub", reportId: order.reportId, chartId: order.chartId, stub });
-      await this.saveOrder(await this.orderStore.load(order.orderId), { status: "REPORT_READY", reportGenerationCompletedAt: this.isoNow() });
-    } catch {
-      await this.saveOrder(await this.orderStore.load(order.orderId), { status: "REPORT_FAILED", reportGenerationCompletedAt: this.isoNow() });
+      const envelope=await this.reportGenerator(order);
+      if (envelope?.kind !== "semantic-report" || envelope.reportId !== order.reportId || envelope.chartId !== order.chartId) throw generationError("REPORT_BINDING_MISMATCH");
+      const rendered=await this.pdfRenderer(envelope);
+      if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer) || rendered.buffer.subarray(0,5).toString() !== "%PDF-") throw generationError("PDF_RENDER_FAILED");
+      await this.reportStore.saveImmutable(envelope);
+      const current=await this.orderStore.load(order.orderId);
+      if (current?.reportGenerationRunId === order.reportGenerationRunId) await this.saveOrder(current,{ status:"REPORT_READY",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:null });
+    } catch (error) {
+      this.logger.error("[REPORT_GENERATION_ERROR]",JSON.stringify({ code:error?.code || "REPORT_GENERATION_FAILED",type:error?.name || "Error" }));
+      const current=await this.orderStore.load(order.orderId);
+      if (current?.reportGenerationRunId === order.reportGenerationRunId) await this.saveOrder(current,{ status:"REPORT_FAILED",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:error?.code || "REPORT_GENERATION_FAILED" });
     }
+  }
+
+  async waitForGenerationJobs() { await Promise.allSettled([...this.generationPromises.values()]); }
+
+  async deliver(reportAccessToken) {
+    if (!/^[A-Za-z0-9_-]{43}$/.test(String(reportAccessToken || ""))) return { status:404,error:"Отчёт не найден." };
+    const order=await this.orderStore.findByReportAccessTokenHash(hash(reportAccessToken));
+    if (!order || order.status !== "REPORT_READY" || !await this.hasLegitimateEntitlement(order)) return { status:404,error:"Отчёт не найден." };
+    const saved=await this.reportStore?.load(order.reportId);
+    if (!saved || saved.kind !== "semantic-report" || saved.reportId !== order.reportId || saved.chartId !== order.chartId) return { status:404,error:"Отчёт не найден." };
+    const rendered=await this.pdfRenderer(saved);
+    if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer)) return { status:503,error:"Не удалось открыть отчёт. Попробуйте ещё раз." };
+    return { status:200,buffer:rendered.buffer,filename:"tian-min-personal-report.pdf" };
+  }
+
+  async hasLegitimateEntitlement(order) {
+    if (!order?.reportId || !order?.chartId) return false;
+    if (order.accessReason === "complimentary_promo") return order.amount === 0 && Boolean(order.premiumEntitledAt && order.promoRedeemedAt && order.promoCode);
+    if (!order.paymentConfirmedAt || !["PAID","REPORT_GENERATING","REPORT_READY","REPORT_FAILED"].includes(order.status)) return false;
+    if (this.paymentProvider.name !== "lorentsen") return true;
+    const attempts=await this.orderStore.listAttemptsByOrder(order.orderId);
+    return attempts.some(attempt=>attempt.providerStatus === "settled" && attempt.paymentPublicId && attempt.paymentPublicId === order.paymentId);
+  }
+
+  async ensureReportAccess(order) {
+    if(order.reportAccessToken&&order.reportAccessTokenHash) return order;
+    const token=randomToken();
+    return this.saveOrder(order,{reportAccessToken:token,reportAccessTokenHash:hash(token)});
   }
 
   async saveOrder(order, changes) { return this.orderStore.save({ ...order, ...changes, updatedAt: this.isoNow() }); }
@@ -381,8 +437,17 @@ function updateAttempt(attempt, payment, now) {
   return { ...attempt, paymentPublicId: payment.paymentPublicId || attempt.paymentPublicId, providerStatus: status, statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry, nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
 }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }
-async function defaultStubGenerator(order) { return { mode: "stub", reportId: order.reportId, message: "Тестовый полный разбор подготовлен без обращения к AI." }; }
-function publicOrder(order) { const { birthInput, checkoutKeyHash, displayName, promoCampaign, ...safe } = order; return { ...safe, displayName: displayName || "" }; }
+async function generatePremiumReport(order,env) {
+  const result=await generateReportRequest({ ...order.birthInput,name:order.displayName || "" },{ env,hasFullReport:true });
+  if (result.status !== 200 || result.body?.aiStatus !== "ready" || !result.internal?.report) throw generationError(result.body?.aiStatus === "unavailable" ? "AI_NOT_CONFIGURED" : "REPORT_GENERATION_FAILED");
+  if (result.body.reportId !== order.reportId || result.body.chartId !== order.chartId) throw generationError("REPORT_BINDING_MISMATCH");
+  return { kind:"semantic-report",artifactVersion:"premium-delivery-v1",schemaVersion:result.body.schemaVersion,
+    input:canonicalBirthInput(order.birthInput),presentation:result.body.presentation,report:result.internal.report,
+    chartId:order.chartId,reportId:order.reportId,model:result.body.model,generatedAt:new Date().toISOString() };
+}
+function generationError(code) { const error=new Error("Premium generation failed"); error.code=code; return error; }
+function randomToken() { return crypto.randomBytes(32).toString("base64url"); }
+function publicOrder(order) { const { birthInput,checkoutKeyHash,displayName,promoCampaign,reportAccessTokenHash,reportGenerationRunId,reportGenerationLeaseUntil,generationFailureCode,...safe }=order; return { ...safe,displayName:displayName || "" }; }
 function success(status, order) { return { status, body: { order: publicOrder(order) } }; }
 function failure(status, error) { return { status, body: { error } }; }
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
@@ -403,4 +468,4 @@ function promoCustomerMessage(error) {
 }
 function safeMessage(error) { return String(error?.message || "Некорректные данные рождения.").replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, ""); }
 
-module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, promoCustomerMessage, publicOrder, validatePaymentInput };
+module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, generatePremiumReport, promoCustomerMessage, publicOrder, validatePaymentInput };

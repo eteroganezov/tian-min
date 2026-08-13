@@ -67,13 +67,15 @@ After backend changes, restart Node fully and confirm an old process did not sur
 - unsupported claims such as guaranteed outcomes, medical conclusions, exact marriage/relocation dates or promised income are blocked by prompt and local validation;
 - persisted legacy reports and `personal-report-v3` retain explicit compatibility paths.
 
-The deterministic calculation remains authoritative. AI only interprets the supplied evidence. Real OpenAI generation is opt-in and must never be used for visual QA. Production paid generation is not yet enabled: `PremiumService.generate()` fails closed for `PAYMENT_MODE=lorentsen`, while non-production monetization tests use a persisted generation stub.
+The deterministic calculation remains authoritative. AI only interprets the supplied evidence. Real OpenAI generation is opt-in and must never be used for visual QA. Premium Generation & Delivery v1 connects this existing pipeline only after a server-verified legitimate entitlement: authenticated Lorentsen `settled`/paid access or a separate `complimentary_promo` entitlement. Generation uses an atomic persisted claim and explicit `REPORT_GENERATING` / `REPORT_READY` / `REPORT_FAILED` lifecycle. The immutable `personal-report-v4` semantic artifact is stored in the existing report store; PDF is deterministically rendered from that saved artifact and never requires another OpenAI generation.
 
 ## Premium PDF
 
 `web/lib/pdf-template.cjs` routes full `personal-report-v4` documents to the shared renderer in `web/lib/pdf-template-v4.cjs`; `web/lib/pdf-service.cjs` supplies the same validated semantic report, calculated chart view, evidence catalog and birth metadata. Legacy rendering exists only for saved-report compatibility.
 
 The current PDF design uses one shared v4 renderer/design system. The older “Premium PDF v5.2” work is a visual/reference source, not the current semantic schema. A final editorial/product polish and exact/approximate review PDFs are active in a separate workstream. Do not call the current PDF finally approved until human review is complete, and do not edit PDF files during unrelated work.
+
+Ready Premium reports are delivered through a separate high-entropy capability token. Open and download routes recheck entitlement and report/chart binding server-side, use a privacy-safe filename and disclose no birth, order or payment ID in the URL. Same-browser recovery stores the order capability in local browser storage and restores generating/ready/failed state; email and cross-device recovery remain out of scope.
 
 ## Monetization and Lorentsen
 
@@ -99,7 +101,7 @@ Promo Codes v1 is server-owned and bound to one exact order/report. `FAMILY0` ta
 - Local DEV orders/reports use ignored filesystem stores; production Lorentsen records use PostgreSQL.
 - Secrets belong only in environment/deployment secret storage and must never enter Git, logs or frontend payloads.
 
-Deployment exists, but launch readiness is not complete while payment is in external `manual_review`, controlled `settled` validation is absent, real paid report generation remains gated, and final PDF human review is open.
+Deployment exists, but launch readiness is not complete while payment is in external `manual_review`, controlled `settled` validation is absent, and final PDF human review is open. Premium generation is implemented behind the legitimate entitlement gate; a real production FAMILY0 generation is intentionally left for a separately authorized manual test.
 
 ## Product and engineering decisions
 

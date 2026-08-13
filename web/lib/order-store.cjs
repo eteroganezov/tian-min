@@ -15,6 +15,22 @@ class MemoryOrderStore {
     const order = [...this.orders.values()].find(item => item.checkoutKeyHash === checkoutKeyHash);
     return order ? structuredClone(order) : null;
   }
+  findByReportAccessTokenHash(tokenHash) {
+    const order = [...this.orders.values()].find(item => item.reportAccessTokenHash === tokenHash);
+    return order ? structuredClone(order) : null;
+  }
+  claimReportGeneration({ orderId, now, leaseUntil, runId }) {
+    const order = this.load(orderId);
+    if (!order) return { claimed:false, order:null };
+    const stale = order.status === "REPORT_GENERATING" && Date.parse(order.reportGenerationLeaseUntil || 0) <= Date.parse(now);
+    const eligible = ["PAID", "REPORT_FAILED"].includes(order.status)
+      || (order.accessReason === "complimentary_promo" && ["CHECKOUT_STARTED", "REPORT_FAILED"].includes(order.status)) || stale;
+    if (!eligible) return { claimed:false, order };
+    const updated = this.save({ ...order, status:"REPORT_GENERATING", reportGenerationStartedAt:now,
+      reportGenerationCompletedAt:null, reportGenerationLeaseUntil:leaseUntil,
+      reportGenerationRunId:runId, reportGenerationAttempt:Number(order.reportGenerationAttempt || 0)+1, updatedAt:now });
+    return { claimed:true, order:updated };
+  }
   saveAttempt(attempt) { const existing = this.attempts.get(attempt.attemptId); if (existing && existing.requestBodyHash !== attempt.requestBodyHash) throw new Error("Immutable payment attempt body нельзя изменить."); this.attempts.set(attempt.attemptId, structuredClone(attempt)); return structuredClone(attempt); }
   loadAttempt(attemptId) { const value = this.attempts.get(String(attemptId)); return value ? structuredClone(value) : null; }
   findAttemptByPaymentId(paymentId) { const value = [...this.attempts.values()].find(item => item.paymentPublicId === paymentId); return value ? structuredClone(value) : null; }
@@ -98,6 +114,14 @@ class LocalOrderStore extends MemoryOrderStore {
     for (const filename of fs.readdirSync(this.root).filter(name => /^order_[a-f0-9]{32}\.json$/.test(name))) {
       const order = JSON.parse(fs.readFileSync(path.join(this.root, filename), "utf8"));
       if (order.checkoutKeyHash === checkoutKeyHash) return order;
+    }
+    return null;
+  }
+  findByReportAccessTokenHash(tokenHash) {
+    if (!this.enabled || !fs.existsSync(this.root)) return null;
+    for (const filename of fs.readdirSync(this.root).filter(name => /^order_[a-f0-9]{32}\.json$/.test(name))) {
+      const order = JSON.parse(fs.readFileSync(path.join(this.root, filename), "utf8"));
+      if (order.reportAccessTokenHash === tokenHash) return order;
     }
     return null;
   }

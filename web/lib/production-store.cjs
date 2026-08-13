@@ -57,6 +57,7 @@ class PostgresPaymentStore {
         record JSONB NOT NULL,
         saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+      CREATE UNIQUE INDEX IF NOT EXISTS tian_min_orders_report_access_idx ON tian_min_orders((record->>'reportAccessTokenHash')) WHERE record->>'reportAccessTokenHash' IS NOT NULL;
       CREATE TABLE IF NOT EXISTS tian_min_promos (
         normalized_code TEXT PRIMARY KEY,
         code TEXT NOT NULL,
@@ -125,6 +126,23 @@ class PostgresPaymentStore {
 
   async load(orderId) { await this.ready; return recordOrNull(await this.pool.query("SELECT record FROM tian_min_orders WHERE order_id=$1", [String(orderId)])); }
   async findByCheckoutKey(hash) { await this.ready; return recordOrNull(await this.pool.query("SELECT record FROM tian_min_orders WHERE checkout_key_hash=$1", [String(hash)])); }
+  async findByReportAccessTokenHash(hash) { await this.ready; return recordOrNull(await this.pool.query("SELECT record FROM tian_min_orders WHERE record->>'reportAccessTokenHash'=$1", [String(hash)])); }
+  async claimReportGeneration({ orderId, now, leaseUntil, runId }) {
+    await this.ready;
+    const changes = { status:"REPORT_GENERATING", reportGenerationStartedAt:now, reportGenerationCompletedAt:null,
+      reportGenerationLeaseUntil:leaseUntil,reportGenerationRunId:runId };
+    const result = await this.pool.query(
+      `UPDATE tian_min_orders SET record=record || $2::jsonb || jsonb_build_object('reportGenerationAttempt',COALESCE((record->>'reportGenerationAttempt')::int,0)+1,'updatedAt',$3::text),updated_at=NOW()
+       WHERE order_id=$1 AND (
+         record->>'status' IN ('PAID','REPORT_FAILED')
+         OR (record->>'accessReason'='complimentary_promo' AND record->>'status' IN ('CHECKOUT_STARTED','REPORT_FAILED'))
+         OR (record->>'status'='REPORT_GENERATING' AND COALESCE((record->>'reportGenerationLeaseUntil')::timestamptz,'epoch'::timestamptz) <= $3::timestamptz)
+       ) RETURNING record`,
+      [String(orderId), JSON.stringify(changes), now],
+    );
+    if (result.rows[0]) return { claimed:true, order:clone(result.rows[0].record) };
+    return { claimed:false, order:await this.load(orderId) };
+  }
 
   async saveAttempt(attempt) {
     await this.ready;
@@ -305,6 +323,16 @@ class PostgresReportStore {
       [id, JSON.stringify(stored)],
     );
     return { id };
+  }
+  async saveImmutable(envelope) {
+    await this.paymentStore.ready;
+    const id=envelope.reportId;
+    const stored={ ...envelope,id,savedAt:envelope.savedAt || new Date().toISOString() };
+    const result=await this.paymentStore.pool.query(
+      "INSERT INTO tian_min_reports(report_id,record,saved_at) VALUES($1,$2::jsonb,NOW()) ON CONFLICT(report_id) DO NOTHING RETURNING report_id",
+      [id,JSON.stringify(stored)],
+    );
+    return { id,existing:result.rowCount===0 };
   }
   async load(id) { await this.paymentStore.ready; return recordOrNull(await this.paymentStore.pool.query("SELECT record FROM tian_min_reports WHERE report_id=$1", [String(id)])); }
 }

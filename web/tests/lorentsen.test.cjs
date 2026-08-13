@@ -504,12 +504,13 @@ test("succeeded_pending не выставляет PAID, authenticated GET settle
   assert.equal(ctx.provider.getCalls.length, 1);
 });
 
-test("production settled не запускает stub/OpenAI generation автоматически", async () => {
+test("production settled сохраняет PAID без auto-generation, explicit generation проходит entitlement gate", async () => {
   const ctx = serviceSetup(["settled"]);
   const order = (await ctx.service.createCheckout(birthInput)).body.order;
   const paid = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(paid.body.order.status, "PAID");
-  assert.equal((await ctx.service.generate(order.orderId)).status, 503);
+  assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAID");
+  assert.equal((await ctx.service.generate(order.orderId)).status, 202);
 });
 
 test("webhook durable inbox: new=202, duplicate=200, changed body conflict", async () => {

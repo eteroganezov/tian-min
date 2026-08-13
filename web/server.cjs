@@ -44,6 +44,7 @@ function createServer(options = {}) {
       if (request.method === "POST" && request.url === "/api/payments/lorentsen/webhook") return await handleLorentsenWebhook(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId));
       if (request.method === "GET" && request.url.startsWith("/api/premium/order/")) return await handlePremiumOrder(request, response, premiumService);
+      if (request.method === "GET" && request.url.startsWith("/api/premium/report/")) return await handlePremiumDelivery(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/pdf") return await handlePdf(request, response);
       if (request.method === "GET" && request.url === "/api/dev/reports/latest") return handleSavedReport(response, reportStore);
       if (request.method === "POST" && request.url === "/api/dev/reports/import-rendered") return await handleLegacyImport(request, response, reportStore);
@@ -72,6 +73,17 @@ async function handlePremiumOrder(request, response, premiumService) {
   const orderId = decodeURIComponent(new URL(request.url, "http://localhost").pathname.split("/").pop() || "");
   const result = await premiumService.getOrder(orderId);
   return sendJson(response, result.status, result.body);
+}
+
+async function handlePremiumDelivery(request,response,premiumService) {
+  const url=new URL(request.url,"http://localhost");
+  const token=decodeURIComponent(url.pathname.split("/").pop() || "");
+  const result=await premiumService.deliver(token);
+  if(result.status!==200) return sendJson(response,result.status,{ error:result.error });
+  const disposition=url.searchParams.get("download") === "1" ? "attachment" : "inline";
+  response.writeHead(200,{ "Content-Type":"application/pdf","Content-Disposition":`${disposition}; filename="${result.filename}"`,
+    "Content-Length":result.buffer.length,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer" });
+  return response.end(result.buffer);
 }
 
 async function handleLorentsenWebhook(request, response, premiumService) {

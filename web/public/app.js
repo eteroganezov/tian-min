@@ -254,7 +254,7 @@ async function startCheckout() {
     if (checkout.order.amount === 0 && checkout.order.promoCode) {
       const redeemed = await api("/api/premium/promo/redeem", { orderId: checkout.order.orderId, code: checkout.order.promoCode });
       activePremiumOrder = redeemed.order;
-      renderComplimentaryState(document.querySelector(".premium-action") || resultRoot, redeemed.order);
+      renderPaymentState(redeemed.order);
     } else if (premiumConfig?.paymentMode === "lorentsen") renderConsentCheckout(checkout.order);
     else {
       const payment = await api("/api/premium/payment/start", { orderId: checkout.order.orderId });
@@ -272,15 +272,16 @@ function renderPaymentState(order) {
   activePremiumOrder = order;
   const host = document.querySelector(".premium-action") || resultRoot;
   clearTimeout(paymentPollTimer);
-  if (order.accessReason === "complimentary_promo") return renderComplimentaryState(host, order);
-  if (order.paymentProvider === "lorentsen") return renderLorentsenState(host, order);
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
   if (order.status === "REPORT_FAILED") {
-    host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Оплата подтверждена</p><h3>Разбор не удалось подготовить</h3><p>Оплата сохранена. Повторная попытка не требует нового заказа или платежа.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать подготовить ещё раз</button></section>`;
-    host.querySelector('[data-action="retry-generation"]').addEventListener("click", async () => renderPaymentState((await api("/api/premium/generate", { orderId: order.orderId })).order));
+    host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Персональный разбор</p><h3>Не удалось подготовить отчёт. Попробуйте ещё раз.</h3><p>Доступ сохранён. Повторная попытка не создаст новый заказ, платёж или промокод.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать ещё раз</button></section>`;
+    host.querySelector('[data-action="retry-generation"]').addEventListener("click", async () => { try { renderPaymentState((await api("/api/premium/generate", { orderId: order.orderId })).order); } catch(error) { showPremiumError(error.message); } });
     return;
   }
-  if (order.status === "REPORT_GENERATING" || order.status === "PAID") return renderPaidState(host, order);
+  if (order.status === "REPORT_GENERATING") return renderGeneratingState(host,order);
+  if (order.accessReason === "complimentary_promo") return renderComplimentaryState(host, order);
+  if (order.paymentProvider === "lorentsen") return renderLorentsenState(host, order);
+  if (order.status === "PAID") return renderPaidState(host, order);
   if (order.paymentFailureReason) {
     host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="PAYMENT_FAILED"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Оплата не завершена</h3><p>Бесплатная карта остаётся доступной. Можно безопасно повторить попытку.</p><div class="payment-notice error">Тестовый платёж отклонён</div><button type="button" class="premium-button" data-action="retry-payment">Попробовать ещё раз</button></section>`;
     host.querySelector('[data-action="retry-payment"]').addEventListener("click", async () => { const payment = await api("/api/premium/payment/start", { orderId: order.orderId }); renderPaymentState(payment.order); });
@@ -408,17 +409,24 @@ async function simulatePayment(orderId, outcome) {
 }
 
 function renderPaidState(host, order) {
-  if (order.paymentProvider === "lorentsen") {
-    host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Оплата подтверждена</p><h3>Покупка успешно подтверждена</h3><p>Оплата надёжно сохранена.</p></section>`;
-    return;
-  }
-  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Оплата подтверждена</p><h3>Готовим персональный разбор</h3><p>Тестовая генерация выполняется без OpenAI API и без расходования средств.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Доступ подтверждён</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает немного времени.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+  void api("/api/premium/generate",{ orderId:order.orderId }).then(result=>renderPaymentState(result.order)).catch(error=>showPremiumError(error.message));
+}
+
+function renderGeneratingState(host,order) {
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="REPORT_GENERATING"><p class="section-label">Персональный разбор</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает немного времени.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+  scheduleGenerationPoll(order.orderId);
 }
 
 function renderReadyState(host, order) {
-  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор готов</p><h3>Тестовый отчёт сохранён</h3><p>Monetization flow завершён в mock-режиме. Реальная интерпретация и PDF будут включены после подключения production-оплаты.</p><button type="button" class="premium-button" data-action="open-stub">Открыть тестовый результат</button><button type="button" class="secondary-checkout-button" data-action="pdf-stub">Проверить PDF-flow</button><div class="stub-result" hidden>Тестовый полный разбор подготовлен без обращения к AI. Report ID: ${e(order.reportId)}</div><div class="pdf-stub-result" hidden>PDF-flow готов к подключению сохранённого premium-отчёта.</div></section>`;
-  host.querySelector('[data-action="open-stub"]')?.addEventListener("click", () => { host.querySelector(".stub-result").hidden = false; });
-  host.querySelector('[data-action="pdf-stub"]')?.addEventListener("click", () => { host.querySelector(".pdf-stub-result").hidden = false; });
+  clearTimeout(paymentPollTimer);
+  const url=`/api/premium/report/${encodeURIComponent(order.reportAccessToken)}`;
+  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор</p><h3>Ваш персональный разбор готов</h3><p>Отчёт можно открыть прямо в браузере или сохранить как PDF.</p><a class="premium-button" data-action="open-report" href="${e(url)}" target="_blank" rel="noopener noreferrer">Открыть отчёт</a><a class="secondary-checkout-button" data-action="download-report" href="${e(`${url}?download=1`)}" download="tian-min-personal-report.pdf">Скачать PDF</a></section>`;
+}
+
+function scheduleGenerationPoll(orderId) {
+  clearTimeout(paymentPollTimer);
+  paymentPollTimer=setTimeout(async()=>{ try { renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(orderId)}`)).order); } catch { scheduleGenerationPoll(orderId); } },3000);
 }
 
 async function restorePremiumOrder() {
@@ -430,15 +438,13 @@ async function restorePremiumOrder() {
     activePremiumOrder = result.order;
     if (result.order.accessReason === "complimentary_promo") {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
-      renderComplimentaryState(resultRoot.querySelector(".premium-action"), result.order);
+      renderPaymentState(result.order);
     } else if (result.order.amount === 0 && result.order.promoCode) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig, { pricing: { baseAmount: result.order.baseAmount, discountAmount: result.order.baseAmount, finalAmount: 0, currency: result.order.currency, promoCode: result.order.promoCode } });
-    } else if (["PAID", "REPORT_GENERATING"].includes(result.order.status)) {
+    } else if (["PAID", "REPORT_GENERATING", "REPORT_FAILED"].includes(result.order.status)) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
-      renderPaidState(resultRoot.querySelector(".premium-action"), result.order);
-      if (result.order.paymentProvider === "lorentsen") renderPaymentState(result.order);
-      else { const generated = await api("/api/premium/generate", { orderId }); renderPaymentState(generated.order); }
+      renderPaymentState(result.order);
     } else if (result.order.status === "REPORT_READY") {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderReadyState(resultRoot.querySelector(".premium-action"), result.order);

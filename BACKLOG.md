@@ -16,16 +16,14 @@
 ## NEXT
 
 - After PDF human approval and Lorentsen resolution, run one controlled production checkout: create/recover payment → provider `requires_action` if supplied → authenticated `settled` → internal `PAID`. Verify webhook/polling/reload/idempotency and that a failed or pending payment never unlocks Premium.
-- Connect real Premium generation to the existing paid server gate: `settled`/`PAID` → one `personal-report-v4` OpenAI generation → production persistence → reusable web/PDF result. Preserve retry after generation failure without another payment and never regenerate a ready report.
 - Run production pre-launch QA across mobile/desktop, payment recovery, report generation, PDF download, direct API protection, browser console, horizontal overflow and Unicode/replacement glyphs.
 - Perform the final commercial `LICENSE`/`NOTICE` and dependency-license audit; retain required Yiqi and `lunar-typescript` attribution in distributed artifacts.
 
 ### Product foundation
 
 - Chinese-symbol color language: first audit stems/branches, palace markers, transformations and personal Chinese signs on ivory and deep-jade surfaces; then extend the existing muted-red cultural accent selectively. Red must not imply error, success, good or bad, and Chinese text must not be recolored globally.
-- Premium delivery: after authenticated `settled` or a legitimate complimentary entitlement, show «Ваш персональный разбор готов» with primary «Открыть отчёт» and secondary «Скачать PDF»; mobile prioritizes opening.
 - Email delivery and purchase recovery research: compare low-cost transactional email options, consent/privacy requirements and secure report links so closing a browser or Telegram does not require a second purchase. Do not promise email delivery before implementation.
-- Report storage decision: compare immutable PDF object storage with persisted report data plus deterministic rendering. Account for storage, PDF size, render CPU, privacy/retention and versioning; an already purchased report must never require OpenAI regeneration.
+- Report storage optimization: measure PostgreSQL semantic-artifact size, PDF render CPU and retention needs before considering immutable PDF object storage. An already purchased report must never require OpenAI regeneration.
 - Privacy-safe share card: future native mobile share / desktop copy-link flow with Tian Min branding, one personal Chinese sign, a human label and one short insight. Never expose birth data, payment IDs, order IDs or the full personal PDF in a public URL.
 - Add a PDF compatibility CTA («Хотите сравнить карту с близким человеком?») only after the compatibility product exists; do not add a dead CTA.
 
@@ -55,4 +53,5 @@ Brand architecture note: brand `Tian Min / Тянь Мин`, Chinese wordmark `�
 - Shared Premium PDF v4 renderer/design system and saved-report compatibility. Final editorial approval remains in NOW, not DONE.
 - Production incident diagnosed: three `399 RUB` attempts received HTTP `422` / `amount_out_of_range`, without `payment_public_id`, QR or payment link. The server-owned temporary early-user price was restored to the provider-compatible **599 RUB** (`59900` minor units).
 - Promo Codes v1: collapsed checkout UX, canonical server validation, durable promo/event/redemption schema, atomic limited `FAMILY0` complimentary entitlement bound to one order/report, and inactive configured `FRIEND100`/`SUPPORT399` paid targets.
+- Premium Generation & Delivery v1: server-verified paid-settled or complimentary access, persisted generation lifecycle and atomic duplicate guard, immutable semantic report storage, deterministic authorized PDF open/download, safe retry and same-browser recovery. Transactional email and cross-device recovery remain unfinished.
 - Tian Min favicon set: standalone `命` in deep jade/ivory/gold as SVG, 16×16, 32×32 and Apple Touch Icon assets. The main site logo remains unchanged.

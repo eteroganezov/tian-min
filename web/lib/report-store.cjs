@@ -19,6 +19,12 @@ class LocalReportStore {
     return this.save({ kind: "semantic-report", schemaVersion, input, presentation, report, chartId, reportId, model });
   }
 
+  saveImmutable(envelope) {
+    const existing = this.load(envelope.reportId);
+    if (existing) return { id:existing.id || existing.reportId, existing:true };
+    return this.save(envelope);
+  }
+
   importLegacy(payload) {
     if (!payload || !payload.input || !Array.isArray(payload.sections) || payload.sections.length < 3 || payload.sections.length > 40) throw new Error("Некорректный legacy-отчёт.");
     const sections = payload.sections.map((section, index) => normalizeLegacySection(section, index));

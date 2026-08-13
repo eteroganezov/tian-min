@@ -19,7 +19,10 @@ function setup(options = {}) {
   const orderStore = options.orderStore || new MemoryOrderStore();
   const reportStore = new LocalReportStore({ root: path.join(root, "reports") });
   const paymentProvider = new MockPaymentProvider({ env });
-  const service = new PremiumService({ env, orderStore, reportStore, paymentProvider, stubGenerator: options.stubGenerator });
+  const reportGenerator=async order=>({ kind:"semantic-report",reportId:order.reportId,chartId:order.chartId,
+    input:orderStore.load(order.orderId).birthInput,presentation:{ displayName:"Тест" },report:await (options.stubGenerator || (async()=>({ ready:true })))(order),schemaVersion:"test" });
+  const pdfRenderer=async()=>({ status:200,buffer:Buffer.from("%PDF-test") });
+  const service = new PremiumService({ env, orderStore, reportStore, paymentProvider, reportGenerator, pdfRenderer });
   return { root, env, orderStore, reportStore, paymentProvider, service };
 }
 
@@ -151,7 +154,9 @@ test("один paid report генерируется один раз и REPORT_RE
     assert.equal(duplicate.status, 202);
     assert.equal(duplicate.body.order.status, "REPORT_GENERATING");
     release();
-    const ready = await firstPromise;
+    await firstPromise;
+    await context.service.waitForGenerationJobs();
+    const ready = await context.service.getOrder(order.orderId);
     assert.equal(ready.body.order.status, "REPORT_READY");
     assert.equal(generationCalls, 1);
     const repeated = await context.service.generate(order.orderId);
@@ -166,7 +171,9 @@ test("повторный payment callback после REPORT_READY идемпот
     const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     const paid = await context.service.applyMockOutcome(order.orderId, "succeeded");
-    const ready = await context.service.generate(order.orderId);
+    await context.service.generate(order.orderId);
+    await context.service.waitForGenerationJobs();
+    const ready = await context.service.getOrder(order.orderId);
     const repeated = await context.service.applyMockOutcome(order.orderId, "succeeded");
     assert.equal(repeated.body.order.status, "REPORT_READY");
     assert.equal(repeated.body.order.paymentConfirmedAt, paid.body.order.paymentConfirmedAt);
@@ -181,8 +188,10 @@ test("REPORT_FAILED можно повторить без новой оплаты
     const order = (await context.service.createCheckout(input)).body.order;
     await context.service.startPayment(order.orderId);
     await context.service.applyMockOutcome(order.orderId, "succeeded");
-    assert.equal((await context.service.generate(order.orderId)).body.order.status, "REPORT_FAILED");
-    assert.equal((await context.service.generate(order.orderId)).body.order.status, "REPORT_READY");
+    await context.service.generate(order.orderId); await context.service.waitForGenerationJobs();
+    assert.equal((await context.service.getOrder(order.orderId)).body.order.status, "REPORT_FAILED");
+    await context.service.generate(order.orderId); await context.service.waitForGenerationJobs();
+    assert.equal((await context.service.getOrder(order.orderId)).body.order.status, "REPORT_READY");
     assert.equal(calls, 2);
   } finally { fs.rmSync(context.root, { recursive: true, force: true }); }
 });
@@ -212,19 +221,22 @@ test("REPORT_READY восстанавливается из persistence без п
       orderStore: new LocalOrderStore({ root: path.join(root, "orders"), env }),
       reportStore: new LocalReportStore({ root: reportRoot }),
       paymentProvider: new MockPaymentProvider({ env }),
-      stubGenerator: async order => { generationCalls += 1; return { mode: "stub", reportId: order.reportId }; },
+      reportGenerator: async order => { generationCalls += 1; return { kind:"semantic-report",reportId:order.reportId,chartId:order.chartId,input,report:{},presentation:{},schemaVersion:"test" }; },
+      pdfRenderer: async()=>({ status:200,buffer:Buffer.from("%PDF-test") }),
     });
     const order = (await first.createCheckout(input)).body.order;
     await first.startPayment(order.orderId);
     await first.applyMockOutcome(order.orderId, "succeeded");
-    assert.equal((await first.generate(order.orderId)).body.order.status, "REPORT_READY");
+    await first.generate(order.orderId); await first.waitForGenerationJobs();
+    assert.equal((await first.getOrder(order.orderId)).body.order.status, "REPORT_READY");
 
     const restored = new PremiumService({
       env,
       orderStore: new LocalOrderStore({ root: path.join(root, "orders"), env }),
       reportStore: new LocalReportStore({ root: reportRoot }),
       paymentProvider: new MockPaymentProvider({ env }),
-      stubGenerator: async () => { generationCalls += 1; throw new Error("не должна запускаться"); },
+      reportGenerator: async () => { generationCalls += 1; throw new Error("не должна запускаться"); },
+      pdfRenderer: async()=>({ status:200,buffer:Buffer.from("%PDF-test") }),
     });
     assert.equal((await restored.getOrder(order.orderId)).body.order.status, "REPORT_READY");
     assert.equal((await restored.generate(order.orderId)).body.order.status, "REPORT_READY");
@@ -246,7 +258,7 @@ test("frontend monetization не вызывает OpenAI/report API", () => {
   assert.match(script, /Симулировать успешную оплату/);
   assert.match(script, /REPORT_READY/);
   assert.match(script, /restorePremiumOrder\(\)/);
-  assert.match(script, /\["PAID", "REPORT_GENERATING"\]/);
+  assert.match(script, /\["PAID", "REPORT_GENERATING", "REPORT_FAILED"\]/);
   assert.match(script, /\["CHECKOUT_STARTED", "PAYMENT_PENDING"\]/);
   assert.match(script, /name="payerEmail"/);
   assert.match(script, /name="termsAccepted"/);
