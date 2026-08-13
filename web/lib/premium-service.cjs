@@ -67,7 +67,9 @@ class PremiumService {
     const promo = await this.orderStore.getPromo(normalizedCode);
     const availability = promoAvailability(promo, this.now());
     if (!availability.ok) return failure(availability.code === "PROMO_NOT_FOUND" ? 404 : 409, promoCustomerMessage(availability));
-    const checkout = await this.createCheckout(input?.birthInput);
+    const existingOrder = input?.orderId ? await this.orderStore.load(input.orderId) : null;
+    if (input?.orderId && !existingOrder) return failure(404, "Заказ не найден.");
+    const checkout = existingOrder ? { status: 200, body: { order: existingOrder } } : await this.createCheckout(input?.birthInput);
     if (checkout.status >= 400) return checkout;
     try {
       const applied = await this.orderStore.applyPromoToOrder({ orderId: checkout.body.order.orderId, code: normalizedCode, now: this.isoNow() });

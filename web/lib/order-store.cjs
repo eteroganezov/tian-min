@@ -33,8 +33,9 @@ class MemoryOrderStore {
     const availability = promoAvailability(promo, new Date(now));
     if (!availability.ok) throw promoError(availability);
     const order = this.load(String(orderId));
-    if (!order || order.status !== "CHECKOUT_STARTED" || order.currentAttemptId || order.paymentId || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
-    const updated = { ...order, baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, updatedAt: now };
+    const terminalPayment = ["failed", "expired"].includes(order?.providerStatus);
+    if (!order || order.status !== "CHECKOUT_STARTED" || order.accessReason || ((!terminalPayment) && (order.currentAttemptId || order.paymentId))) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+    const updated = { ...order, status: "CHECKOUT_STARTED", baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, updatedAt: now };
     this.save(updated);
     this.recordPromoEvent({ promoCode: normalizedCode, eventType: "promo_applied", orderId: order.orderId, reportId: order.reportId, createdAt: now });
     this.recordPromoEvent({ promoCode: normalizedCode, eventType: "checkout_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });

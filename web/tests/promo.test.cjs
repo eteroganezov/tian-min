@@ -68,6 +68,37 @@ test("FAMILY0 redemption атомарен, идемпотентен и собл�
   assert.equal(other.body.error, "Промокод больше недоступен");
 });
 
+test("terminal payment сохраняется в истории, но тот же order/report может перейти в FAMILY0", async () => {
+  const ctx = setup();
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const attempt = { attemptId: "attempt_terminal", orderId: order.orderId, providerStatus: "failed" };
+  await ctx.orderStore.saveAttempt(attempt);
+  await ctx.orderStore.save({ ...order, status: "CHECKOUT_STARTED", currentAttemptId: attempt.attemptId, paymentId: "pay_terminal", providerStatus: "failed", paymentFailureReason: "failed" });
+  const applied = await ctx.service.applyPromo({ orderId: order.orderId, code: "FAMILY0" });
+  assert.equal(applied.status, 200);
+  assert.equal(applied.body.order.orderId, order.orderId);
+  assert.equal(applied.body.order.reportId, order.reportId);
+  assert.equal(applied.body.order.currentAttemptId, null);
+  assert.equal((await ctx.orderStore.loadAttempt(attempt.attemptId)).providerStatus, "failed");
+  const redeemed = await ctx.service.redeemPromo({ orderId: order.orderId, code: "FAMILY0" });
+  assert.equal(redeemed.body.order.accessReason, "complimentary_promo");
+  assert.equal(redeemed.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(ctx.providerCalls, 0);
+});
+
+test("active payment по-прежнему не разрешает применить промокод", async () => {
+  const ctx = setup();
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const attempt = { attemptId: "attempt_active", orderId: order.orderId, providerStatus: "requires_action" };
+  await ctx.orderStore.saveAttempt(attempt);
+  await ctx.orderStore.save({ ...order, status: "PAYMENT_PENDING", currentAttemptId: attempt.attemptId, paymentId: "pay_active", providerStatus: "requires_action" });
+  const applied = await ctx.service.applyPromo({ orderId: order.orderId, code: "FAMILY0" });
+  assert.equal(applied.status, 409);
+  assert.equal((await ctx.orderStore.load(order.orderId)).currentAttemptId, attempt.attemptId);
+  assert.equal((await ctx.orderStore.loadAttempt(attempt.attemptId)).providerStatus, "requires_action");
+  assert.equal(ctx.providerCalls, 0);
+});
+
 test("production FAMILY0 redemption использует transaction, row locks и unique order binding", () => {
   const source = fs.readFileSync(path.resolve(__dirname, "..", "lib", "production-store.cjs"), "utf8");
   assert.match(source, /CREATE TABLE IF NOT EXISTS tian_min_promo_redemptions[\s\S]*order_id TEXT NOT NULL UNIQUE/);

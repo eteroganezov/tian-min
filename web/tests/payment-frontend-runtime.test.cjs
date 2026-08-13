@@ -39,14 +39,20 @@ function harness(fetchImpl) {
     ".preview-cover, #birth-form": element(),
   };
   nodes["#submit-button"].querySelector = () => element();
-  const document = { querySelector: selector => nodes[selector] || element(), addEventListener() {} };
+  const document = {
+    querySelector: selector => selector === ".premium-action" && nodes["#result-root"].innerHTML.includes("premium-recovery")
+      ? nodes["#result-root"].querySelector(".premium-action")
+      : nodes[selector] || element(),
+    addEventListener() {},
+  };
+  const storage = new Map();
   let timerId = 0;
   const context = {
-    document, fetch: fetchImpl, FormData: class {}, localStorage: { getItem: () => null, removeItem() {}, setItem() {} },
+    document, fetch: fetchImpl, FormData: class {}, localStorage: { getItem: key => storage.get(key) || null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, String(value)) },
     setTimeout: () => ++timerId, clearTimeout() {}, console, Intl, URLSearchParams, encodeURIComponent,
   };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8"), context);
-  return { context, host: nodes[".premium-action"] };
+  return { context, host: nodes[".premium-action"], resultRoot: nodes["#result-root"] };
 }
 
 const config = {
@@ -68,11 +74,12 @@ test("expired/failed показывают terminal UX, а возврат не в
   calls.length = 0;
 
   ui.context.renderLorentsenState(ui.host, order("expired", { status: "CHECKOUT_STARTED", paymentFailureReason: "expired" }));
-  assert.match(ui.host.innerHTML, /QR-код истёк/);
-  assert.match(ui.host.innerHTML, /Обновить QR-код/);
+  assert.match(ui.host.innerHTML, /Платёж не завершён/);
+  assert.match(ui.host.innerHTML, /Попробовать снова/);
   assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к результату/);
   ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
   assert.match(ui.host.innerHTML, /data-checkout-state="PAYMENT_EXIT"/);
+  assert.doesNotMatch(ui.host.innerHTML, /resume-payment|Вернуться к оплате/);
   assert.deepEqual(calls, []);
 
   ui.context.renderLorentsenState(ui.host, order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed" }));
@@ -80,37 +87,122 @@ test("expired/failed показывают terminal UX, а возврат не в
   assert.match(ui.host.innerHTML, /Попробовать снова/);
 });
 
-test("expired retry требует явного подтверждения и double-click отправляет один start request", async () => {
+test("failed/expired retry возвращает в offer и double-click не создаёт payment", async () => {
   const calls = [];
-  let releasePayment;
   const ui = harness(async (url, options = {}) => {
     calls.push({ url, options });
     if (url === "/api/premium/config") return { ok: true, json: async () => config };
-    return new Promise(resolve => { releasePayment = () => resolve({ ok: true, json: async () => ({ order: order("preparing") }) }); });
+    throw new Error(`unexpected ${url}`);
   });
   await ui.context.openPremiumOffer();
   calls.length = 0;
   ui.context.renderLorentsenState(ui.host, order("expired", { status: "CHECKOUT_STARTED", paymentFailureReason: "expired" }));
-  ui.host.querySelector('[data-action="retry-payment"]').dispatch("click");
-  assert.match(ui.host.innerHTML, /data-checkout-state="CONSENT"/);
-  assert.match(ui.host.innerHTML, /data-action="confirm-payment" disabled>Обновить QR-код/);
+  const retry = ui.host.querySelector('[data-action="retry-payment"]');
+  retry.dispatch("click"); retry.dispatch("click");
+  assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
+  assert.match(ui.host.innerHTML, /У меня есть промокод/);
+  assert.match(ui.host.innerHTML, /Перейти к оплате/);
   assert.equal(calls.length, 0);
+});
 
-  const email = ui.host.querySelector('[name="payerEmail"]');
-  const terms = ui.host.querySelector('[name="termsAccepted"]');
-  const redemption = ui.host.querySelector('[name="autoRedemptionAccepted"]');
-  const confirm = ui.host.querySelector('[data-action="confirm-payment"]');
-  email.value = "payer@example.test";
-  terms.checked = true;
-  redemption.checked = true;
-  email.dispatch("input"); terms.dispatch("change"); redemption.dispatch("change");
-  assert.equal(confirm.disabled, false);
-  const first = confirm.dispatch("click");
-  const second = confirm.dispatch("click");
-  assert.equal(confirm.disabled, true);
-  assert.equal(calls.filter(call => call.url === "/api/premium/payment/start").length, 1);
-  releasePayment();
-  await Promise.all([first, second]);
+test("terminal exit → повторное открытие показывает offer, active exit → восстанавливает ту же attempt", async () => {
+  const calls = [];
+  let current = order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed" });
+  const ui = harness(async url => {
+    calls.push(url);
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    if (url.startsWith("/api/premium/order/")) return { ok: true, json: async () => ({ order: current }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  await ui.context.openPremiumOffer();
+  ui.context.renderPaymentState(current);
+  ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
+  calls.length = 0;
+  await ui.context.openPremiumOffer();
+  assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
+  assert.deepEqual(calls, ["/api/premium/config"]);
+
+  current = order("requires_action", { paymentMethod: { link: "https://pay.example.test/same", image: null, expiresAt: "2099-01-01T00:00:00Z" } });
+  ui.context.renderPaymentState(current);
+  ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
+  calls.length = 0;
+  await ui.context.openPremiumOffer();
+  assert.match(ui.host.innerHTML, /https:\/\/pay\.example\.test\/same/);
+  assert.deepEqual(calls, ["/api/premium/config", "/api/premium/order/order_payment_ux"]);
+  assert.equal(calls.includes("/api/premium/payment/start"), false);
+});
+
+test("processing/manual_review reopen восстанавливает status, а client expiry сначала делает authenticated GET", async () => {
+  for (const status of ["processing", "manual_review"]) {
+    const calls = [];
+    const active = order(status);
+    const ui = harness(async url => {
+      calls.push(url);
+      if (url === "/api/premium/config") return { ok: true, json: async () => config };
+      return { ok: true, json: async () => ({ order: active }) };
+    });
+    ui.context.renderPaymentState(active);
+    ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
+    await ui.context.openPremiumOffer();
+    assert.match(ui.host.innerHTML, new RegExp(`data-checkout-state="${status}"`));
+    assert.equal(calls.includes("/api/premium/payment/start"), false);
+  }
+
+  const calls = [];
+  const locallyExpired = order("requires_action", { paymentMethod: { link: "https://pay.example.test/old", expiresAt: "2020-01-01T00:00:00Z" } });
+  const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => ({ order: locallyExpired }) }; });
+  ui.context.renderPaymentState(locallyExpired);
+  await ui.context.resumeLorentsenPayment(locallyExpired.orderId);
+  assert.deepEqual(calls, ["/api/premium/order/order_payment_ux"]);
+  assert.equal(calls.includes("/api/premium/payment/start"), false);
+});
+
+test("page refresh показывает offer для terminal и восстанавливает active attempt", async () => {
+  for (const terminalStatus of ["failed", "expired"]) {
+    const terminal = order(terminalStatus, { status: "CHECKOUT_STARTED", paymentFailureReason: terminalStatus });
+    const ui = harness(async url => url === "/api/premium/config"
+      ? { ok: true, json: async () => config }
+      : { ok: true, json: async () => ({ order: terminal }) });
+    ui.context.localStorage.setItem("tianMinOrderId", terminal.orderId);
+    await ui.context.restorePremiumOrder();
+    assert.match(ui.resultRoot.querySelector(".premium-action").innerHTML, /data-checkout-state="OFFER"/);
+  }
+
+  const active = order("requires_action", { paymentMethod: { link: "https://pay.example.test/restored", expiresAt: "2099-01-01T00:00:00Z" } });
+  const calls = [];
+  const ui = harness(async url => {
+    calls.push(url);
+    return url === "/api/premium/config"
+      ? { ok: true, json: async () => config }
+      : { ok: true, json: async () => ({ order: active }) };
+  });
+  ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
+  await ui.context.restorePremiumOrder();
+  assert.match(ui.resultRoot.querySelector(".premium-action").innerHTML, /https:\/\/pay\.example\.test\/restored/);
+  assert.equal(calls.includes("/api/premium/payment/start"), false);
+});
+
+test("terminal retry → offer → FAMILY0 создаёт entitlement без payment POST", async () => {
+  const calls = [];
+  const terminal = order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed", currentAttemptId: "attempt_old", paymentId: "pay_old" });
+  const promoOrder = { ...terminal, amount: 0, baseAmount: 599, promoCode: "FAMILY0", currentAttemptId: null, paymentId: null, providerStatus: null, paymentFailureReason: null };
+  const ui = harness(async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    if (url === "/api/premium/promo/apply") return { ok: true, json: async () => ({ order: promoOrder, pricing: { baseAmount: 599, discountAmount: 599, finalAmount: 0, currency: "RUB", promoCode: "FAMILY0" } }) };
+    if (url === "/api/premium/promo/redeem") return { ok: true, json: async () => ({ order: { ...promoOrder, accessReason: "complimentary_promo" } }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  await ui.context.openPremiumOffer();
+  ui.context.renderPaymentState(terminal);
+  ui.host.querySelector('[data-action="retry-payment"]').dispatch("click");
+  ui.host.querySelector('[name="promoCode"]').value = "FAMILY0";
+  await ui.context.applyPromo(ui.host, null);
+  const applyBody = JSON.parse(calls.find(call => call.url === "/api/premium/promo/apply").options.body);
+  assert.equal(applyBody.orderId, terminal.orderId);
+  await ui.host.querySelector('[data-action="checkout"]').dispatch("click");
+  assert.match(ui.host.innerHTML, /Специальный доступ/);
+  assert.equal(calls.some(call => call.url === "/api/premium/payment/start"), false);
 });
 
 test("manual_review/processing не показывают retry, а локально истёкший expires_at запускает проверку, не terminal state", () => {

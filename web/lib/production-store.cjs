@@ -242,8 +242,9 @@ class PostgresPaymentStore {
       if (!availability.ok) throw promoError(availability);
       const orderResult = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1 FOR UPDATE", [String(orderId)]);
       const order = orderResult.rows[0]?.record;
-      if (!order || order.status !== "CHECKOUT_STARTED" || order.currentAttemptId || order.paymentId || order.accessReason) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
-      const updated = { ...order, baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, updatedAt: now };
+      const terminalPayment = ["failed", "expired"].includes(order?.providerStatus);
+      if (!order || order.status !== "CHECKOUT_STARTED" || order.accessReason || ((!terminalPayment) && (order.currentAttemptId || order.paymentId))) throw promoError({ code: "PROMO_INVALID", message: "Этот промокод нельзя применить" });
+      const updated = { ...order, status: "CHECKOUT_STARTED", baseAmount: order.baseAmount || order.amount, amount: promo.targetFinalAmount, promoCode: promo.normalizedCode, promoCampaign: promo.campaign, promoAppliedAt: now, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, updatedAt: now };
       await client.query("UPDATE tian_min_orders SET record=$2::jsonb,updated_at=NOW() WHERE order_id=$1", [order.orderId, JSON.stringify(updated)]);
       await insertPromoEvent(client, { promoCode: normalizedCode, eventType: "promo_applied", orderId: order.orderId, reportId: order.reportId, createdAt: now });
       await insertPromoEvent(client, { promoCode: normalizedCode, eventType: "checkout_created", orderId: order.orderId, reportId: order.reportId, createdAt: now });

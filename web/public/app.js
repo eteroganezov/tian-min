@@ -206,6 +206,10 @@ async function openPremiumOffer() {
       host.innerHTML = '<section class="checkout-panel" data-checkout-state="UNAVAILABLE"><p class="section-label">Полный персональный разбор</p><h3>Оплата пока не открыта</h3><p>Бесплатная карта остаётся доступной. Платёжный способ будет включён после завершения production-настройки.</p></section>';
       return;
     }
+    if (isActivePaymentOrder(activePremiumOrder)) {
+      renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(activePremiumOrder.orderId)}`)).order);
+      return;
+    }
     renderPremiumOffer(host, config);
     revealCheckout(host);
   } catch (error) { showPremiumError(error.message); }
@@ -228,11 +232,11 @@ function renderPremiumOffer(host, config, options = {}) {
 }
 
 async function applyPromo(host, birthInput = currentBirthInput) {
-  if (premiumBusy || !birthInput) return;
+  if (premiumBusy || (!birthInput && !activePremiumOrder?.orderId)) return;
   const code = host.querySelector('[name="promoCode"]')?.value || "";
   premiumBusy = true;
   try {
-    const result = await api("/api/premium/promo/apply", { birthInput, code });
+    const result = await api("/api/premium/promo/apply", { birthInput, orderId: activePremiumOrder?.orderId, code });
     activePremiumOrder = result.order;
     localStorage.setItem("tianMinOrderId", result.order.orderId);
     renderPremiumOffer(host, premiumConfig, { pricing: result.pricing });
@@ -265,6 +269,7 @@ function renderComplimentaryState(host, order) {
 }
 
 function renderPaymentState(order) {
+  activePremiumOrder = order;
   const host = document.querySelector(".premium-action") || resultRoot;
   clearTimeout(paymentPollTimer);
   if (order.accessReason === "complimentary_promo") return renderComplimentaryState(host, order);
@@ -327,10 +332,9 @@ async function submitLorentsenPayment(orderId, consent, button) {
 function renderLorentsenState(host, order) {
   if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
   if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
-    const expired = order.providerStatus === "expired";
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>${expired ? "QR-код истёк" : "Платёж не завершён"}</h3><p>${expired ? "Этот QR-код больше нельзя использовать. Если вы не успели оплатить, создайте новый." : "Оплата не прошла. Можно безопасно попробовать ещё раз."}</p><button type="button" class="premium-button" data-action="retry-payment">${expired ? "Обновить QR-код" : "Попробовать снова"}</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
-    host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => renderConsentCheckout(order, { actionLabel: expired ? "Обновить QR-код" : "Попробовать снова" }));
-    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => restartPremiumFromOffer(host, order));
+    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveTerminalPaymentFlow(host, order));
     return;
   }
   const method = order.paymentMethod;
@@ -351,6 +355,28 @@ function leaveLorentsenPaymentFlow(host, order) {
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>Платёж не отменён и его статус не изменён. Можно изменить данные рождения и рассчитать новую карту; эта попытка останется связана только с прежними данными.</p><button type="button" class="secondary-checkout-button" data-action="resume-payment">Вернуться к оплате</button></section>`;
   host.querySelector('[data-action="resume-payment"]').addEventListener("click", () => resumeLorentsenPayment(order.orderId));
   document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function restartPremiumFromOffer(host, order) {
+  clearTimeout(paymentPollTimer);
+  activePremiumOrder = order;
+  renderPremiumOffer(host, premiumConfig);
+  revealCheckout(host);
+}
+
+function leaveTerminalPaymentFlow(host, order) {
+  clearTimeout(paymentPollTimer);
+  activePremiumOrder = order;
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>История попытки оплаты сохранена. Когда будете готовы, снова откройте полный персональный разбор.</p></section>`;
+  document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function isTerminalPaymentOrder(order) {
+  return Boolean(order && (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason));
+}
+
+function isActivePaymentOrder(order) {
+  return Boolean(order?.paymentProvider === "lorentsen" && order.status === "PAYMENT_PENDING" && !isTerminalPaymentOrder(order));
 }
 
 async function resumeLorentsenPayment(orderId) {
@@ -416,6 +442,9 @@ async function restorePremiumOrder() {
     } else if (result.order.status === "REPORT_READY") {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       renderReadyState(resultRoot.querySelector(".premium-action"), result.order);
+    } else if (isTerminalPaymentOrder(result.order)) {
+      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig);
     } else if (result.order.status === "CHECKOUT_STARTED" && !result.order.paymentFailureReason) {
       resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
       if (premiumConfig.paymentMode === "lorentsen") renderConsentCheckout(result.order);
