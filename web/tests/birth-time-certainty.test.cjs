@@ -51,8 +51,17 @@ test("форма показывает вопрос, обе опции и зам�
   assert.match(html, /Знаю точно/);
   assert.match(html, /Знаю примерно/);
   assert.match(html, /Ничего страшного — мы учтём это при интерпретации карты\./);
+  assert.match(html, /Нужны для точного расчёта в обеих системах/);
+  assert.match(html, /Базовый расчёт — бесплатно\. Полный персональный разбор доступен отдельно\./);
+  assert.doesNotMatch(html, /Нужны для точного построения двух карт/);
+  assert.doesNotMatch(html, /Расчёт базовой карты не требует оплаты\. Полный персональный разбор — отдельный продукт\./);
   assert.match(css, /\.time-certainty-options input:checked\+span\{/);
   assert.match(css, /grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /\.time-certainty-options\{[^}]*gap:9px\}/);
+  assert.match(css, /\.time-certainty-options span\{[^}]*border:1px solid rgba\(24,34,31,\.16\)[^}]*border-radius:8px[^}]*background:#fffefa/);
+  assert.match(css, /\.time-certainty-options input:checked\+span\{[^}]*background:var\(--jade\)[^}]*color:#fff/);
+  assert.match(css, /\.time-certainty-helper\[hidden\]\{display:block;visibility:hidden\}/);
+  assert.doesNotMatch(css, /\.time-certainty-options\{[^}]*background:var\(--paper\)/);
 });
 
 function element() {
