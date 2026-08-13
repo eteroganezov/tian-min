@@ -93,6 +93,35 @@ test("failed generation exposes safe state and retry reuses entitlement without 
   assert.equal(order.status,"REPORT_READY"); assert.equal(calls,2); assert.equal(ctx.orderStore.promoRedemptions.size,1);
 });
 
+test("AI_NOT_CONFIGURED failure keeps FAMILY0 entitlement and retry reuses the same order/report",async()=>{
+  const ctx=setup(); let paymentCalls=0;
+  ctx.paymentProvider.createPayment=async()=>{paymentCalls+=1;throw new Error("payment must not run");};
+  ctx.service.reportGenerator=async()=>{throw Object.assign(new Error("provider unavailable"),{code:"AI_NOT_CONFIGURED",generationStage:"provider_configuration"});};
+  const applied=await ctx.service.applyPromo({birthInput:input,code:"FAMILY0"});
+  const redeemed=await ctx.service.redeemPromo({orderId:applied.body.order.orderId,code:"FAMILY0"});
+  const failed=await ready(ctx,redeemed.body.order.orderId);
+  assert.equal(failed.status,"REPORT_FAILED");
+  assert.equal(failed.accessReason,"complimentary_promo");
+  assert.notEqual(failed.status,"PAID");
+  assert.equal(ctx.orderStore.promoRedemptions.size,1);
+  assert.equal(ctx.orderStore.orders.size,1);
+  assert.equal(paymentCalls,0);
+
+  let retryCalls=0;
+  ctx.service.reportGenerator=async order=>{retryCalls+=1;return semantic(order);};
+  const [first,second]=await Promise.all([ctx.service.generate(failed.orderId),ctx.service.generate(failed.orderId)]);
+  assert.equal(first.body.order.reportId,failed.reportId);
+  assert.equal(second.body.order.reportId,failed.reportId);
+  const completed=await ready(ctx,failed.orderId);
+  assert.equal(completed.status,"REPORT_READY");
+  assert.equal(completed.orderId,failed.orderId);
+  assert.equal(completed.reportId,failed.reportId);
+  assert.equal(retryCalls,1);
+  assert.equal(ctx.orderStore.promoRedemptions.size,1);
+  assert.equal(ctx.orderStore.orders.size,1);
+  assert.equal(paymentCalls,0);
+});
+
 test("report capability is high-entropy, bound server-side and unauthorized tokens fail closed",async()=>{
   const ctx=setup(); const applied=await ctx.service.applyPromo({birthInput:input,code:"FAMILY0"});
   const redeemed=await ctx.service.redeemPromo({orderId:applied.body.order.orderId,code:"FAMILY0"}); const order=await ready(ctx,redeemed.body.order.orderId);

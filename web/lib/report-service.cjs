@@ -73,31 +73,39 @@ async function generateReportRequest(input, options = {}) {
   }
   catch (error) { return { status: 400, body: { error: safeMessage(error) } }; }
   const provider = options.provider || createReportProvider(options.env || process.env);
+  const onStage = typeof options.onStage === "function" ? options.onStage : () => {};
   const place = locationProvider.resolve(input.placeId);
   const model = provider.model || options.env?.OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-5.6-terra";
   const reportYears = options.reportYears || currentReportYears();
   const presentation = { displayName, birthPlace: place?.display || null };
   const context = buildReportContext(calculation, presentation, { model, reportYears });
+  onStage({ stage: "evidence_ready", model, providerType: provider.providerType || "custom" });
   const fingerprints = createFingerprints({ input, calculation, displayName, model, reportYears });
   let report;
   let validation;
+  let lastFailure = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
+      const providerType = provider.providerType || "custom";
+      onStage({ stage: providerType === "unavailable" ? "provider_unavailable" : "model_request_started", model, providerType, attempt: attempt + 1 });
       report = sanitizePersonalReport(await provider.generate(context, attempt ? validation.errors.slice(0, 4).join("; ") : undefined));
+      onStage({ stage: "model_response_received", model, providerType: provider.providerType || "custom", attempt: attempt + 1 });
     } catch (error) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
-        return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints } };
+        return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints }, internal: { failure: safeAiFailure(error, "provider_configuration") } };
       }
+      lastFailure = safeAiFailure(error);
       logAiError(error, { model, attempt: attempt + 1 });
-      if (attempt === 1 || isNonRetryableAiError(error)) return { status: 502, body: { aiStatus: "error", error: "Не удалось подготовить персональный разбор. Карта остаётся доступна." } };
+      if (attempt === 1 || isNonRetryableAiError(error)) return { status: 502, body: { aiStatus: "error", error: "Не удалось подготовить персональный разбор. Карта остаётся доступна." }, internal: { failure: lastFailure } };
       validation = { errors: ["провайдер вернул техническую ошибку"] };
       continue;
     }
     validation = validatePersonalReport(report, { evidenceCatalog: context.evidenceCatalog });
-    if (validation.valid) break;
+    if (validation.valid) { onStage({ stage: "report_validated", model, attempt: attempt + 1 }); break; }
+    lastFailure = { stage: "local_schema_validation", code: "INVALID_STRUCTURED_OUTPUT", type: "validation_error", httpStatus: null };
     logAiError({ aiStage: "local_schema_validation", code: "INVALID_STRUCTURED_OUTPUT", type: "validation_error" }, { model, attempt: attempt + 1 });
   }
-  if (!validation || !validation.valid) return { status: 502, body: { aiStatus: "error", error: "Не удалось проверить персональный разбор. Карта остаётся доступна." } };
+  if (!validation || !validation.valid) return { status: 502, body: { aiStatus: "error", error: "Не удалось проверить персональный разбор. Карта остаётся доступна." }, internal: { failure: lastFailure } };
   const full = options.hasFullReport ?? hasFullReport(options.env);
   const result = {
     status: 200,
@@ -157,6 +165,15 @@ function logAiError(error, { model, attempt }) {
     attempt,
   };
   console.error(`[AI_ERROR] ${JSON.stringify(entry)}`);
+}
+
+function safeAiFailure(error, fallbackStage) {
+  return {
+    stage: fallbackStage || error?.aiStage || "provider.generate",
+    httpStatus: Number.isInteger(error?.status) ? error.status : null,
+    code: error?.code || null,
+    type: error?.type || error?.name || "Error",
+  };
 }
 
 module.exports = { buildReportContext, createPreview, currentReportYears, generateReportRequest, hasFullReport, isNonRetryableAiError, logAiError };

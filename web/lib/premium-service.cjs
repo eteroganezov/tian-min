@@ -20,7 +20,7 @@ class PremiumService {
     this.reportStore = options.reportStore;
     this.paymentProvider = options.paymentProvider;
     this.config = options.config || getProductConfig(this.env);
-    this.reportGenerator = options.reportGenerator || (order => generatePremiumReport(order, this.env));
+    this.reportGenerator = options.reportGenerator || (order => generatePremiumReport(order, this.env, event => this.logGenerationStage(order, event.stage, event)));
     this.pdfRenderer = options.pdfRenderer || createPdfFromSavedReport;
     this.logger = options.logger || console;
     this.generationPromises = new Map();
@@ -348,6 +348,7 @@ class PremiumService {
     const claim=await this.orderStore.claimReportGeneration({ orderId,now,leaseUntil,runId });
     if (!claim.claimed) return success(claim.order?.status === "REPORT_READY" ? 200 : 202, claim.order || order);
     order=claim.order;
+    this.logGenerationStage(order, "generation_claimed", { attempt: order.reportGenerationAttempt });
     if (!this.generationPromises.has(order.reportId)) {
       const job=this.finishGeneration(order).finally(()=>this.generationPromises.delete(order.reportId));
       this.generationPromises.set(order.reportId,job);
@@ -359,16 +360,27 @@ class PremiumService {
     try {
       const envelope=await this.reportGenerator(order);
       if (envelope?.kind !== "semantic-report" || envelope.reportId !== order.reportId || envelope.chartId !== order.chartId) throw generationError("REPORT_BINDING_MISMATCH");
+      this.logGenerationStage(order, "pdf_render_started");
       const rendered=await this.pdfRenderer(envelope);
       if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer) || rendered.buffer.subarray(0,5).toString() !== "%PDF-") throw generationError("PDF_RENDER_FAILED");
+      this.logGenerationStage(order, "pdf_rendered");
       await this.reportStore.saveImmutable(envelope);
+      this.logGenerationStage(order, "report_persisted");
       const current=await this.orderStore.load(order.orderId);
-      if (current?.reportGenerationRunId === order.reportGenerationRunId) await this.saveOrder(current,{ status:"REPORT_READY",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:null });
+      if (current?.reportGenerationRunId === order.reportGenerationRunId) {
+        await this.saveOrder(current,{ status:"REPORT_READY",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:null,generationFailureStage:null,generationFailureHttpStatus:null });
+        this.logGenerationStage(order, "delivery_ready");
+      }
     } catch (error) {
-      this.logger.error("[REPORT_GENERATION_ERROR]",JSON.stringify({ code:error?.code || "REPORT_GENERATION_FAILED",type:error?.name || "Error" }));
+      const stage=error?.generationStage || "report_generation";
+      this.logger.error("[REPORT_GENERATION_ERROR]",JSON.stringify({ orderId:order.orderId,reportId:order.reportId,stage,code:error?.code || "REPORT_GENERATION_FAILED",type:error?.providerType || error?.name || "Error",httpStatus:Number.isInteger(error?.httpStatus)?error.httpStatus:null }));
       const current=await this.orderStore.load(order.orderId);
-      if (current?.reportGenerationRunId === order.reportGenerationRunId) await this.saveOrder(current,{ status:"REPORT_FAILED",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:error?.code || "REPORT_GENERATION_FAILED" });
+      if (current?.reportGenerationRunId === order.reportGenerationRunId) await this.saveOrder(current,{ status:"REPORT_FAILED",reportGenerationCompletedAt:this.isoNow(),reportGenerationLeaseUntil:null,generationFailureCode:error?.code || "REPORT_GENERATION_FAILED",generationFailureStage:stage,generationFailureHttpStatus:Number.isInteger(error?.httpStatus)?error.httpStatus:null });
     }
+  }
+
+  logGenerationStage(order, stage, details = {}) {
+    this.logger.info?.("[REPORT_GENERATION_STAGE]",JSON.stringify({ orderId:order.orderId,reportId:order.reportId,stage,attempt:details.attempt || null,model:details.model || null,providerType:details.providerType || null }));
   }
 
   async waitForGenerationJobs() { await Promise.allSettled([...this.generationPromises.values()]); }
@@ -437,17 +449,20 @@ function updateAttempt(attempt, payment, now) {
   return { ...attempt, paymentPublicId: payment.paymentPublicId || attempt.paymentPublicId, providerStatus: status, statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry, nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
 }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }
-async function generatePremiumReport(order,env) {
-  const result=await generateReportRequest({ ...order.birthInput,name:order.displayName || "" },{ env,hasFullReport:true });
-  if (result.status !== 200 || result.body?.aiStatus !== "ready" || !result.internal?.report) throw generationError(result.body?.aiStatus === "unavailable" ? "AI_NOT_CONFIGURED" : "REPORT_GENERATION_FAILED");
+async function generatePremiumReport(order,env,onStage) {
+  const result=await generateReportRequest({ ...order.birthInput,name:order.displayName || "" },{ env,hasFullReport:true,onStage });
+  if (result.status !== 200 || result.body?.aiStatus !== "ready" || !result.internal?.report) {
+    const failure=result.internal?.failure || {};
+    throw generationError(result.body?.aiStatus === "unavailable" ? "AI_NOT_CONFIGURED" : "REPORT_GENERATION_FAILED",{ generationStage:failure.stage,httpStatus:failure.httpStatus,providerType:failure.type });
+  }
   if (result.body.reportId !== order.reportId || result.body.chartId !== order.chartId) throw generationError("REPORT_BINDING_MISMATCH");
   return { kind:"semantic-report",artifactVersion:"premium-delivery-v1",schemaVersion:result.body.schemaVersion,
     input:canonicalBirthInput(order.birthInput),presentation:result.body.presentation,report:result.internal.report,
     chartId:order.chartId,reportId:order.reportId,model:result.body.model,generatedAt:new Date().toISOString() };
 }
-function generationError(code) { const error=new Error("Premium generation failed"); error.code=code; return error; }
+function generationError(code,details={}) { const error=new Error("Premium generation failed"); error.code=code; Object.assign(error,details); return error; }
 function randomToken() { return crypto.randomBytes(32).toString("base64url"); }
-function publicOrder(order) { const { birthInput,checkoutKeyHash,displayName,promoCampaign,reportAccessTokenHash,reportGenerationRunId,reportGenerationLeaseUntil,generationFailureCode,...safe }=order; return { ...safe,displayName:displayName || "" }; }
+function publicOrder(order) { const { birthInput,checkoutKeyHash,displayName,promoCampaign,reportAccessTokenHash,reportGenerationRunId,reportGenerationLeaseUntil,generationFailureCode,generationFailureStage,generationFailureHttpStatus,...safe }=order; return { ...safe,displayName:displayName || "" }; }
 function success(status, order) { return { status, body: { order: publicOrder(order) } }; }
 function failure(status, error) { return { status, body: { error } }; }
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }

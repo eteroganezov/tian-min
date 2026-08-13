@@ -177,10 +177,22 @@ test("sanitize сохраняет evidence IDs и удаляет сломанн�
 });
 
 test("без API-ключа report generation остаётся честно недоступна", async () => {
-  const result=await generateReportRequest(input,{ env:{} });
+  const stages=[];
+  const result=await generateReportRequest(input,{ env:{},onStage:event=>stages.push(event.stage) });
   assert.equal(result.status,200);
   assert.equal(result.body.aiStatus,"unavailable");
   assert.equal(result.body.report,undefined);
+  assert.deepEqual(stages,["evidence_ready","provider_unavailable"]);
+  assert.equal(result.internal.failure.stage,"provider_configuration");
+});
+
+test("successful report emits safe generation stages without prompt or birth data", async () => {
+  const stages=[];
+  const result=await generateReportRequest(input,{ env:{AI_MODE:"mock"},reportYears,onStage:event=>stages.push(event) });
+  assert.equal(result.status,200);
+  assert.deepEqual(stages.map(event=>event.stage),["evidence_ready","model_request_started","model_response_received","report_validated"]);
+  const serialized=JSON.stringify(stages);
+  assert.doesNotMatch(serialized,/2000-01-01|12:00|EVIDENCE_CONTEXT|prompt/i);
 });
 
 test("невалидный ответ повторяется один раз, затем возвращает safe error", async () => {

@@ -13,6 +13,7 @@ const { LocalOrderStore } = require("./lib/order-store.cjs");
 const { createPaymentProvider } = require("./lib/payment-provider.cjs");
 const { PremiumService } = require("./lib/premium-service.cjs");
 const { PostgresPaymentStore, PostgresReportStore } = require("./lib/production-store.cjs");
+const { assertProductionGenerationReady } = require("./lib/generation-config.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
 
@@ -224,6 +225,7 @@ if (require.main === module) void startServer().catch(() => { console.error("[ST
 
 async function startServer() {
   const { host, port } = resolveServerBinding();
+  assertProductionGenerationReady(process.env);
   const server = createServer();
   await server.deploymentReady;
   server.listen(port, host, () => {
@@ -234,4 +236,4 @@ async function startServer() {
   });
 }
 
-module.exports = { createServer, resolveServerBinding };
+module.exports = { createServer, resolveServerBinding, startServer };

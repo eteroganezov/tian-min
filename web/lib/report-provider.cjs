@@ -52,6 +52,7 @@ ${projectPrompts}`;
 
 class OpenAIReportProvider {
   constructor(options = {}) {
+    this.providerType = "openai";
     this.model = options.model || process.env.OPENAI_MODEL || "gpt-5.6-terra";
     this.client = options.client || new OpenAI({ apiKey: options.apiKey || process.env.OPENAI_API_KEY });
   }
@@ -87,17 +88,18 @@ function markAiStage(error, stage) {
 }
 
 class MockReportProvider {
-  constructor() { this.model = "mock-v1"; }
+  constructor() { this.model = "mock-v1"; this.providerType = "mock"; }
   async generate(context) { return createMockReport(context); }
 }
 
 class UnavailableReportProvider {
-  constructor(model) { this.model = model || "gpt-5.6-terra"; }
+  constructor(model) { this.model = model || "gpt-5.6-terra"; this.providerType = "unavailable"; }
   async generate() { throw Object.assign(new Error("Персональная интерпретация пока не подключена"), { code: "AI_NOT_CONFIGURED" }); }
 }
 
 function createReportProvider(env = process.env) {
   if (env.AI_MODE === "mock") return new MockReportProvider();
+  if (env.AI_MODE === "disabled") return new UnavailableReportProvider(env.OPENAI_MODEL);
   if (!env.OPENAI_API_KEY) return new UnavailableReportProvider(env.OPENAI_MODEL);
   return new OpenAIReportProvider({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL });
 }
