@@ -1,52 +1,49 @@
 # Тянь Мин / 天命 — project context
 
-Read this file after `AGENTS.md`, then use `BACKLOG.md` as the operational source of truth for unfinished work. Verify implementation details in code when they differ from documentation.
+Read this file after `AGENTS.md`. Use `BACKLOG.md` as the operational source of truth for unfinished work, and verify implementation details in code before changing them.
 
 ## Product
 
-Тянь Мин builds a personal Chinese birth chart from two traditions:
+Тянь Мин is a Russian-language product that combines two Chinese astrology traditions:
 
 - Ба-цзы;
 - Цзы Вэй Доу Шу.
 
-Product principle: **«Две традиции — один цельный портрет»**. The primary user language is Russian. Use a clear Russian term first and the Chinese professional notation as a secondary layer. Avoid English system names where a normal Russian term exists. Interpretations should be human, personal and probabilistic where appropriate, without guaranteed-event claims or repetitive defensive disclaimers.
+Product principle: **«Две традиции — один цельный портрет»**. The systems remain independently calculated and are compared only at the interpretation layer. Russian meaning comes first; Chinese terms are a secondary professional layer. Interpretations must be personal, evidence-backed and non-fatalistic, without guaranteed events or medical, legal or financial claims.
 
-### Free layer
+### Free and Premium
 
-Input: optional name, Gregorian birth date, local birth time, confirmed birthplace suggestion and gender. The server builds the real chart without OpenAI. Free preview includes:
+The free calculation accepts an optional name, local Gregorian birth date, local civil birth time, a confirmed birthplace suggestion and gender. It returns the real deterministic BaZi/Zi Wei chart without OpenAI. The free preview includes BaZi pillars, Day Master, balance, five elements and current major period, plus key Zi Wei parameters, transformations, current age palace and the expandable 12-palace chart.
 
-- four BaZi pillars, Day Master, chart balance, five elements and current major period;
-- key Zi Wei parameters, four transformations, current age palace and expandable 12-palace/star chart.
+Premium is a separate one-time purchase: **«Ба-цзы + Цзы Вэй · Персональный разбор · Полный PDF-отчёт»**. Launch price is **599 RUB** (`59900` minor units). Production price is server-owned; the frontend only displays `/api/premium/config`. The default development/mock price may remain `100 RUB` when no explicit development override is set.
 
-Free preview must not expose the full premium interpretation or trigger AI generation.
+## Calculation and time architecture
 
-### Premium layer
+- `calculator/` contains the TypeScript BaZi/Zi Wei algorithms, the vendored Yiqi core, enrichment logic and `lunar-typescript` integration.
+- `calculator/local-chart.ts` is the unified calculation entry point reused by the web pipeline.
+- `web/lib/birth-chart-pipeline.cjs` resolves confirmed location data, historical timezone rules and `TRUE_SOLAR_TIME_V1`, then calls the existing calculation core.
+- `web/lib/chart-view.cjs`, `free-preview.cjs` and localization/formatting modules create safe presentation views without recalculating astrology.
+- Location autocomplete accepts partial case-insensitive input from two characters, but the user must select a provider result. Canonical coordinates and IANA timezone are preserved.
 
-The paid one-time product is a combined personal interpretation: character and motives, strengths and growth, career, money, relationships, current period, coming years, action plan, combined BaZi/Zi Wei reading and full PDF.
+The calculation core, `local-chart.ts`, `TRUE_SOLAR_TIME_V1`, historical-time rules, coordinates and BaZi/Zi Wei algorithms are protected. UI, payment, report, PDF and deployment work must not change them unless calculation work is explicitly requested and independently verified. Several exact astrological cases remain deliberately skipped pending external specialist verification.
 
-Preferred microcopy: **«Ба-цзы + Цзы Вэй · Персональный разбор · Полный PDF-отчёт»**.
+## Birth-time certainty
 
-Launch price: **599 RUB**. The current **100 RUB** is only a DEV/mock-flow placeholder (`PREMIUM_REPORT_PRICE_RUB` is the server-side configuration point) and is not the production price. The production amount is owned by server configuration; the frontend only displays the value returned by the server.
+`birthTimeCertainty` is user-provided metadata with values `exact | approximate`; `exact` is the default and the legacy fallback. It never changes the entered time, timezone resolution, true-solar correction or calculated chart.
 
-## Current architecture
+`metadata.calculationSensitivity` and `metadata.sensitivityFlags` are separate deterministic signals produced by the calculation pipeline. They must not be merged with user certainty:
 
-### Calculation and time
+- `birthTimeCertainty` describes how confident the user is in the supplied civil time;
+- calculated sensitivity describes whether the resulting calculation is near a time-dependent boundary.
 
-- `calculator/` contains the TypeScript BaZi/Zi Wei calculation layer and `lunar-typescript` integration.
-- `calculator/local-chart.ts` is the unified calculation interface used by the web pipeline.
-- `web/lib/birth-chart-pipeline.cjs` connects validated birth input to the calculator.
-- Time/location handling includes historical timezone rules and `TRUE_SOLAR_TIME_V1`.
+Future user-facing Premium/PDF wording must account for both signals without treating either as the other.
 
-This calculation core is protected. UI, payment, report and deployment tasks should not alter it unless explicitly requested and independently verified.
+## Web application
 
-### Local web application
-
-- `web/server.cjs`: local Node HTTP server and API routes.
-- `web/public/`: Russian frontend; `web/scripts/build.cjs` copies it to `web/dist/` after syntax checks.
-- `web/lib/free-preview.cjs`: safe free payload built from canonical calculation data.
-- `web/lib/location-provider.cjs`: local `city-timezones` provider. Russian names are a presentation layer; canonical coordinates and IANA timezone remain provider data.
-- `web/lib/report-*`: report fingerprints, strict report schema, OpenAI provider abstraction, generation and local persistence.
-- `web/lib/pdf-*`: separate Premium PDF layer.
+- `web/server.cjs` serves the application and API; production binds to `0.0.0.0` and uses `process.env.PORT`.
+- `web/public/` is the Russian frontend; `web/scripts/build.cjs` copies it to `web/dist/` after checks.
+- The mobile-first free funnel, sticky navigation, Telegram/WebView fallback, mobile Safari input protection, location autocomplete, free preview and Premium offer are implemented.
+- WEB visual v1 is **FROZEN**. Do not continue cosmetic polish without a separate material requirement.
 
 Run from `web/`:
 
@@ -56,109 +53,74 @@ npm test
 npm start
 ```
 
-The build also compiles the calculator; the test command runs calculator and web suites.
+After backend changes, restart Node fully and confirm an old process did not survive with `EADDRINUSE`.
 
-### Location search contract
+## Premium Report v4
 
-Autocomplete must support partial case-insensitive search from 2+ characters, Russian display names where available, mouse and keyboard selection, and reject arbitrary unconfirmed text. Selection preserves canonical coordinates/timezone.
+`personal-report-v4` is the current semantic report architecture. Main components:
 
-After backend changes, restart Node fully. A stale process can serve fresh static `app.js` from disk while retaining an old `location-provider.cjs` in memory. Verify that a new `npm start` did not fail with `EADDRINUSE`.
+- `web/lib/report-content.cjs` builds a versioned deterministic evidence catalog;
+- `web/lib/report-service.cjs` creates a frozen AI context containing presentation data, method/sensitivity metadata and `evidenceCatalog`;
+- raw `calculationData` and `chartView` are intentionally not sent as the old unrestricted AI snapshot;
+- `web/lib/report-provider.cjs` uses OpenAI Responses API with strict Structured Outputs when a real provider is explicitly enabled;
+- `web/lib/report-schema.cjs` validates evidence IDs, cross-system evidence types, insight references and forbidden predictive fields;
+- unsupported claims such as guaranteed outcomes, medical conclusions, exact marriage/relocation dates or promised income are blocked by prompt and local validation;
+- persisted legacy reports and `personal-report-v3` retain explicit compatibility paths.
 
-### Birth-time certainty metadata
+The deterministic calculation remains authoritative. AI only interprets the supplied evidence. Real OpenAI generation is opt-in and must never be used for visual QA. Production paid generation is not yet enabled: `PremiumService.generate()` fails closed for `PAYMENT_MODE=lorentsen`, while non-production monetization tests use a persisted generation stub.
 
-The birth form sends `birthTimeCertainty: "exact" | "approximate"`. It describes how confidently the user knows the entered civil time; it never changes `time`, timezone handling, true-solar correction or the calculation core. `canonicalBirthInput()` in `web/lib/personalization.cjs` validates and persists it, with missing legacy values read as `exact`. Free-preview data exposes it as `person.birthTimeCertainty`, while calculated `metadata.calculationSensitivity` and `metadata.sensitivityFlags` remain separate signals.
+## Premium PDF
 
-### Web design
+`web/lib/pdf-template.cjs` routes full `personal-report-v4` documents to the shared renderer in `web/lib/pdf-template-v4.cjs`; `web/lib/pdf-service.cjs` supplies the same validated semantic report, calculated chart view, evidence catalog and birth metadata. Legacy rendering exists only for saved-report compatibility.
 
-The current design system is effectively frozen: premium editorial, dark green, warm light background, gold accents, serif display typography, restrained spacing and softly rounded cards. Free preview is the visual benchmark. Calculated compact objects may be centered when natural; explanatory/editorial content is normally left-aligned. Do not turn the product into a generic SaaS dashboard or start a redesign without an explicit request.
+The current PDF design uses one shared v4 renderer/design system. The older “Premium PDF v5.2” work is a visual/reference source, not the current semantic schema. A final editorial/product polish and exact/approximate review PDFs are active in a separate workstream. Do not call the current PDF finally approved until human review is complete, and do not edit PDF files during unrelated work.
 
-## Monetization foundation already implemented
+## Monetization and Lorentsen
 
-Relevant files: `web/lib/product-config.cjs`, `order-store.cjs`, `payment-provider.cjs`, `premium-service.cjs`, server premium routes and frontend DEV flow.
-
-Current state set:
+The internal order state machine is implemented:
 
 `FREE_PREVIEW` → `CHECKOUT_STARTED` → `PAYMENT_PENDING` → `PAID` → `REPORT_GENERATING` → `REPORT_READY` / `REPORT_FAILED`.
 
-Rules already enforced:
+Implemented safeguards include server-side price ownership, payment-gated generation, stable order/report IDs, persistence/recovery, duplicate-generation protection, idempotent callbacks, production fail-closed behavior and a closed legacy `/api/report` route. Development mock payments are unavailable in production.
 
-- free preview is separate from premium order creation;
-- browser input cannot set `PAID`; server/provider logic is authoritative;
-- unpaid orders cannot pass the generation gate;
-- `REPORT_GENERATING` prevents a parallel duplicate and `REPORT_READY` reuses the saved result;
-- failed generation can retry without another payment;
-- checkout/order/report IDs are stable for the same context, and refresh recovery reuses persisted state;
-- DEV orders live under `web/.local-orders/`, saved reports under the existing local report store;
-- mock payment is development-only; production provider/storage remain unavailable and fail closed;
-- the current paid generation step is a stub and makes no OpenAI call.
+Production uses Lorentsen plus PostgreSQL (`web/lib/lorentsen-provider.cjs`, `lorentsen-webhook.cjs`, `production-store.cjs`, `premium-service.cjs`). The parser accepts the actual nested provider response contract and preserves `payment_public_id`, `payment_status`/`status`, optional `payment_method`, retry timing and `trace_id`. A `preparing` response without a payment method is valid. Existing attempts are recovered and reconciled rather than recreated. Webhooks are verified and durably stored; authenticated GET remains authoritative. Only Lorentsen `settled` may set internal `PAID`; redirects, QR/link, `payment.succeeded` and `succeeded_pending` do not.
 
-Do not rewrite this foundation merely to add a production provider.
+Current external blocker: the existing real provider attempt was confirmed by authenticated GET as `manual_review`. Lorentsen never supplied QR/link for those attempts. The state must remain non-terminal, no replacement real attempt should be created now, and the production payment flow is not considered end-to-end validated until one controlled payment reaches `settled`.
 
-## Lorentsen production payment integration
+## Deployment and persistence
 
-Lorentsen is the selected production provider. The provider, consent checkout, authenticated reconciliation, verified webhook endpoint and PostgreSQL persistence are implemented. The production connection and webhook configuration were reported active on 2026-08-12; provider reachability delivery must be rechecked after the deferred-reconciliation fix is deployed. API calls and secrets remain backend-only. Activation instructions are in `web/LORENTSEN_DEPLOYMENT.md`.
+- Source repository: `eteroganezov/tian-min`, branch `main`.
+- Railway deployment support is implemented: root `package.json` enables Node detection; the web server honors deployment host/port; Railway uses the repository with the web application and PostgreSQL persistence.
+- Production Lorentsen configuration and secret requirements are documented in `web/LORENTSEN_DEPLOYMENT.md`.
+- Local DEV orders/reports use ignored filesystem stores; production Lorentsen records use PostgreSQL.
+- Secrets belong only in environment/deployment secret storage and must never enter Git, logs or frontend payloads.
 
-The first production create attempt was rejected with HTTP `422`, provider code `amount_out_of_range`, because the former `399 RUB` launch price was below Lorentsen's `500 RUB` minimum. The amount format was correct (`39900` minor units). The launch price is now `599 RUB` (`59900` minor units). Safe redacted diagnostics preserve provider code/type/message and invalid field names without secrets or payer data.
+Deployment exists, but launch readiness is not complete while payment is in external `manual_review`, controlled `settled` validation is absent, real paid report generation remains gated, and final PDF human review is open.
 
-### Create and retrieve payment
+## Product and engineering decisions
 
-- Production base: `https://api.lorentsen.pro` (no separate sandbox base is documented in the available guide).
-- Create: `POST /api/v1/integration/payments` with server-side bearer authorization, `Idempotency-Key` and JSON.
-- Main fields: `external_order_id`, `customer_amount_minor`, `customer_currency: RUB`, `payer_email`, `webhook_endpoint_id`, `description`, `locale`, `terms_accepted` plus terms version, `auto_redemption_accepted` plus version, and `external_consent_reference`.
-- `customer_amount_minor` is an integer: `500 RUB` is `50000`; floats are forbidden.
-- Retrieve/poll: `GET /api/v1/integration/payments/{payment_public_id}`.
+- BaZi and Zi Wei are calculated independently and combined only as one interpreted portrait.
+- Free calculation remains free; Premium is a separate one-time personal interpretation plus PDF.
+- Current Premium launch price is 599 RUB and remains server-controlled.
+- Frontend state can never prove payment or set `PAID`.
+- Reports must be evidence-backed; unsupported predictive claims are rejected rather than softened into apparent facts.
+- Ready reports must be persisted and reused; retries after generation failure must not require another payment or unnecessary AI call.
+- WEB visual v1 is frozen. Premium PDF is a separate layer and is not yet human-approved.
+- `birthTimeCertainty` and calculated sensitivity are independent signals.
 
-Create may return `201`, `status=preparing`, `payment_method=null`; this is normal. Poll using `retry_after_seconds` or HTTP `Retry-After`, with about 5 seconds as fallback. At `requires_action`, use `payment_method.image` as QR, the exact `payment_method.link`, and `expires_at`. Never decode a payment URL from the QR. A temporary polling failure must not hide a still-valid QR.
+## Licensing and external dependencies
 
-Provider statuses: `preparing`, `processing`, `requires_action`, `succeeded_pending`, `settled`, `manual_review`, `failed`, `expired`. Treat `provider_result_unknown` as manual investigation. Only **`settled`** authorizes fulfillment; never fulfill from browser redirect or `succeeded_pending`.
+The repository is MIT-licensed. `NOTICE` records attribution for the vendored Yiqi BaZi/Zi Wei core and `lunar-typescript`; required copyright, permission and attribution notices must not be removed. Before a public commercial launch, perform a final repository-wide dependency/license and distributed-artifact `LICENSE`/`NOTICE` audit.
 
-Do not create another attempt while the existing one is non-terminal. New IDs are allowed only after confirmed `failed` or `expired`. Late success updates the original attempt. Fulfill an order exactly once even if multiple attempts are accidentally paid.
+Main external/runtime dependencies:
 
-### Idempotency
+- Node.js 18+ and npm;
+- `lunar-typescript` and the vendored Yiqi core for calculation;
+- `city-timezones` and `timezonecomplete` for location/time handling;
+- PostgreSQL (`pg`) for production order/payment/report persistence;
+- Lorentsen API/webhooks for production payment;
+- OpenAI Responses API for future real Premium generation;
+- `pdfkit` and fonts available to the runtime for PDF generation;
+- Railway for the current production deployment.
 
-For one logical attempt, keep `external_order_id`, `Idempotency-Key` and request body identical. On timeout/5xx retry the same request, not a new payment. Interpret `201` as new, `200` as the existing idempotent result, and `409` as same key with a different body (client error).
-
-### Webhooks
-
-Webhooks accelerate updates; REST polling remains fallback. Generic correctly signed reachability/service events are accepted without payment semantics. Every verified event is durably saved first; new events receive `202`, identical duplicates `200`. Only `payment.succeeded` and `payment.settled` enter deferred reconciliation. Reconciliation errors remain queued in the durable inbox and never turn an already accepted webhook into non-2xx. Confirm the final payment state with authenticated GET after a payment webhook.
-
-Header spelling is Lorentsen's documented spelling:
-
-- `X-Lorensten-Event-Id`
-- `X-Lorensten-Timestamp`
-- `X-Lorensten-Signature`
-- `X-Lorensten-Signing-Key-Version`
-
-Verification requirements:
-
-1. Preserve exact raw body bytes before JSON parsing.
-2. Verify HMAC-SHA256 over the raw body using the signing secret; compare Base64 `v1=` signature in constant time.
-3. Validate signing-key version, header event ID against `event.id`, and timestamp against `event.created_at`; reject timestamps more than about 300 seconds in the future, but do not reject valid old retries solely for age.
-4. Before returning 2xx, durably save the event. Deduplicate by event ID; same ID plus a different body hash is a conflict. Durable-save failure returns 5xx. A database-backed worker processes and retries payment reconciliation separately, including work recovered after process restart.
-
-Production records use PostgreSQL tables for orders, payment attempts/history, consent audit, webhook inbox, anomalies and future saved premium reports. DEV `.local-orders` / `.local-reports` remain unchanged. Production setup still requires an active server token, registered webhook endpoint, signing secret/key version, public HTTPS backend, `GET /connection` verification from production, and any required IP/CIDR allowlist. Store all secrets outside Git.
-
-## Premium generation and PDF
-
-Future production chain: server-confirmed Lorentsen `settled` → one premium AI generation → persistence → web report → Premium PDF. A generation failure leaves the order paid and retryable without a new payment. A ready report must be reused without another paid AI call.
-
-The current strict report schema and report fingerprint/persistence architecture already exist. Do not change them casually. Real OpenAI generation is opt-in per task and must never be used for layout QA.
-
-Premium PDF is functionally developed but has a separate visual backlog. Do not modify it during payment or deployment tasks.
-
-## Quality status and next stages
-
-At context creation: calculation core is considered stable; free preview, location autocomplete, monetization foundation, mock retry/recovery and duplicate-generation protection exist. Stale Node runtime behavior is covered by regression tests.
-
-Last known suite status: **146 pass, 0 fail, 4 skipped**; skipped tests require external astrological verification. This is a snapshot—rerun tests after meaningful changes.
-
-Planned sequence, not work authorized by this file:
-
-1. production deployment architecture and public HTTPS backend;
-2. Lorentsen integration plus production persistence/durable webhook inbox;
-3. real end-to-end payment verification;
-4. real OpenAI premium generation after `settled` and report persistence/recovery;
-5. separate Premium PDF visual refresh;
-6. pre-launch QA and launch.
-
-See `BACKLOG.md` for active details.
+See `BACKLOG.md` for the current NOW / BLOCKED / NEXT / LATER / DONE status.
