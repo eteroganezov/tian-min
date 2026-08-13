@@ -39,9 +39,14 @@ function buildLongStressVariant() {
     } }) };
 }
 
+function buildDistinctChartVariant() {
+  const input={ name:"Илья",date:"1988-02-17",time:"18:20",gender:"male",placeId:moscow.id,birthTimeCertainty:"exact" };
+  return { key:"distinct",filename:"sample-personal-report-v4-distinct-chart-qa.pdf",...buildVariant({ input,reportYears:currentReportYears() }) };
+}
+
 async function main() {
   const outputDir=path.resolve(__dirname,"..","..","output","pdf");await fs.mkdir(outputDir,{recursive:true});
-  for(const variant of [...buildReviewVariants(),buildLongStressVariant()]){
+  for(const variant of [...buildReviewVariants(),buildLongStressVariant(),buildDistinctChartVariant()]){
     const result=await createPdfRequest({ ...variant.input,report:variant.report },{ hasFullReport:true });
     if(result.status!==200)throw new Error(result.error||`Не удалось создать PDF ${variant.key}`);
     const outputPath=path.join(outputDir,variant.filename);await fs.writeFile(outputPath,result.buffer);process.stdout.write(`${variant.key}: ${outputPath}\n`);
@@ -50,4 +55,4 @@ async function main() {
 
 if(require.main===module)main().catch(error=>{console.error(error);process.exitCode=1;});
 
-module.exports={ buildReviewVariants,buildLongStressVariant };
+module.exports={ buildDistinctChartVariant,buildReviewVariants,buildLongStressVariant };

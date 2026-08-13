@@ -8,7 +8,8 @@ const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
 const { toChartView } = require("../lib/chart-view.cjs");
 const { createMockReport } = require("../lib/mock-report.cjs");
 const { createPdfFilename, createPdfFromSavedReport, createPdfRequest, safeFilenamePart } = require("../lib/pdf-service.cjs");
-const { buildReviewVariants, buildLongStressVariant } = require("../scripts/generate-sample-pdf.cjs");
+const { TEN_GODS, tenGodMeaning } = require("../lib/astrology-localization.cjs");
+const { buildDistinctChartVariant, buildReviewVariants, buildLongStressVariant } = require("../scripts/generate-sample-pdf.cjs");
 
 const moscow = locationProvider.search("Москва")[0];
 const input = { name: "Эдуард", date: "2000-01-01", time: "12:00", gender: "male", placeId: moscow.id };
@@ -86,7 +87,7 @@ test("v4 PDF является самостоятельным premium-докум�
     assert.ok(destination?.[0],annotation.dest);
     destinationPages.push((await pdfDocument.getPageIndex(destination[0]))+1);
   }
-  assert.deepEqual(destinationPages,[3,4,5,6,7,8,10,11,13,15,16,17,18,19,21,22,23,24,25,26,27,28,29,31,33,34,35]);
+  assert.deepEqual(destinationPages,[3,4,5,6,7,8,10,11,13,15,16,17,18,19,21,22,23,24,25,26,27,28,29,32,34,35,36]);
   const outline=await pdfDocument.getOutline();
   assert.equal(outline.some(item=>item.title==="Как читать этот отчёт"),true);
   assert.equal(outline.some(item=>item.title==="Методология и границы интерпретации"),true);
@@ -106,12 +107,41 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
   assert.doesNotMatch(parsed.text,/\b0[1-9]\s+(?:РАССЧИТАНО|ИНТЕРПРЕТАЦИЯ|ПРИМЕНЕНИЕ|СФОКУСИРОВАТЬСЯ|ЗАКРЕПИТЬ|СВЕРИТЬ|НЕ ФОРСИРОВАТЬ)/u);
   assert.doesNotMatch(parsed.text,/Наблюдение\s+0[1-9]/iu);
-  assert.match(parsed.text,/КАК ЧИТАТЬ ОЦЕНКУ БАЛАНСА/i);
+  assert.match(parsed.text,/ПРОФЕССИОНАЛЬНАЯ ОЦЕНКА БАЛАНСА/i);
   assert.match(parsed.text,/得令[\s\S]{0,40}сезонная поддержка/i);
-  assert.match(parsed.text,/得势[\s\S]{0,40}вклад\s+общей\s+картины/i);
-  assert.match(normalizedText,/Дворец судьбы и личности\s*\(命宫\)/i);
-  assert.match(normalizedText,/Дворец партнёрства и отношений\s*\(夫妻\)/i);
+  assert.match(parsed.text,/得势[\s\S]{0,40}вклад\s+остальных\s+стволов/i);
+  assert.match(normalizedText,/ДВОРЕЦ СУДЬБЫ И ЛИЧНОСТИ\s*[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]/i);
+  assert.match(normalizedText,/ДВОРЕЦ ПАРТНЁРСТВА И ОТНОШЕНИЙ\s*[甲乙丙丁戊己庚辛壬癸][子丑寅卯辰巳午未申酉戌亥]/i);
   for(const area of ["Карьера","Финансы","Отношения","Самовыражение","Окружение"])assert.match(parsed.text,new RegExp(area,"i"));
+  assert.match(parsed.text,/ОБЩИЙ ВЫВОД/i);
+  assert.doesNotMatch(parsed.text,/\bСИНТЕЗ\b|ДОПОЛНИТЕЛЬНЫЕ АКЦЕНТЫ/i);
+});
+
+test("systemic renderer использует динамические Day Master, balance, palace и Ten Gods", async () => {
+  const exact=buildReviewVariants()[0],distinct=buildDistinctChartVariant();
+  const exactDay=exact.evidenceCatalog.items.find(value=>value.id==="bazi.day_master")?.data?.dayMaster;
+  const distinctDay=distinct.evidenceCatalog.items.find(value=>value.id==="bazi.day_master")?.data?.dayMaster;
+  const distinctBalance=distinct.evidenceCatalog.items.find(value=>value.id==="bazi.strength");
+  const distinctPalace=distinct.evidenceCatalog.items.find(value=>value.id==="ziwei.current_palace")?.data?.palace;
+  assert.notEqual(exactDay,distinctDay);
+  const result=await createPdfRequest({ ...distinct.input,report:distinct.report },{ hasFullReport:true });
+  const parsed=await pdfParse(result.buffer),text=parsed.text.replace(/\s+/gu," ");
+  assert.match(text,new RegExp(`${distinctDay} ·`));
+  assert.match(text,new RegExp(String(distinctBalance.data.score).replace("-","\\-")));
+  assert.match(text,new RegExp(distinctPalace));
+  assert.match(text,/Баланс карты — не оценка «хорошо» или «плохо»/i);
+  assert.doesNotMatch(text,/\d+\.\d{3,}/u);
+  const glossary=text.slice(text.indexOf("ДЕСЯТЬ БОЖЕСТВ БА-ЦЗЫ"),text.indexOf("СКРЫТЫЕ СТВОЛЫ",text.indexOf("ДЕСЯТЬ БОЖЕСТВ БА-ЦЗЫ")));
+  const present=new Set(Object.values(distinct.evidenceCatalog.items.find(value=>value.id==="bazi.ten_gods")?.data||{}));
+  distinct.evidenceCatalog.items.filter(value=>value.id.startsWith("bazi.hidden_stems.")).forEach(value=>(value.data||[]).forEach(item=>present.add(item.shiShen)));
+  for(const [original,name] of Object.entries(TEN_GODS)){
+    if(present.has(original)){assert.match(glossary,new RegExp(name));assert.ok(tenGodMeaning(original));}
+    else assert.doesNotMatch(glossary,new RegExp(name));
+  }
+  assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`distinct: ${parsed.numpages} страниц`);
+  const renderer=require("node:fs").readFileSync(require("node:path").join(__dirname,"../lib/pdf-template-v4.cjs"),"utf8");
+  assert.doesNotMatch(renderer,/Александр|1995-09-03|05:50/u);
+  assert.match(renderer,/function row\([^)]*metaWidth=145/u);
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -292,7 +322,8 @@ test("review pair использует единую текущую точку и
 test("v4 renderer выдерживает exact, approximate и внутренний long stress-test без пустых страниц", async () => {
   const review=buildReviewVariants();
   const long=buildLongStressVariant();
-  const variants=[...review,long];
+  const distinct=buildDistinctChartVariant();
+  const variants=[...review,long,distinct];
   assert.equal(review.length,2);
   const exact=review.find(value=>value.key==="exact");
   const approximate=review.find(value=>value.key==="approximate");
@@ -322,7 +353,12 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
     assert.equal(parsed.numpages>=30&&parsed.numpages<=36,true,`${variant.key}: ${parsed.numpages} страниц`);
     assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
-    assert.equal((parsed.text.match(/Зависит от времени рождения/gu)||[]).length,2,`${variant.key}: знак чувствительности должен быть только в руководстве и текущем периоде`);
+    const highSensitivity=String(variant.calculationMetadata.calculationSensitivity).toUpperCase()==="HIGH"||Object.values(variant.calculationMetadata.sensitivityFlags||{}).some(Boolean);
+    assert.equal((parsed.text.match(/Зависит от времени рождения/gu)||[]).length,highSensitivity?2:0,`${variant.key}: знак чувствительности должен быть только в руководстве и текущем периоде`);
+    if(variant.key==="long"){
+      const relationshipText=parsed.text.slice(parsed.text.indexOf("Отношения и границы"),parsed.text.indexOf("Как вас видят"));
+      assert.equal((relationshipText.match(/Самостоятельность здесь не противостоит привязанности/giu)||[]).length,1,"Long relationship duplicate должен удаляться общим renderer rule");
+    }
     if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);
     }else{

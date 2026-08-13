@@ -23,6 +23,22 @@ const TEN_GODS = Object.freeze({
   "食神": "Дух пищи", "伤官": "Ранящий чиновник", "比肩": "Равное плечо", "劫财": "Грабитель богатства",
 });
 
+// Краткие значения опираются на пять типов отношений из calculator/bazi-enrich/tables.ts:
+// тот же элемент, порождение, контроль, ответственность и поддержка. Это display-слой,
+// а не новая интерпретация расчёта.
+const TEN_GOD_MEANINGS = Object.freeze({
+  "比肩":"самостоятельное действие и опора на равных",
+  "劫财":"конкуренция, разделение ресурса и действие среди равных",
+  "食神":"спокойное самовыражение, создание и передача результата",
+  "伤官":"прямое самовыражение, критика правил и поиск собственного способа",
+  "偏财":"гибкий обмен, возможности и управление внешними ресурсами",
+  "正财":"последовательный обмен, практический результат и учёт ресурсов",
+  "七杀":"действие под давлением, вызов и жёсткая ответственность",
+  "正官":"правила, обязательства и ответственность в понятной системе",
+  "偏印":"нестандартная поддержка, самостоятельное обучение и поиск связей",
+  "正印":"поддержка, обучение и усвоение проверенного знания",
+});
+
 // Здесь только транслитерация. Смыслы звёзд намеренно не добавляются без независимого методологического эталона.
 const MAJOR_STARS = Object.freeze({
   "紫微": "Цзы Вэй", "天机": "Тянь Цзи", "太阳": "Тай Ян", "武曲": "У Цюй",
@@ -68,6 +84,7 @@ function item(original, name) { return { original, name: name || original }; }
 function palaceDisplay(original) { return item(original, PALACES[original]); }
 function elementDisplay(original) { return item(original, FIVE_ELEMENTS[original]); }
 function tenGodDisplay(original) { return item(original, TEN_GODS[original]); }
+function tenGodMeaning(original) { return TEN_GOD_MEANINGS[original] || ""; }
 function starDisplay(original) { return item(original, MAJOR_STARS[original]); }
 function auxiliaryStarDisplay(original) { return item(original, AUXILIARY_STARS[original]); }
 function transformationDisplay(original) {
@@ -103,7 +120,7 @@ function tenGodPairDisplay(value) {
 }
 
 module.exports = {
-  AUXILIARY_STARS, BRANCHES, CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STEMS, STRENGTH, TEN_GODS, TRANSFORMATIONS,
+  AUXILIARY_STARS, BRANCHES, CONFIDENCE, FIVE_ELEMENTS, MAJOR_STARS, PALACES, STEM_ELEMENTS, STEMS, STRENGTH, TEN_GODS, TEN_GOD_MEANINGS, TRANSFORMATIONS,
   auxiliaryStarDisplay, branchDisplay, bureauDisplay, confidenceDisplay, elementDisplay, palaceDisplay, starDisplay, stemDisplay, transformationDisplay,
-  strengthDisplay, structureDisplay, tenGodDisplay, tenGodPairDisplay,
+  strengthDisplay, structureDisplay, tenGodDisplay, tenGodMeaning, tenGodPairDisplay,
 };
