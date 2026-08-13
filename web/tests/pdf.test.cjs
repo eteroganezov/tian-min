@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const pdfParse = require("pdf-parse");
+const pdfjs = require("pdf-parse/lib/pdf.js/v1.10.100/build/pdf.js");
 const { locationProvider } = require("../lib/location-provider.cjs");
 const { buildReportContext } = require("../lib/report-service.cjs");
 const { calculateBirthChart } = require("../lib/birth-chart-pipeline.cjs");
@@ -74,13 +75,28 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
   assert.equal(result.buffer.toString("latin1").includes("/Outlines"),true);
+  const pdfDocument=await pdfjs.getDocument({ data:new Uint8Array(result.buffer) }).promise;
+  const tocPage=await pdfDocument.getPage(2);
+  const tocLinks=(await tocPage.getAnnotations()).filter(annotation=>annotation.subtype==="Link");
+  assert.equal(tocLinks.length,27,"каждый пункт содержания должен иметь internal link");
+  const destinationPages=[];
+  for(const annotation of tocLinks){
+    assert.match(String(annotation.dest),/^section-\d+$/);
+    const destination=await pdfDocument.getDestination(annotation.dest);
+    assert.ok(destination?.[0],annotation.dest);
+    destinationPages.push((await pdfDocument.getPageIndex(destination[0]))+1);
+  }
+  assert.deepEqual(destinationPages,[3,4,5,6,7,8,10,11,13,15,16,17,18,19,21,22,23,24,25,26,27,28,29,31,33,34,35]);
+  const outline=await pdfDocument.getOutline();
+  assert.equal(outline.some(item=>item.title==="Как читать этот отчёт"),true);
+  assert.equal(outline.some(item=>item.title==="Методология и границы интерпретации"),true);
   const normalizedText=parsed.text.replace(/\s+/gu," ");
   const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Как читать этот отчёт","Ваш портрет в двух минутах"].map((title,index)=>index===0?normalizedText.indexOf(title):normalizedText.lastIndexOf(title));
   assert.equal(opening.every((position,index)=>position>=0&&(index===0||position>opening[index-1])),true,opening.join(" < "));
   assert.equal(parsed.text.indexOf("Характер и внутренние мотивы") < parsed.text.lastIndexOf("Баланс и структура Ба-цзы"),true);
   assert.equal(parsed.text.indexOf("Итоговая персональная линия") < parsed.text.lastIndexOf("ОСНОВАНИЯ ВАШЕГО РАЗБОРА"),true);
   assert.match(parsed.text,/РАССЧИТАНО[\s\S]*ИНТЕРПРЕТАЦИЯ[\s\S]*ПРИМЕНЕНИЕ/i);
-  assert.match(parsed.text,/Хуа Лу[\s\S]{0,100}РЕСУРС И ВОЗМОЖНОСТИ/i);
+  assert.match(parsed.text,/Хуа Лу[\s\S]{0,160}РЕСУРС И ВОЗМОЖНОСТИ/i);
   assert.doesNotMatch(parsed.text, /\b(?:BaZi|Bazi|Zi\s*Wei|ZiWei|undefined|null|NaN)\b/i);
   assert.doesNotMatch(parsed.text,/\[object Object\]/i);
   assert.doesNotMatch(parsed.text, /(?:bazi|ziwei|time)\.[a-z0-9_.-]+/i);
@@ -88,9 +104,14 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.doesNotMatch(parsed.text, /\b(?:произойдёт|вас ждёт|точно случится)\b/iu);
   assert.doesNotMatch(parsed.text, /TRUE_SOLAR_TIME_V1|Equation of Time|AI-интерпретация/);
   assert.doesNotMatch(parsed.text, /raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
-  assert.match(parsed.text,/Как читать техническую оценку/i);
-  assert.match(parsed.text,/得令\s*[—-]\s*сезонная поддержка/i);
-  assert.match(parsed.text,/得势\s*[—-]\s*вклад\s+общей\s+картины/i);
+  assert.doesNotMatch(parsed.text,/\b0[1-9]\s+(?:РАССЧИТАНО|ИНТЕРПРЕТАЦИЯ|ПРИМЕНЕНИЕ|СФОКУСИРОВАТЬСЯ|ЗАКРЕПИТЬ|СВЕРИТЬ|НЕ ФОРСИРОВАТЬ)/u);
+  assert.doesNotMatch(parsed.text,/Наблюдение\s+0[1-9]/iu);
+  assert.match(parsed.text,/КАК ЧИТАТЬ ОЦЕНКУ БАЛАНСА/i);
+  assert.match(parsed.text,/得令[\s\S]{0,40}сезонная поддержка/i);
+  assert.match(parsed.text,/得势[\s\S]{0,40}вклад\s+общей\s+картины/i);
+  assert.match(normalizedText,/Дворец судьбы и личности\s*\(命宫\)/i);
+  assert.match(normalizedText,/Дворец партнёрства и отношений\s*\(夫妻\)/i);
+  for(const area of ["Карьера","Финансы","Отношения","Самовыражение","Окружение"])assert.match(parsed.text,new RegExp(area,"i"));
 });
 
 test("PDF создаётся без персонального разбора и сохраняет рассчитанную карту", async () => {
@@ -263,8 +284,8 @@ test("review pair использует единую текущую точку и
   assert.match(parsed.text,/Практический результат зависит[\s\S]{0,760}заранее определять\s+предел финансового риска\./i);
   assert.match(parsed.text,new RegExp(`ТОЧКА ОТСЧ[ЕЁ]ТА[\\s\\S]{0,80}${referenceYear}`));
   assert.match(parsed.text,new RegExp(`Ближайшие три года[\\s\\S]{0,900}${referenceYear}[\\s\\S]{0,900}${referenceYear+1}[\\s\\S]{0,900}${referenceYear+2}`));
-  assert.match(parsed.text,/уверенность\s*[—-]\s*Средняя \(中\)/i);
-  assert.match(parsed.text,/уверенность\s*[—-]\s*Низкая \(低\)/i);
+  assert.match(parsed.text,/Уверенность:\s*Средняя \(中\)/i);
+  assert.match(parsed.text,/Уверенность:\s*Низкая \(低\)/i);
   assert.match(parsed.text,/КАК РЕАГИРУЕТ РАСЧЁТ[\s\S]{0,80}Высокая чувствительность/i);
 });
 
