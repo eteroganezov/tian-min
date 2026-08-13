@@ -1,4 +1,4 @@
-const { resolveFontPaths } = require("./pdf-template-v4.cjs");
+const { resolveFontPaths, assertPdfRuntimeReady } = require("./pdf-template-v4.cjs");
 
 function assertProductionGenerationReady(env = process.env, options = {}) {
   if (env.NODE_ENV !== "production" || env.PAYMENT_MODE !== "lorentsen") return;
@@ -11,6 +11,13 @@ function assertProductionGenerationReady(env = process.env, options = {}) {
   const fonts = (options.resolveFontPaths || resolveFontPaths)(env);
   for (const name of ["regular", "bold", "serif", "serifBold", "cjk"]) {
     if (!fonts?.[name]) missing.push(`PDF font ${name}`);
+  }
+  if (!missing.some(value => value.startsWith("PDF font"))) {
+    try {
+      (options.assertPdfRuntimeReady || assertPdfRuntimeReady)(env);
+    } catch (error) {
+      missing.push(`PDF runtime ${error?.code || "FONT_LOAD_FAILED"}`);
+    }
   }
   if (missing.length) {
     const error = new Error(`Production Premium generation is not configured: ${missing.join(", ")}`);

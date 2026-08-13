@@ -37,8 +37,9 @@ function createReportPdf({ chart, metadata, presentation = {}, report, evidenceC
     const regular = chooseFont([process.env.PDF_FONT_REGULAR, "/System/Library/Fonts/Supplemental/Arial.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"].filter(Boolean));
     const bold = chooseFont([process.env.PDF_FONT_BOLD, "/System/Library/Fonts/Supplemental/Arial Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"].filter(Boolean));
     const cjk = chooseFont([process.env.PDF_FONT_CJK, "/System/Library/Fonts/Supplemental/Arial Unicode.ttf"].filter(Boolean));
+    const cjkFamily = String(process.env.PDF_FONT_CJK_FAMILY || "").trim() || (/NotoSansCJK-Regular\.ttc$/u.test(cjk || "") ? "NotoSansCJKsc-Regular" : undefined);
     let cjkReady = false;
-    if (cjk) { try { doc.registerFont("CJK", cjk); cjkReady = true; } catch { cjkReady = false; } }
+    if (cjk) { try { doc.registerFont("CJK", cjk, cjkFamily); doc.font("CJK"); cjkReady = true; } catch { cjkReady = false; } }
     if (regular) doc.registerFont("Body", regular); else doc.registerFont("Body", "Helvetica");
     if (bold) doc.registerFont("Bold", bold); else doc.registerFont("Bold", "Helvetica-Bold");
     doc._tianMingBrandFont = cjkReady ? "CJK" : "Bold";
