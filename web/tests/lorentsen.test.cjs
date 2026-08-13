@@ -328,9 +328,42 @@ test("non-terminal attempt не дублируется, failed/expired разр�
   await ctx.service.reconcilePayment(first.body.order.paymentId);
   const failedOrder = (await ctx.service.getOrder(order.orderId)).body.order;
   assert.equal(failedOrder.paymentFailureReason, "failed");
+  const failedAttempt = await ctx.orderStore.loadAttempt(failedOrder.currentAttemptId);
   await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(ctx.provider.createCalls.length, 2);
   assert.equal(ctx.orderStore.attempts.size, 2);
+  const replacement = [...ctx.orderStore.attempts.values()].find(item => item.attemptId !== failedAttempt.attemptId);
+  assert.notEqual(replacement.externalOrderId, failedAttempt.externalOrderId);
+  assert.notEqual(replacement.idempotencyKey, failedAttempt.idempotencyKey);
+});
+
+test("confirmed expired создаёт replacement только по явному start с новыми external_order_id и Idempotency-Key", async () => {
+  const ctx = serviceSetup(["expired", "preparing"]);
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const expired = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  assert.equal(expired.body.order.providerStatus, "expired");
+  assert.equal(expired.body.order.status, "CHECKOUT_STARTED");
+  const original = await ctx.orderStore.loadAttempt(expired.body.order.currentAttemptId);
+  assert.equal(ctx.provider.createCalls.length, 1);
+  const replacementResult = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const replacement = await ctx.orderStore.loadAttempt(replacementResult.body.order.currentAttemptId);
+  assert.equal(ctx.provider.createCalls.length, 2);
+  assert.notEqual(replacement.attemptId, original.attemptId);
+  assert.notEqual(replacement.externalOrderId, original.externalOrderId);
+  assert.notEqual(replacement.idempotencyKey, original.idempotencyKey);
+  assert.equal(replacement.sequence, original.sequence + 1);
+});
+
+test("manual_review и processing не разрешают replacement attempt", async () => {
+  for (const status of ["manual_review", "processing"]) {
+    const ctx = serviceSetup([status]);
+    const order = (await ctx.service.createCheckout(birthInput)).body.order;
+    await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+    await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+    assert.equal(ctx.provider.createCalls.length, 1);
+    assert.equal(ctx.orderStore.attempts.size, 1);
+    assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAYMENT_PENDING");
+  }
 });
 
 test("retryable create failure повторяет тот же attempt, idempotency key и exact body", async () => {

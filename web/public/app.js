@@ -228,7 +228,7 @@ function renderPaymentState(order) {
   host.querySelectorAll("[data-outcome]").forEach(button => button.addEventListener("click", () => simulatePayment(order.orderId, button.dataset.outcome)));
 }
 
-function renderConsentCheckout(order) {
+function renderConsentCheckout(order, options = {}) {
   const host = document.querySelector(".premium-action") || resultRoot;
   const config = premiumConfig;
   if (!config?.consent) return showPremiumError("Платёжная форма пока не настроена.");
@@ -237,7 +237,8 @@ function renderConsentCheckout(order) {
     <label class="checkout-field">Email для получения сертификата<input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done" required></label>
     <label class="consent-check"><input type="checkbox" name="termsAccepted"><span>Я принимаю <a href="${e(config.consent.termsUrl)}" target="_blank" rel="noopener noreferrer">условия покупки сертификата Lorentsen</a> и <a href="${e(config.consent.privacyUrl)}" target="_blank" rel="noopener noreferrer">политику конфиденциальности</a></span></label>
     <label class="consent-check"><input type="checkbox" name="autoRedemptionAccepted"><span>Я согласен, что сертификат, приобретаемый этой оплатой, будет немедленно погашен у партнёра ${e(config.partnerPublicName)}. <a href="${e(config.consent.autoRedemptionTermsUrl)}" target="_blank" rel="noopener noreferrer">Подробнее</a></span></label>
-    <button type="button" class="premium-button" data-action="confirm-payment" disabled>Перейти к оплате</button>
+    <button type="button" class="premium-button" data-action="confirm-payment" disabled>${e(options.actionLabel || "Перейти к оплате")}</button>
+    <button type="button" class="secondary-checkout-button" data-action="leave-payment">Назад</button>
     <p>Сумма определяется сервером. Платёжный статус подтверждается только Lorentsen.</p>
   </section>`;
   const email = host.querySelector('[name="payerEmail"]');
@@ -252,35 +253,55 @@ function renderConsentCheckout(order) {
     event.preventDefault();
     email.blur();
   });
-  button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }));
+  button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }, button));
+  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   revealCheckout(host);
 }
 
-async function submitLorentsenPayment(orderId, consent) {
+async function submitLorentsenPayment(orderId, consent, button) {
   if (premiumBusy) return;
   premiumBusy = true;
+  if (button) button.disabled = true;
   try { renderPaymentState((await api("/api/premium/payment/start", { orderId, ...consent })).order); }
-  catch (error) { showPremiumError(error.message); }
+  catch (error) { if (button) button.disabled = false; showPremiumError(error.message); }
   finally { premiumBusy = false; }
 }
 
 function renderLorentsenState(host, order) {
   if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
   if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "FAILED")}"><p class="section-label">Оплата не завершена</p><h3>${order.providerStatus === "expired" ? "Срок оплаты истёк" : "Платёж отклонён"}</h3><p>Бесплатная карта остаётся доступной. Новую попытку можно начать после подтверждённого завершения предыдущей.</p><button type="button" class="premium-button" data-action="retry-payment">Повторить оплату</button></section>`;
-    host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => renderConsentCheckout(order));
+    const expired = order.providerStatus === "expired";
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>${expired ? "QR-код истёк" : "Платёж не завершён"}</h3><p>${expired ? "Этот QR-код больше нельзя использовать. Если вы не успели оплатить, создайте новый." : "Lorentsen подтвердил, что эта попытка оплаты завершилась неуспешно. Можно безопасно попробовать снова."}</p><button type="button" class="premium-button" data-action="retry-payment">${expired ? "Обновить QR-код" : "Попробовать снова"}</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Назад</button></section>`;
+    host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => renderConsentCheckout(order, { actionLabel: expired ? "Обновить QR-код" : "Попробовать снова" }));
+    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
     return;
   }
   const method = order.paymentMethod;
   const methodExpiresAt = Date.parse(method?.expiresAt || "");
   const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
   if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата через Lorentsen</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или точную ссылку, полученную от платёжного провайдера.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>Оплатить до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Ожидаем подтверждение Lorentsen…</div></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата через Lorentsen</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или точную ссылку, полученную от платёжного провайдера.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Ожидаем подтверждение Lorentsen…</div><button type="button" class="secondary-checkout-button" data-action="leave-payment">Назад</button></section>`;
   } else {
-    const copy = { preparing: ["Платёж создаётся", "QR-код появится после подготовки Lorentsen."], processing: ["Платёж обрабатывается", "Ожидаем подтверждение платёжного провайдера."], succeeded_pending: ["Оплата принята в обработку", "Отчёт станет доступен только после окончательного статуса settled."], manual_review: ["Платёж проверяется", "Lorentsen выполняет ручную проверку. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата через Lorentsen</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div></section>`;
+    const copy = { preparing: ["Платёж создаётся", "QR-код появится после подготовки Lorentsen."], processing: ["Платёж обрабатывается", "Ожидаем подтверждение платёжного провайдера."], requires_action: ["Проверяем срок действия QR-кода", "Запрашиваем актуальный статус у Lorentsen."], succeeded_pending: ["Оплата принята в обработку", "Отчёт станет доступен только после окончательного статуса settled."], manual_review: ["Платёж проверяется", "Lorentsen выполняет ручную проверку. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата через Lorentsen</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div><button type="button" class="secondary-checkout-button" data-action="leave-payment">Назад</button></section>`;
   }
+  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   schedulePaymentPoll(order.orderId, order.nextPollAt);
+}
+
+function leaveLorentsenPaymentFlow(host, order) {
+  clearTimeout(paymentPollTimer);
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>Платёж не отменён и его статус не изменён. Вы можете вернуться к проверке этой же попытки.</p><button type="button" class="secondary-checkout-button" data-action="resume-payment">Вернуться к оплате</button></section>`;
+  host.querySelector('[data-action="resume-payment"]').addEventListener("click", () => resumeLorentsenPayment(order.orderId));
+  document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function resumeLorentsenPayment(orderId) {
+  if (premiumBusy) return;
+  premiumBusy = true;
+  try { renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(orderId)}`)).order); }
+  catch (error) { showPremiumError(error.message); }
+  finally { premiumBusy = false; }
 }
 
 function schedulePaymentPoll(orderId, nextPollAt) {

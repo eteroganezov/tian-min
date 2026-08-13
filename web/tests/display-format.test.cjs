@@ -93,7 +93,7 @@ test("premium topics показываются до CTA, а purchase disclosure �
   assert.match(script, /class="purchase-summary"><span>Персональный отчёт<\/span><span>Полный PDF<\/span>/);
   assert.doesNotMatch(script, /function premiumOfferItems/);
   assert.match(script, /function revealCheckout\(host\) \{ host\.querySelector\("\.checkout-panel"\)\?\.scrollIntoView\(\{ behavior: "smooth", block: "start" \}\); \}/);
-  assert.match(script, /renderConsentCheckout\(order\)[\s\S]*revealCheckout\(host\);/);
+  assert.match(script, /function renderConsentCheckout\(order, options = \{\}\)[\s\S]*revealCheckout\(host\);/);
 });
 
 test("client email validation требует доменную точку и непустой suffix", () => {
