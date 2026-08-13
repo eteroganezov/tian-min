@@ -22,7 +22,7 @@
 
 Секреты нельзя добавлять в `.env.example`, Git, application logs или frontend. `payer_email` хранится только в закрытой consent/payment persistence и не возвращается браузеру.
 
-Production Premium price задаётся versioned server-константой в `web/lib/product-config.cjs`; текущая временная цена закрытого early-user теста — `399 RUB`. `PREMIUM_REPORT_PRICE_RUB` используется только для локальных DEV-сценариев и не может переопределить production price.
+Production Premium price задаётся versioned server-константой в `web/lib/product-config.cjs`; текущая временная цена закрытого early-user теста — `599 RUB` (`59900` minor units). Цена `399 RUB` была отвергнута production API с HTTP `422` / `amount_out_of_range` и не должна использоваться с текущим Lorentsen contract. `PREMIUM_REPORT_PRICE_RUB` используется только для локальных DEV-сценариев и не может переопределить production price.
 
 ## Manual activation sequence
 

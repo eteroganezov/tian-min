@@ -153,7 +153,7 @@ class PremiumService {
       await this.orderStore.saveAttempt(attempt);
       const terminalValidation = attempt.providerStatus === "failed";
       const saved = await this.saveOrder(order, { status: terminalValidation ? "CHECKOUT_STARTED" : "PAYMENT_PENDING", providerStatus: attempt.providerStatus, nextPollAt: terminalValidation ? null : attempt.nextPollAt, paymentFailureReason: terminalValidation ? "provider_validation" : null });
-      return { status: error.status === 429 ? 429 : error.status === 409 || error.status === 422 ? error.status : 503, body: { error: error.message || "Платёжный сервис временно недоступен.", order: publicOrder(saved) } };
+      return { status: error.status === 429 ? 429 : error.status === 409 || error.status === 422 ? error.status : 503, body: { error: customerPaymentError(error), order: publicOrder(saved) } };
     }
   }
 
@@ -318,7 +318,7 @@ function buildConsentRecord(order, attempt, input, config, timestamp) {
 }
 function validatePaymentInput(input) {
   const email = String(input?.email || "").trim().toLowerCase();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,254}$/.test(email) || email.length > 320) return { error: "Укажите корректный email для получения сертификата." };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,254}$/.test(email) || email.length > 320) return { error: "Укажите корректный email." };
   if (input.termsAccepted !== true) return { error: "Нужно отдельно принять условия покупки сертификата и политику конфиденциальности." };
   if (input.autoRedemptionAccepted !== true) return { error: "Нужно отдельно подтвердить немедленное погашение сертификата у партнёра." };
   return { email };
@@ -336,6 +336,12 @@ function failure(status, error) { return { status, body: { error } }; }
 function hash(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
 function randomId(prefix) { return `${prefix}_${crypto.randomBytes(16).toString("hex")}`; }
 function providerBindingError() { const error = new Error("Lorentsen вернул платёж для другого external_order_id."); error.status = 502; error.retryable = false; error.code = "PROVIDER_ORDER_MISMATCH"; return error; }
+function customerPaymentError(error) {
+  if (error?.status === 429) return "Слишком много попыток. Подождите немного и попробуйте снова.";
+  if (error?.status === 409) return "Не удалось продолжить оплату. Обновите страницу и попробуйте снова.";
+  if (error?.status === 422 || error?.code === "PROVIDER_VALIDATION_ERROR") return "Не удалось создать оплату. Попробуйте снова.";
+  return "Не удалось начать оплату. Попробуйте ещё раз чуть позже.";
+}
 function safeMessage(error) { return String(error?.message || "Некорректные данные рождения.").replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, ""); }
 
-module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, publicOrder, validatePaymentInput };
+module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, publicOrder, validatePaymentInput };

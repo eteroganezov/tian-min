@@ -235,7 +235,7 @@ test("REPORT_READY восстанавливается из persistence без п
 test("production price и local order storage работают fail-closed", () => {
   const env = { NODE_ENV: "production", PREMIUM_REPORT_PRICE_RUB: "599" };
   assert.equal(getProductConfig(env).available, true);
-  assert.equal(getProductConfig(env).amount, 399);
+  assert.equal(getProductConfig(env).amount, 599);
   const store = new LocalOrderStore({ root: path.join(os.tmpdir(), "unused-production-orders"), env });
   assert.throws(() => store.save({ orderId: "order_1234567890abcdef1234567890abcdef" }), /Production order storage/);
 });

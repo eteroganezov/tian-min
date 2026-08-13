@@ -37,7 +37,7 @@ test("Lorentsen create использует exact endpoint, bearer и stable ide
     calls.push({ url: String(url), options });
     return response(201, { payment_public_id: "pay_1", external_order_id: "ext_1", payment_status: "preparing", payment_method: null, retry_after_seconds: 7, trace_id: "trace_1" });
   } });
-  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 39900 };
+  const requestBody = { external_order_id: "ext_1", customer_amount_minor: 59900 };
   const result = await provider.createPayment({ requestBody, idempotencyKey: "idem_1" });
   assert.equal(calls[0].url, "https://api.lorentsen.pro/api/v1/integration/payments");
   assert.equal(calls[0].options.headers.Authorization, "Bearer test-token");
@@ -295,15 +295,15 @@ test("INITIALIZED-equivalent через nested create запускает GET pol
   assert.deepEqual(calls.map(call => call.method), ["POST", "GET"]);
 });
 
-test("production checkout хранит 39900 minor units, exact consent schema и server-side amount", async () => {
+test("production checkout хранит 59900 minor units, exact consent schema и server-side amount", async () => {
   const ctx = serviceSetup(["preparing"]);
   const order = (await ctx.service.createCheckout({ ...birthInput, amount: 1 })).body.order;
-  assert.equal(ctx.service.getConfig().amount, 399);
-  assert.equal(order.amount, 399);
+  assert.equal(ctx.service.getConfig().amount, 599);
+  assert.equal(order.amount, 599);
   const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(started.body.order.status, "PAYMENT_PENDING");
   const attempt = ctx.provider.createCalls[0];
-  assert.equal(attempt.requestBody.customer_amount_minor, 39900);
+  assert.equal(attempt.requestBody.customer_amount_minor, 59900);
   assert.equal(attempt.requestBody.customer_currency, "RUB");
   assert.equal(attempt.requestBody.consent_version, "certificate_purchase_terms_v1");
   assert.equal(attempt.requestBody.auto_redemption_consent_version, "partner_auto_redemption_consent_v1");
@@ -468,6 +468,8 @@ test("create failure пишет только redacted structural diagnostics", a
   const order = (await ctx.service.createCheckout(birthInput)).body.order;
   const result = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(result.status, 422);
+  assert.equal(result.body.error, "Не удалось создать оплату. Попробуйте снова.");
+  assert.doesNotMatch(result.body.error, /Lorentsen|provider|amount_out_of_range/i);
   const attempt = [...ctx.orderStore.attempts.values()][0];
   assert.deepEqual(attempt.failureInfo.provider.fields, ["consent_version"]);
   assert.match(entries[0][0], /PAYMENT_PROVIDER_ERROR/);

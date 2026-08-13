@@ -50,13 +50,13 @@ function harness(fetchImpl) {
 }
 
 const config = {
-  available: true, amount: 399, currency: "RUB", paymentMode: "lorentsen", partnerPublicName: "Тянь Мин",
+  available: true, amount: 599, currency: "RUB", paymentMode: "lorentsen", partnerPublicName: "Тянь Мин",
   consent: { termsUrl: "https://example.test/terms", privacyUrl: "https://example.test/privacy", autoRedemptionTermsUrl: "https://example.test/redemption" },
 };
 
 function order(providerStatus, overrides = {}) {
   return {
-    orderId: "order_payment_ux", amount: 399, currency: "RUB", status: "PAYMENT_PENDING", paymentProvider: "lorentsen",
+    orderId: "order_payment_ux", amount: 599, currency: "RUB", status: "PAYMENT_PENDING", paymentProvider: "lorentsen",
     providerStatus, paymentMethod: null, nextPollAt: "2026-08-13T10:00:05Z", paymentFailureReason: null, ...overrides,
   };
 }
@@ -127,18 +127,40 @@ test("manual_review/processing не показывают retry, а локаль�
   assert.doesNotMatch(ui.host.innerHTML, /data-checkout-state="expired"|Обновить QR-код/);
 });
 
-test("server-driven цена и каноническое имя Tian Min отображаются без stale 599/Edward", async () => {
+test("server-driven цена и каноническое имя Tian Min отображаются без stale 399/Edward", async () => {
   const ui = harness(async url => {
     assert.equal(url, "/api/premium/config");
     return { ok: true, json: async () => config };
   });
   await ui.context.openPremiumOffer();
-  assert.match(ui.host.innerHTML, /399/);
-  assert.doesNotMatch(ui.host.innerHTML, /599|Edward/);
+  assert.match(ui.host.innerHTML, /599/);
+  assert.doesNotMatch(ui.host.innerHTML, /399|Edward/);
 
   ui.context.renderConsentCheckout(order("preparing", { status: "CHECKOUT_STARTED" }));
-  assert.match(ui.host.innerHTML, /партнёра Тянь Мин/);
+  assert.match(ui.host.innerHTML, /партнёра «Тянь Мин»/);
   assert.doesNotMatch(ui.host.innerHTML, /Edward/);
+});
+
+test("обычный payment UX не раскрывает provider language вне обязательного legal consent", async () => {
+  const ui = harness(async () => ({ ok: true, json: async () => config }));
+  await ui.context.openPremiumOffer();
+
+  ui.context.renderConsentCheckout(order("preparing", { status: "CHECKOUT_STARTED" }));
+  assert.match(ui.host.innerHTML, /Email для оформления покупки/);
+  assert.match(ui.host.innerHTML, /сертификата Lorentsen/);
+  assert.match(ui.host.innerHTML, /сертификат, приобретаемый этой оплатой/);
+  assert.match(ui.host.innerHTML, /После оплаты мы автоматически проверим её статус/);
+
+  for (const status of ["preparing", "processing", "requires_action", "succeeded_pending", "manual_review", "provider_result_unknown", "failed"]) {
+    ui.context.renderLorentsenState(ui.host, order(status, status === "failed" ? { status: "CHECKOUT_STARTED", paymentFailureReason: "provider_validation" } : {}));
+    const visibleText = ui.host.innerHTML.replace(/<[^>]+>/g, " ");
+    assert.doesNotMatch(visibleText, /Lorentsen|провайдер|provider|settled|сертификат/i);
+  }
+
+  ui.context.renderLorentsenState(ui.host, order("requires_action", {
+    paymentMethod: { link: "https://pay.example.test/current", image: null, expiresAt: "2099-01-01T00:00:00Z" },
+  }));
+  assert.doesNotMatch(ui.host.innerHTML.replace(/<[^>]+>/g, " "), /Lorentsen|провайдер|provider|settled|сертификат/i);
 });
 
 test("active QR имеет безопасный выход без fake cancel или provider mutation", () => {
