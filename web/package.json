@@ -8,6 +8,7 @@
     "test": "npm --prefix ../calculator test && node --test tests/*.test.cjs",
     "dev": "npm run build && node server.cjs",
     "start": "node server.cjs",
+    "places:import": "node scripts/import-geonames.cjs",
     "pdf:saved": "node scripts/generate-saved-report-pdf.cjs"
   },
   "engines": {

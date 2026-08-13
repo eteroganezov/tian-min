@@ -15,11 +15,12 @@
 
 ## Данные и зависимости
 
-- `city-timezones 1.3.4` — локальный поиск города, координат и IANA time zone; пакет заявлен под MIT.
+- GeoNames `cities500` + `alternateNamesV2` — versioned local server-side catalog of populated places, multilingual/historical names, coordinates and IANA time-zone identifiers; the processed snapshot is CC BY 4.0 and documented in `GEONAMES.md`.
+- `city-timezones 1.3.4` — compatibility-only resolver for place IDs already persisted before the GeoNames migration. It is not queried by new autocomplete searches and does not compete with GeoNames as canonical identity.
 - `timezonecomplete 5.15.1` + `tzdata` — исторические правила IANA и отдельный standard offset; пакеты заявлены под MIT.
 - Внешние API, API keys, rate limits и платные сервисы не используются.
 
-Перед коммерческим выпуском нужно отдельно подтвердить юридическое происхождение именно встроенного набора координат `city-timezones`: пакет маркирован MIT, но его README не указывает первичный источник геоданных и отдельные условия этого источника.
+New place searches make zero external geocoding requests. GeoNames supplies identity, city-center coordinates and the IANA identifier; historical offsets still come from the existing `timezonecomplete`/tzdata path. The longitude-based `TRUE_SOLAR_TIME_V1` formula is unchanged.
 
 ## Ограничения и внешняя верификация
 

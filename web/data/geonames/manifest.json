@@ -1,0 +1,33 @@
+{
+  "format": "tian-min-geonames-v2",
+  "version": "2026-08-13",
+  "builtAt": "2026-08-13T18:11:52.979Z",
+  "license": "CC BY 4.0",
+  "source": "https://download.geonames.org/export/dump/",
+  "sourceFiles": {
+    "cities500": {
+      "name": "cities500.zip",
+      "bytes": 13521376,
+      "sha256": "bcff522ff0c72874f407e2613f69a376562b6505f01d2d94b3d1a18a16b6ee74"
+    },
+    "alternateNamesV2": {
+      "name": "alternateNamesV2.zip",
+      "bytes": 202740191,
+      "sha256": "651f0eefe688d0d2d5941dee48dc62223bd0654b3e5edfb63d090878bc921360"
+    },
+    "admin1CodesASCII": {
+      "name": "admin1CodesASCII.txt",
+      "bytes": 151536,
+      "sha256": "590651498043f674accda2b7f46d21286cda0e290b02f8561c5005eee9a5448c"
+    }
+  },
+  "placeCount": 235285,
+  "alternateNameCount": 1338166,
+  "indexedNameCount": 1579175,
+  "historicNameCount": 9070,
+  "russianPlaceCount": 43424,
+  "russianCoverage": 18.46,
+  "multilingualComparableCount": 30508,
+  "shardFileCount": 1537,
+  "importDurationMs": 66259
+}

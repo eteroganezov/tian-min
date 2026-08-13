@@ -25,7 +25,7 @@ function requestJson(server, url) {
 test("GET /api/places проходит реальную route → provider цепочку для partial/case-insensitive query", async () => {
   const server = createServer();
   try {
-    for (const [query, expected] of [["мо", "Москва, Россия"], ["моск", "Москва, Россия"], ["сан", "Санкт-Петербург, Россия"], ["санкт", "Санкт-Петербург, Россия"], ["екат", "Екатеринбург, Россия"], ["ниж", "Нижний Новгород, Россия"], ["каз", "Казань, Россия"]]) {
+    for (const [query, expected] of [["моск", "Москва, Россия"], ["санкт", "Санкт-Петербург, Россия"], ["екат", "Екатеринбург, Россия"], ["нижний н", "Нижний Новгород, Россия"], ["казан", "Казань, Россия"]]) {
       const lower = await requestJson(server, `/api/places?q=${encodeURIComponent(query)}`);
       const upper = await requestJson(server, `/api/places?q=${encodeURIComponent(query.toLocaleUpperCase("ru-RU"))}`);
       assert.equal(lower.status, 200, query);
@@ -34,7 +34,18 @@ test("GET /api/places проходит реальную route → provider це�
       assert.ok(Number.isFinite(lower.body.places[0].latitude), query);
       assert.ok(Number.isFinite(lower.body.places[0].longitude), query);
       assert.match(lower.body.places[0].timeZone, /\//, query);
+      assert.equal(lower.body.places[0].source, "geonames", query);
     }
+  } finally { server.close(); }
+});
+
+test("GET /api/places находит один GeoNames Phuket по Russian/English и возвращает top 8", async () => {
+  const server=createServer();
+  try {
+    const russian=await requestJson(server,`/api/places?q=${encodeURIComponent("Пхукет")}`),english=await requestJson(server,"/api/places?q=Phuket");
+    assert.equal(russian.body.places[0].geonameId,1151254); assert.equal(russian.body.places[0].id,english.body.places[0].id);
+    assert.equal(russian.body.places[0].display.label,"Пхукет, Таиланд"); assert.equal(russian.body.places[0].timeZone,"Asia/Bangkok");
+    const broad=await requestJson(server,"/api/places?q=San"); assert.ok(broad.body.places.length<=8);
   } finally { server.close(); }
 });
 

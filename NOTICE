@@ -26,6 +26,19 @@ This product includes third-party open-source components.
    说明 / Description: 农历 / 节气 / 干支换算底层库。
    许可 / License: MIT
 
+3. GeoNames geographical database
+   ------------------------------------------------------------
+   Source: https://www.geonames.org/
+   Download: https://download.geonames.org/export/dump/
+   Location: web/data/geonames/ (processed snapshot; raw dumps are not distributed)
+   Description: populated-place identities, multilingual and historical names,
+     WGS84 coordinates, administrative metadata and IANA time-zone identifiers.
+   License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+   License text: https://creativecommons.org/licenses/by/4.0/
+   Attribution: Contains GeoNames geographical database data, licensed under
+     CC BY 4.0. GeoNames data is provided "as is", without warranty or any
+     representation of accuracy, timeliness or completeness.
+
 ================================================================================
 本项目自有部分（calculator/bazi-enrich/、prompts/、templates/、render.ts、
 dump-text.ts、run-chart.ts 等）以 MIT 协议发布，见 LICENSE 文件。
