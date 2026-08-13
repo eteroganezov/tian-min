@@ -130,46 +130,67 @@ function renderFreePreview(data) {
   const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
   return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
     <header class="preview-cover shell">
-      <p class="section-label">Базовая персональная карта</p>
-      <h2>${name ? `${e(name)}, ваша карта готова` : "Ваша карта готова"}</h2>
-      <p>Мы рассчитали Ба-цзы и Цзы Вэй Доу Шу по вашим данным рождения.</p>
+      <p class="section-label">Ваш персональный расчёт готов</p>
+      <h2>${name ? `${e(name)}, это ваша карта` : "Это ваша карта"}</h2>
+      <p>Ба-цзы и Цзы Вэй рассчитаны по вашим данным рождения. Сначала — три личных факта из карты.</p>
       <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}${data.person.birthTimeCertainty === "approximate" ? " · указано примерно" : ""}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
     </header>
 
     <div class="preview-body shell">
-      <section class="preview-section" aria-labelledby="bazi-title">
-        <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Ваша карта Ба-цзы</h2></div><p>Четыре столпа — это базовая структура карты рождения: год, месяц, день и час.</p></div>
-        <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)} ·</i>${e(compactStemName(pillar.stemDisplay.name))}</b><b><i>${e(pillar.zhi)} ·</i>${e(compactBranchName(pillar.branchDisplay.name))}</b></div><small><b>${e(pillar.shiShenDisplay.name)}</b></small></article>`).join("")}</div>
-        <div class="fact-grid">
-          <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Дневной хозяин — центральный элемент карты Ба-цзы. Здесь показан рассчитанный параметр без психологической интерпретации.</p></article>
-          <article><span>Баланс карты</span><h3>${e(primaryStrengthName(data.bazi.strength))}</h3><p>Показывает, насколько основной элемент карты получает поддержку от остальных элементов. Это не оценка «хорошо» или «плохо», а характеристика внутреннего баланса.</p></article>
-          <article><span>Текущий большой период</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<div class="current-period-ganzhi"><b>${e(current.ganZhi)}</b><small>${e(current.gan)} · ${e(compactStemName(current.stemDisplay.name))}<br>${e(current.zhi)} · ${e(compactBranchName(current.branchDisplay.name))}</small></div><p>${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}</p>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
+      <section class="personal-first" aria-labelledby="personal-first-title">
+        <div class="preview-heading personal-first-heading"><div><span>Из вашего расчёта</span><h2 id="personal-first-title">Что карта показывает сейчас</h2></div><p>Это рассчитанные параметры, а не готовые предсказания или рекомендации.</p></div>
+        <div class="personal-points">
+          <article class="personal-point main-sign"><span>Главный знак вашей карты</span><div class="personal-sign"><b>${e(data.bazi.dayMaster)}</b><h3>${e(personalStemName(data.bazi.dayMasterDisplay?.name))}</h3></div><p>Это центральный знак дня рождения, от которого строится карта Ба-цзы.</p></article>
+          <article class="personal-point"><span>Ваш текущий жизненный этап</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<p>${e(current.range)}</p><small>${e(current.ganZhi)} · ${e(compactStemName(current.stemDisplay.name))} · ${e(compactBranchName(current.branchDisplay.name))}</small>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
+          <article class="personal-point"><span>Ваша текущая сфера Цзы Вэй</span><h3>${e(currentPalace?.displayName?.name || "Не определена")}</h3><p>Возрастной период · ${e(currentPalace?.majorPeriod || "—")} лет</p><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small></article>
         </div>
-        <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>График показывает рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.displayValue ?? item.value)}</strong></div>`).join("")}</div></div>
-      </section>
-
-      <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
-        <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Ваша карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже — ключевые рассчитанные параметры.</p></div>
-        <div class="ziwei-summary-intro"><span>Как читать этот раздел</span><p>Цзы Вэй показывает жизненные сферы и рассчитанные звёзды внутри них. Ниже — опорные данные вашей карты, а не готовая персональная интерпретация.</p></div>
-        <div class="ziwei-facts">
-          <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
-          <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
-          <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
-          <article><span>Система элементов</span><b>${e(conciseBureauName(data.ziwei.fiveElementBureau.name))}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
-        </div>
-        <div class="transformations"><header><span>Четыре трансформации</span><p><b>Что ещё выделяется в карте.</b> Традиционные трансформации отмечают звёзды, на которые стоит обратить внимание при интерпретации.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
-        <div class="palaces-guide"><h3>Что показывают 12 дворцов?</h3><p>Карта Цзы Вэй делит жизненный путь на 12 сфер: отношения, работу, деньги, окружение, внутреннее состояние и другие области. Звёзды внутри показывают рассчитанные акценты каждой сферы.</p><p>Здесь вы видите структуру карты. Персональный разбор объясняет, что эти дворцы и звёзды означают именно для вас и как они связаны с Ба-цзы.</p></div>
-        <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть полную карту 12 дворцов</b><b class="disclosure-close">Скрыть полную карту 12 дворцов</b><small>Нажмите на дворец, чтобы узнать значение жизненной сферы</small></span><i aria-hidden="true"></i></summary><div class="palaces-direction-note">Возрастные периоды проходят по дворцам в рассчитанном для вашей карты направлении, поэтому соседние карточки не всегда идут по возрастанию.</div><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
-        <a class="result-continuation" href="#current-life-period">Дальше — ваш текущий жизненный период <span aria-hidden="true">↓</span></a>
-        <article class="current-palace" id="current-life-period"><div><span>Где вы находитесь сейчас · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определён")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует ваш текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
       </section>
     </div>
 
-    <section class="premium-teaser" data-state="PREMIUM_LOCKED">
-      <div class="shell"><header><p class="section-label">Следующий слой</p><h2>Вы увидели, из чего состоит ваша карта. Теперь — что всё это означает именно для вас.</h2><p>Полный разбор соединяет Ба-цзы и Цзы Вэй в один персональный портрет: сильные стороны, отношения, работу и деньги, текущий жизненный период, ближайшие годы и практические ориентиры.</p></header>
-        <div class="locked-grid">${premiumSections().map(item => `<article><h3>${e(item.title)}</h3><p>${e(item.description)}</p></article>`).join("")}</div>
+    <section class="premium-teaser early-premium-bridge" data-state="PREMIUM_LOCKED">
+      <div class="shell"><header><p class="section-label">От данных — к личному смыслу</p><h2>Отдельные знаки — только части карты. Главное — как они работают вместе.</h2><p>Полный разбор соединяет Ба-цзы и Цзы Вэй и объясняет, как сочетание карты проявляется в сильных сторонах, работе и деньгах, отношениях, текущем жизненном этапе и ближайших периодах.</p></header>
         <div class="premium-action"><button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden>Полный разбор скоро будет доступен.</div></div>
       </div>
+    </section>
+
+    <section class="technical-depth shell" aria-labelledby="technical-depth-title">
+      <header><p class="section-label">Расчёт остаётся доступным</p><h2 id="technical-depth-title">Посмотреть подробную карту и расчёты</h2><p>Откройте тот раздел, который вам интересен. Эти данные не обязательны для понимания первых результатов.</p></header>
+
+      <section class="technical-disclosure">
+        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-bazi-panel"><span><b>Подробная карта Ба-цзы</b><small>Четыре столпа, пять элементов и баланс карты</small></span><i aria-hidden="true">+</i></button>
+        <div class="technical-disclosure-panel" id="technical-bazi-panel" hidden>
+          <section class="preview-section" aria-labelledby="bazi-title">
+            <div class="preview-heading"><div><span>01 · 八字</span><h2 id="bazi-title">Подробная карта Ба-цзы</h2></div><div class="technical-explainer"><b>Что показывают четыре столпа?</b><p>Год, месяц, день и час рождения образуют четыре столпа. Каждый содержит ствол и ветвь; вместе они составляют основу карты Ба-цзы.</p></div></div>
+            <div class="ten-gods-note"><b>О традиционных названиях</b><p>«Грабитель богатства», «Семь убийц» и другие подобные термины — названия категорий Ба-цзы, а не буквальные события или предсказания.</p></div>
+            <div class="pillars-grid">${data.bazi.pillars.map(pillar => `<article><span>${e(pillar.label)}</span><strong>${e(pillar.gan)}${e(pillar.zhi)}</strong><div class="pillar-parts"><b><i>${e(pillar.gan)} ·</i>${e(compactStemName(pillar.stemDisplay.name))}</b><b><i>${e(pillar.zhi)} ·</i>${e(compactBranchName(pillar.branchDisplay.name))}</b></div><small><b>${e(pillar.shiShenDisplay.name)}</b><i>традиционная категория Ба-цзы</i></small></article>`).join("")}</div>
+            <div class="fact-grid">
+              <article><span>Дневной хозяин</span><h3>${e(data.bazi.dayMasterDisplay?.name || "—")} · <i>${e(data.bazi.dayMaster)}</i></h3><p>Центральный рассчитанный параметр карты Ба-цзы, показанный без психологической интерпретации.</p></article>
+              <article><span>Баланс карты</span><h3>${e(primaryStrengthName(data.bazi.strength))}</h3><p>Характеристика поддержки основного элемента, а не оценка «хорошо» или «плохо».</p></article>
+              <article><span>Текущий большой период</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<div class="current-period-ganzhi"><b>${e(current.ganZhi)}</b><small>${e(current.gan)} · ${e(compactStemName(current.stemDisplay.name))}<br>${e(current.zhi)} · ${e(compactBranchName(current.branchDisplay.name))}</small></div><p>${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}</p>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
+            </div>
+            <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>Рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.displayValue ?? item.value)}</strong></div>`).join("")}</div></div>
+          </section>
+        </div>
+      </section>
+
+      <section class="technical-disclosure">
+        <button type="button" class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-ziwei-panel"><span><b>Подробная карта Цзы Вэй</b><small>12 жизненных сфер рассчитаны</small></span><i aria-hidden="true">+</i></button>
+        <div class="technical-disclosure-panel" id="technical-ziwei-panel" hidden>
+          <section class="preview-section ziwei-section" aria-labelledby="ziwei-title">
+            <div class="preview-heading"><div><span>02 · 紫微斗数</span><h2 id="ziwei-title">Подробная карта Цзы Вэй</h2></div><p>Двенадцать дворцов описывают разные жизненные сферы. Ниже сохранены рассчитанные параметры карты.</p></div>
+            <div class="ziwei-facts">
+              <article><span>Лунная дата</span><b class="lunar-date">${lunarDateLines(data.ziwei).map(line => `<i class="lunar-date-line">${e(line)}</i>`).join("")}</b></article>
+              <article><span>Дворец судьбы</span><b>${e(data.ziwei.mingPalace.displayName?.name || data.ziwei.mingPalace.branch)}</b><small>${e(data.ziwei.mingPalace.displayName?.original || "")} · ${e(data.ziwei.mingPalace.branch)}</small></article>
+              <article><span>Дворец тела</span><b>${data.ziwei.shenPalace.displayName?.name ? `Находится во дворце ${e(lowerFirst(data.ziwei.shenPalace.displayName.name.replace(/^Дворец\s+/, "")))}` : e(data.ziwei.shenPalace.branch)}</b><small>${e(data.ziwei.shenPalace.displayName?.original || "")} · ${e(data.ziwei.shenPalace.branch)}</small></article>
+              <article><span>Система элементов</span><b>${e(conciseBureauName(data.ziwei.fiveElementBureau.name))}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
+            </div>
+            <div class="transformations"><header><span>Четыре трансформации</span><p>Традиционные отметки рассчитанных звёзд. Персональное значение раскрывается только в контексте всей карты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+            <div class="palaces-guide"><h3>Что показывают 12 дворцов?</h3><p>Карта Цзы Вэй делит жизненный путь на 12 сфер: отношения, работу, деньги, окружение, внутреннее состояние и другие области. Звёзды внутри показывают рассчитанные акценты каждой сферы.</p><p>Короткие пояснения карточек описывают только саму жизненную сферу, не персональное значение звёзд.</p></div>
+            <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть 12 дворцов</b><b class="disclosure-close">Скрыть 12 дворцов</b><small>Нажмите на дворец, чтобы узнать значение жизненной сферы</small></span><i aria-hidden="true"></i></summary><div class="palaces-direction-note">Возрастные периоды проходят по дворцам в направлении, рассчитанном для вашей карты, поэтому соседние значения могут идти не по возрастанию.</div><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
+            <article class="current-palace" id="current-life-period"><div><span>Текущая возрастная сфера · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определена")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
+          </section>
+        </div>
+      </section>
     </section>
   </section>`;
 }
@@ -178,7 +199,7 @@ function renderPalace(palace) {
   const stars = palace.mainStars.length ? palace.mainStars.map(star => `<span>${e(star.name)} <small>${e(star.original)}</small></span>`).join("") : "<span>Основные звёзды не указаны</span>";
   const key = palace.displayName?.original || palace.name;
   const explanationId = `palace-explanation-${String(key || "palace").codePointAt(0)?.toString(16) || "unknown"}`;
-  return `<article class="palace-card${palace.isCurrentPeriod ? " active" : ""}"><button type="button" class="palace-trigger" aria-expanded="false" aria-controls="${e(explanationId)}"><span class="palace-card-heading"><b>${e(palace.displayName.name)}</b><i>${e(palace.ganZhi)}</i></span><span class="palace-stars">${stars}</span><span class="palace-period">${e(palace.majorPeriod)} лет${palace.isMing ? " · Дворец судьбы" : ""}${palace.isShen ? " · Дворец тела" : ""}</span><span class="palace-expand-label">Что означает эта сфера <i aria-hidden="true">+</i></span></button><div class="palace-explanation" id="${e(explanationId)}" hidden><p>${e(palaceExplanation(key))}</p><small>Что означают звёзды именно в вашей карте — раскрывается в персональном разборе.</small></div></article>`;
+  return `<article class="palace-card${palace.isCurrentPeriod ? " active" : ""}"><button type="button" class="palace-trigger" aria-expanded="false" aria-controls="${e(explanationId)}"><span class="palace-card-heading"><b>${e(palace.displayName.name)}</b><i>${e(palace.ganZhi)}</i></span><span class="palace-stars">${stars}</span><span class="palace-period">Период · ${e(palace.majorPeriod)} лет${palace.isMing ? " · Дворец судьбы" : ""}${palace.isShen ? " · Дворец тела" : ""}</span><span class="palace-expand-label">Что означает эта сфера <i aria-hidden="true">+</i></span></button><div class="palace-explanation" id="${e(explanationId)}" hidden><p>${e(palaceExplanation(key))}</p><small>Что означают звёзды именно в вашей карте — раскрывается в персональном разборе.</small></div></article>`;
 }
 
 const PALACE_EXPLANATIONS = Object.freeze({
@@ -217,7 +238,15 @@ function premiumSections() {
 
 function bindPreviewActions() {
   document.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
+  document.querySelectorAll(".technical-disclosure-trigger").forEach(button => button.addEventListener("click", () => toggleTechnicalDisclosure(button)));
   document.querySelectorAll(".palace-trigger").forEach(button => button.addEventListener("click", () => togglePalaceExplanation(button)));
+}
+
+function toggleTechnicalDisclosure(button) {
+  const expanded = button.getAttribute("aria-expanded") !== "true";
+  button.setAttribute("aria-expanded", String(expanded));
+  const panel = document.getElementById(button.getAttribute("aria-controls"));
+  if (panel) panel.hidden = !expanded;
 }
 
 function togglePalaceExplanation(button) {
@@ -630,6 +659,10 @@ function conciseBureauName(value) {
 
 function compactStemName(value) {
   return String(value || "—").replace(/\s*·\s*небесный ствол$/u, " · ствол");
+}
+
+function personalStemName(value) {
+  return String(value || "—").replace(/\s*·\s*небесный ствол$/u, "");
 }
 
 function compactBranchName(value) {

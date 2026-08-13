@@ -34,7 +34,8 @@ test("верхняя группа Zi Wei сохраняет три строки 
   const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
   assert.match(script, /lunarDateLines\(data\.ziwei\)\.map\(line => `<i class="lunar-date-line">/);
   assert.match(script, /conciseBureauName\(data\.ziwei\.fiveElementBureau\.name\)/);
-  assert.match(script, /Цзы Вэй показывает жизненные сферы и рассчитанные звёзды внутри них\./);
+  assert.match(script, /Двенадцать дворцов описывают разные жизненные сферы/);
+  assert.match(script, /Подробная карта Цзы Вэй/);
   assert.doesNotMatch(script, /Здесь собраны основные ориентиры карты:/);
   const source = script.match(/function conciseBureauName\(value\) \{[\s\S]*?\n\}/u)?.[0];
   assert.ok(source);

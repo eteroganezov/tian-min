@@ -86,7 +86,14 @@ test("compact pillar template отдельно показывает stem, branch
   assert.match(script, /compactStemName\(pillar\.stemDisplay\.name\)/);
   assert.match(script, /compactBranchName\(pillar\.branchDisplay\.name\)/);
   assert.doesNotMatch(script, /Роль в структуре Ба-цзы/);
-  assert.match(script, /<small><b>\$\{e\(pillar\.shiShenDisplay\.name\)\}<\/b><\/small>/);
+  assert.match(script, /<small><b>\$\{e\(pillar\.shiShenDisplay\.name\)\}<\/b><i>традиционная категория Ба-цзы<\/i><\/small>/);
+});
+
+test("personal-first факты получают значения из payload, а не из fixture", () => {
+  const second = createFreePreviewRequest({ ...eduard, date: "1990-05-15", time: "12:00", gender: "female" }, { currentYear: 2026 });
+  const first = createFreePreviewRequest(eduard, { currentYear: 2026 });
+  assert.notEqual(first.body.bazi.dayMaster, second.body.bazi.dayMaster);
+  assert.match(fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8"), /data\.bazi\.dayMaster[\s\S]*current\.years[\s\S]*currentPalace/);
 });
 
 test("current big period получает русский stem/branch слой поверх calculated ganZhi", () => {

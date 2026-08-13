@@ -9,12 +9,24 @@ const { locationProvider } = require("../lib/location-provider.cjs");
 const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8");
 const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
-test("free result объясняет 12 дворцов и границу между данными и персональным смыслом", () => {
+test("Variant B ставит три dynamic personal facts и Premium bridge до technical depth", () => {
+  assert.match(script, /Ваш персональный расчёт готов/);
+  assert.match(script, /Главный знак вашей карты[\s\S]*data\.bazi\.dayMaster/);
+  assert.match(script, /personalStemName\(data\.bazi\.dayMasterDisplay\?\.name\)/);
+  assert.match(script, /Ваш текущий жизненный этап[\s\S]*current\.years/);
+  assert.match(script, /Ваша текущая сфера Цзы Вэй[\s\S]*currentPalace/);
+  assert.ok(script.indexOf('data-action="premium"') < script.indexOf('id="technical-bazi-panel"'));
+  assert.ok(script.indexOf('data-action="premium"') < script.indexOf('id="technical-ziwei-panel"'));
+  assert.match(script, /Отдельные знаки — только части карты/);
+  assert.doesNotMatch(script.slice(script.indexOf('class="personal-first"'), script.indexOf('data-action="premium"')), /Грабитель богатства|Семь убийц|Небесный ствол|Земная ветвь|Хуа Лу|Хуа Цюань/);
+});
+
+test("technical proof сохраняет 12 дворцов и границу между generic data и Premium meaning", () => {
   assert.match(script, /Что показывают 12 дворцов\?/);
   assert.match(script, /делит жизненный путь на 12 сфер/);
-  assert.match(script, /Здесь вы видите структуру карты/);
-  assert.match(script, /что эти дворцы и звёзды означают именно для вас/);
-  assert.match(script, /Что ещё выделяется в карте/);
+  assert.match(script, /Короткие пояснения карточек описывают только саму жизненную сферу/);
+  assert.match(script, /Что означают звёзды именно в вашей карте/);
+  assert.match(script, /Персональное значение раскрывается только в контексте всей карты/);
   assert.doesNotMatch(script, /получают в карте дополнительные акценты/);
 });
 
@@ -55,19 +67,40 @@ test("palace disclosure открывает одну generic explanation и по�
   assert.equal(panels.get("one").hidden, true);
 });
 
-test("continuation cue ведёт к current life period, затем к существующему Premium flow", () => {
-  assert.match(script, /href="#current-life-period">Дальше — ваш текущий жизненный период/);
-  assert.match(script, /class="current-palace" id="current-life-period"/);
-  assert.match(script, /Вы увидели, из чего состоит ваша карта/);
-  assert.match(script, /data-action="premium">Получить персональный разбор/);
-  assert.match(script, /data-action="premium"[^]*addEventListener\("click", openPremiumOffer\)/);
+test("technical disclosures доступны с клавиатуры и переключают aria-expanded без API", () => {
+  assert.match(script, /class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-bazi-panel"/);
+  assert.match(script, /id="technical-bazi-panel" hidden/);
+  assert.match(styles, /\.technical-disclosure-trigger:focus-visible/);
+  const source = script.match(/function toggleTechnicalDisclosure\(button\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(source);
+  assert.doesNotMatch(source, /api\(|fetch\(|payment|promo|generate/i);
+  const panel = { hidden: true };
+  const button = {
+    attrs: { "aria-controls": "panel", "aria-expanded": "false" },
+    getAttribute(name) { return this.attrs[name]; },
+    setAttribute(name, value) { this.attrs[name] = value; },
+  };
+  const toggle = vm.runInNewContext(`(${source.replace(/^function toggleTechnicalDisclosure/, "function")})`, { document: { getElementById: () => panel } });
+  toggle(button);
+  assert.equal(button.attrs["aria-expanded"], "true");
+  assert.equal(panel.hidden, false);
+  toggle(button);
+  assert.equal(button.attrs["aria-expanded"], "false");
+  assert.equal(panel.hidden, true);
 });
 
-test("responsive CSS устраняет двойной нижний gap и сохраняет human context на mobile", () => {
+test("early bridge ведёт в существующий Premium flow, technical sections остаются optional", () => {
+  assert.match(script, /data-action="premium">Получить персональный разбор/);
+  assert.match(script, /data-action="premium"[^]*addEventListener\("click", openPremiumOffer\)/);
+  assert.match(script, /Посмотреть подробную карту и расчёты/);
+  assert.equal((script.match(/class="technical-disclosure-trigger" aria-expanded="false"/g) || []).length, 2);
+});
+
+test("responsive CSS делает mandatory path компактным и не создаёт horizontal overflow", () => {
   assert.match(styles, /\.preview-body\{padding-bottom:0\}/);
-  assert.match(styles, /@media\(max-width:620px\)[^]*\.ziwei-summary-intro p\{display:block;text-align:left\}/);
-  assert.match(styles, /\.result-continuation\{[^}]*margin:24px auto/);
-  assert.doesNotMatch(styles, /\.palace-trigger[^}]*white-space:nowrap/);
+  assert.match(styles, /@media\(max-width:760px\)\{\.personal-points\{grid-template-columns:1fr\}/);
+  assert.match(styles, /\.technical-disclosure-trigger,.technical-disclosure-panel\{box-sizing:border-box\}/);
+  assert.match(styles, /html\{overflow-x:hidden\}/);
 });
 
 test("наблюдаемый reverse-looking age order остаётся неизменным calculated output", () => {
@@ -78,7 +111,15 @@ test("наблюдаемый reverse-looking age order остаётся неиз
     "63–72", "53–62", "43–52", "33–42", "23–32", "13–22",
   ]);
   assert.equal(result.body.ziwei.palaces.find(palace => palace.isCurrentPeriod).majorPeriod, "53–62");
-  assert.match(script, /соседние карточки не всегда идут по возрастанию/);
+  assert.match(script, /соседние значения могут идти не по возрастанию/);
+  assert.match(script, /class="palace-period">Период · \$\{e\(palace\.majorPeriod\)\} лет/);
+});
+
+test("Ten Gods обозначены как традиционные категории, а Four Pillars объяснены без free interpretation", () => {
+  assert.match(script, /Что показывают четыре столпа\?/);
+  assert.match(script, /Год, месяц, день и час рождения образуют четыре столпа/);
+  assert.match(script, /«Грабитель богатства», «Семь убийц»[^]*не буквальные события или предсказания/);
+  assert.match(script, /традиционная категория Ба-цзы/);
 });
 
 test("UX task не затрагивает payment, promo, generation, PDF или calculation implementation", () => {
