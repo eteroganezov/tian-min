@@ -63,6 +63,7 @@ test("форма показывает вопрос, обе опции и зам�
   assert.match(css, /\.time-certainty-helper\[hidden\]\{display:none\}/);
   assert.doesNotMatch(css, /\.time-certainty-helper\{[^}]*min-height/);
   assert.doesNotMatch(css, /\.time-certainty-options\{[^}]*background:var\(--paper\)/);
+  assert.match(css, /\.form-row\{grid-template-columns:1fr;gap:0\}/);
 });
 
 function element() {
