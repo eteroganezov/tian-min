@@ -95,6 +95,36 @@ test("актуальный direct data contract одинаково работа�
   });
 });
 
+test("authenticated GET принимает confirmed settlement + redeemed certificate как authoritative settled", async () => {
+  const entries = [];
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: { info: (...args) => entries.push(args) }, fetch: async () => response(200, { data: {
+    payment_public_id: "01REDEEMED", external_order_id: "order_redeemed_1", payment_status: "succeeded_pending",
+    settlement_status: "credited", partner_credit: { amount_minor: 10000, currency: "RUB" },
+    certificate: { public_id: "certificate_private", status: "active", redemption_status: "redeemed", redeemed_at: "2026-08-14T14:10:00Z" },
+    retry_after_seconds: 5,
+  }, request_id: "request-redeemed" }) });
+  const result = await provider.getPaymentStatus("01REDEEMED");
+  assert.equal(result.providerPaymentStatus, "succeeded_pending");
+  assert.equal(result.status, "settled");
+  assert.deepEqual(result.settlement, {
+    confirmed: true, settlementStatus: "credited", certificateStatus: "active", redemptionStatus: "redeemed", redeemedAt: "2026-08-14T14:10:00.000Z",
+  });
+  const diagnostic = JSON.parse(entries[0][1]);
+  assert.equal(diagnostic.settlementConfirmed, true);
+  assert.equal(diagnostic.hasRedeemedAt, true);
+  assert.doesNotMatch(entries[0][1], /certificate_private|10000/);
+});
+
+test("succeeded_pending без полного settlement/redemption proof остаётся pending", async () => {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { data: {
+    payment_public_id: "01INCOMPLETE", external_order_id: "order_incomplete_1", payment_status: "succeeded_pending",
+    settlement_status: "credited", certificate: { status: "active", redemption_status: "pending", redeemed_at: null },
+  } }) });
+  const result = await provider.getPaymentStatus("01INCOMPLETE");
+  assert.equal(result.status, "succeeded_pending");
+  assert.equal(result.settlement.confirmed, false);
+});
+
 test("валидный nested payment_method не становится INVALID_PROVIDER_RESPONSE и логируется без QR payload", async () => {
   const entries = [];
   const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: { info: (...args) => entries.push(args) }, fetch: async () => response(200, {
@@ -514,6 +544,36 @@ test("succeeded_pending не выставляет PAID, authenticated GET settle
   const paid = await ctx.service.reconcilePayment(pending.body.order.paymentId);
   assert.equal(paid.body.order.status, "PAID");
   assert.equal(ctx.provider.getCalls.length, 1);
+});
+
+test("focus/pageshow force refresh coalesces one authenticated GET, restores preview and unlocks once", async () => {
+  let current = new Date("2026-08-12T10:00:01Z");
+  let release;
+  const entries = [];
+  const provider = new FakeLorentsenProvider(["requires_action"]);
+  provider.getPaymentStatus = paymentId => {
+    provider.getCalls.push(paymentId);
+    return new Promise(resolve => { release = () => resolve({ ...payment(paymentId, "settled"), providerPaymentStatus: "succeeded_pending", settlement: { confirmed: true } }); });
+  };
+  const ctx = serviceSetup([], { provider, now: () => current, logger: { info: (...args) => entries.push(args), error() {} } });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const pending = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  current = new Date("2026-08-12T10:00:04Z");
+  const focus = ctx.service.getOrder(order.orderId, { refresh: true, source: "focus", includePreview: true });
+  const pageshow = ctx.service.getOrder(order.orderId, { refresh: true, source: "pageshow", includePreview: true });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(provider.getCalls.length, 1);
+  release();
+  const [focused, shown] = await Promise.all([focus, pageshow]);
+  assert.equal(focused.body.order.status, "PAID");
+  assert.equal(shown.body.order.status, "PAID");
+  assert.equal(focused.body.order.paymentId, pending.body.order.paymentId);
+  assert.equal(focused.body.freePreview.state, "FREE_PREVIEW_READY");
+  assert.equal(provider.createCalls.length, 1);
+  const lifecycle = entries.find(entry => entry[0] === "[PAYMENT_STATE_TRANSITION]" && JSON.parse(entry[1]).source === "focus");
+  assert.ok(lifecycle);
+  assert.match(lifecycle[1], /"source":"focus"/);
+  assert.match(lifecycle[1], /"fulfillment":"report_unlocked"/);
 });
 
 test("production settled сохраняет PAID без auto-generation, explicit generation проходит entitlement gate", async () => {

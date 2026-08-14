@@ -15,6 +15,8 @@ function element() {
     appendChild() {}, setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, insertAdjacentHTML() {}, closest() { return null; },
     querySelector(selector) {
       if (selector === ".checkout-panel") return html.includes("checkout-panel") ? element() : null;
+      if (selector === ".free-preview") return html.includes('class="free-preview"') ? element() : null;
+      if (selector === ".premium-action") return html.includes("premium-action") ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
       const action = selector.match(/^\[data-action="([^"]+)"\]$/)?.[1];
       const name = selector.match(/^\[name="([^"]+)"\]$/)?.[1];
       const key = action ? `action:${action}` : name ? `name:${name}` : selector;
@@ -39,20 +41,25 @@ function harness(fetchImpl) {
     ".preview-cover, #birth-form": element(),
   };
   nodes["#submit-button"].querySelector = () => element();
+  const documentListeners = new Map();
+  const windowListeners = new Map();
   const document = {
-    querySelector: selector => selector === ".premium-action" && nodes["#result-root"].innerHTML.includes("premium-recovery")
+    visibilityState: "visible",
+    querySelector: selector => selector === ".premium-action" && nodes["#result-root"].innerHTML.includes("premium-action")
       ? nodes["#result-root"].querySelector(".premium-action")
       : nodes[selector] || element(),
-    addEventListener() {},
+    addEventListener(type, listener) { if (!documentListeners.has(type)) documentListeners.set(type, []); documentListeners.get(type).push(listener); },
+    dispatch(type) { for (const listener of documentListeners.get(type) || []) listener({ type }); },
   };
   const storage = new Map();
   let timerId = 0;
   const context = {
     document, fetch: fetchImpl, FormData: class {}, localStorage: { getItem: key => storage.get(key) || null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, String(value)) },
     setTimeout: () => ++timerId, clearTimeout() {}, console, Intl, URLSearchParams, encodeURIComponent,
+    addEventListener(type, listener) { if (!windowListeners.has(type)) windowListeners.set(type, []); windowListeners.get(type).push(listener); },
   };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8"), context);
-  return { context, host: nodes[".premium-action"], resultRoot: nodes["#result-root"] };
+  return { context, document, dispatchWindow(type) { for (const listener of windowListeners.get(type) || []) listener({ type }); }, host: nodes[".premium-action"], resultRoot: nodes["#result-root"] };
 }
 
 const config = {
@@ -156,7 +163,7 @@ test("terminal exit → повторное открытие показывает
   calls.length = 0;
   await ui.context.openPremiumOffer();
   assert.match(ui.host.innerHTML, /https:\/\/pay\.example\.test\/same/);
-  assert.deepEqual(calls, ["/api/premium/config", "/api/premium/order/order_payment_ux"]);
+  assert.deepEqual(calls, ["/api/premium/config", "/api/premium/order/order_payment_ux?source=resume&refresh=1"]);
   assert.equal(calls.includes("/api/premium/payment/start"), false);
 });
 
@@ -181,7 +188,7 @@ test("processing/manual_review reopen восстанавливает status, а 
   const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => ({ order: locallyExpired }) }; });
   ui.context.renderPaymentState(locallyExpired);
   await ui.context.resumeLorentsenPayment(locallyExpired.orderId);
-  assert.deepEqual(calls, ["/api/premium/order/order_payment_ux"]);
+  assert.deepEqual(calls, ["/api/premium/order/order_payment_ux?source=resume&refresh=1"]);
   assert.equal(calls.includes("/api/premium/payment/start"), false);
 });
 
@@ -208,6 +215,76 @@ test("page refresh показывает offer для terminal и восстан�
   await ui.context.restorePremiumOrder();
   assert.match(ui.resultRoot.querySelector(".premium-action").innerHTML, /https:\/\/pay\.example\.test\/restored/);
   assert.equal(calls.includes("/api/premium/payment/start"), false);
+});
+
+test("focus/visibility/pageshow coalesce refresh, detect PAID and request fulfillment once", async () => {
+  const calls = [];
+  let releaseStatus;
+  const pendingStatus = new Promise(resolve => { releaseStatus = resolve; });
+  const processing = order("succeeded_pending");
+  const paid = { ...processing, status: "PAID", providerStatus: "settled", paymentConfirmedAt: "2026-08-14T14:10:00Z" };
+  const ui = harness(async (url, options = {}) => {
+    calls.push({ url, options });
+    if (url.startsWith("/api/premium/order/")) { await pendingStatus; return { ok: true, json: async () => ({ order: paid }) }; }
+    if (url === "/api/premium/generate") return { ok: true, json: async () => ({ order: { ...paid, status: "REPORT_GENERATING" } }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  ui.context.localStorage.setItem("tianMinOrderId", processing.orderId);
+  ui.context.renderPaymentState(processing);
+  ui.dispatchWindow("focus");
+  ui.document.dispatch("visibilitychange");
+  ui.dispatchWindow("pageshow");
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(call => call.url.startsWith("/api/premium/order/")).length, 1);
+  releaseStatus();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(call => call.url === "/api/premium/generate").length, 1);
+  assert.equal(calls.some(call => call.url === "/api/premium/payment/start"), false);
+  assert.match(ui.host.innerHTML, /REPORT_GENERATING|Готовим ваш персональный разбор/);
+});
+
+test("reload restores the saved free preview and the same purchase without a new payment", async () => {
+  const calls = [];
+  const active = order("processing");
+  const ui = harness(async url => {
+    calls.push(url);
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    if (url.startsWith("/api/premium/order/")) return { ok: true, json: async () => ({ order: active, freePreview: { state: "FREE_PREVIEW_READY" } }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  ui.context.renderFreePreview = () => '<section class="free-preview"><div class="premium-action"></div></section>';
+  ui.context.bindPreviewActions = () => {};
+  ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
+  await ui.context.restorePremiumOrder();
+  assert.match(ui.resultRoot.innerHTML, /class="free-preview"/);
+  assert.match(ui.resultRoot.querySelector(".premium-action").innerHTML, /data-checkout-state="processing"/);
+  assert.equal(calls.some(url => url === "/api/premium/payment/start"), false);
+  assert.equal(ui.context.localStorage.getItem("tianMinOrderId"), active.orderId);
+});
+
+test("temporary reload failure preserves the saved order capability for later recovery", async () => {
+  const active = order("processing");
+  const ui = harness(async url => {
+    if (url === "/api/premium/config") return { ok: true, json: async () => config };
+    throw new Error("temporary network failure");
+  });
+  ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
+  await ui.context.restorePremiumOrder();
+  assert.equal(ui.context.localStorage.getItem("tianMinOrderId"), active.orderId);
+});
+
+test("manual payment check is available and never starts another payment", async () => {
+  const calls = [];
+  const active = order("processing");
+  const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => ({ order: active }) }; });
+  ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
+  ui.context.renderPaymentState(active);
+  assert.match(ui.host.innerHTML, /Проверить оплату/);
+  assert.match(ui.host.innerHTML, /не оплачивайте повторно/);
+  await ui.host.querySelector('[data-action="check-payment"]').dispatch("click");
+  assert.equal(calls.some(url => url === "/api/premium/payment/start"), false);
+  assert.equal(calls.filter(url => String(url).includes("source=manual")).length, 1);
 });
 
 test("terminal retry → offer → FAMILY0 создаёт entitlement без payment POST", async () => {

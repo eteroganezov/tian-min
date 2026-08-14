@@ -102,7 +102,9 @@ function normalizePayment(payload, httpStatus, headerRetryAfter) {
   if (!payload || typeof payload !== "object") throw providerError("Lorentsen вернул некорректный JSON.", 502, true, "INVALID_PROVIDER_RESPONSE");
   const payment = findPaymentRecord(payload);
   const statusValue = payment?.payment_status ?? payment?.status;
-  const status = PROVIDER_STATUSES.includes(statusValue) ? statusValue : "provider_result_unknown";
+  const settlement = normalizeSettlementProof(payment);
+  const normalizedStatus = PROVIDER_STATUSES.includes(statusValue) ? statusValue : "provider_result_unknown";
+  const status = normalizedStatus === "settled" || settlement.confirmed ? "settled" : normalizedStatus;
   const paymentPublicId = safeString(payment?.payment_public_id, 200);
   const externalOrderId = safeString(payment?.external_order_id, 200);
   if (!paymentPublicId) throw providerError("Lorentsen не вернул payment_public_id.", 502, true, "INVALID_PROVIDER_RESPONSE");
@@ -112,6 +114,8 @@ function normalizePayment(payload, httpStatus, headerRetryAfter) {
     paymentPublicId,
     externalOrderId,
     status,
+    providerPaymentStatus: normalizedStatus,
+    settlement,
     paymentMethod: normalizePaymentMethod(payment.payment_method),
     retryAfterSeconds: positiveInteger(payment.retry_after_seconds ?? payload.retry_after_seconds, headerRetryAfter || 5),
     traceId: safeString(payment.trace_id, 160) || safeString(payload.trace_id, 160),
@@ -160,6 +164,11 @@ function describePaymentResponse(payload) {
     paymentPublicId: safeLogIdentifier(payment?.payment_public_id),
     externalOrderId: safeLogIdentifier(payment?.external_order_id),
     paymentStatus: safeDiagnosticToken(payment?.payment_status ?? payment?.status),
+    settlementStatus: safeDiagnosticToken(payment?.settlement_status),
+    certificateStatus: safeDiagnosticToken(payment?.certificate?.status),
+    redemptionStatus: safeDiagnosticToken(payment?.certificate?.redemption_status),
+    hasRedeemedAt: validDate(payment?.certificate?.redeemed_at),
+    settlementConfirmed: normalizeSettlementProof(payment).confirmed,
     hasPaymentMethod: Boolean(method),
     hasPaymentLink: Boolean(method && typeof method.link === "string" && method.link.trim()),
     hasPaymentImage: Boolean(method && typeof method.image === "string" && method.image.trim()),
@@ -169,6 +178,16 @@ function describePaymentResponse(payload) {
     requestId: safeLogIdentifier(payload?.request_id ?? payload?.meta?.request_id),
     traceId: safeLogIdentifier(payment?.trace_id ?? payload?.trace_id ?? payload?.meta?.trace_id),
   };
+}
+
+function normalizeSettlementProof(payment) {
+  const settlementStatus = safeDiagnosticToken(payment?.settlement_status)?.toLowerCase() || null;
+  const certificateStatus = safeDiagnosticToken(payment?.certificate?.status)?.toLowerCase() || null;
+  const redemptionStatus = safeDiagnosticToken(payment?.certificate?.redemption_status)?.toLowerCase() || null;
+  const redeemedAt = validDate(payment?.certificate?.redeemed_at) ? new Date(payment.certificate.redeemed_at).toISOString() : null;
+  const settlementConfirmed = new Set(["settled", "completed", "credited"]).has(settlementStatus);
+  const redemptionConfirmed = new Set(["redeemed", "completed", "settled"]).has(redemptionStatus) && Boolean(redeemedAt);
+  return { confirmed: settlementConfirmed && redemptionConfirmed, settlementStatus, certificateStatus, redemptionStatus, redeemedAt };
 }
 
 function normalizePaymentMethod(value) {

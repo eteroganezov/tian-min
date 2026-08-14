@@ -31,6 +31,9 @@ let premiumBusy = false;
 let premiumConfig = null;
 let activePremiumOrder = null;
 let paymentPollTimer = null;
+let premiumRefreshPromise = null;
+let paymentViewDismissed = false;
+const generationRequestedOrders = new Set();
 
 const mobileFormMedia = typeof matchMedia === "function" ? matchMedia("(max-width: 620px)") : null;
 const desktopTechnicalMedia = typeof matchMedia === "function" ? matchMedia("(min-width: 960px)") : null;
@@ -299,11 +302,13 @@ async function openPremiumOffer() {
       return;
     }
     if (activePremiumOrder && (activePremiumOrder.accessReason === "complimentary_promo" || ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(activePremiumOrder.status))) {
-      renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(activePremiumOrder.orderId)}`)).order);
+      paymentViewDismissed = false;
+      await refreshPremiumOrder("resume", { force: true });
       return;
     }
     if (isActivePaymentOrder(activePremiumOrder)) {
-      renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(activePremiumOrder.orderId)}`)).order);
+      paymentViewDismissed = false;
+      await refreshPremiumOrder("resume", { force: true });
       return;
     }
     renderPremiumOffer(host, config);
@@ -374,6 +379,7 @@ function renderComplimentaryState(host, order) {
 
 function renderPaymentState(order) {
   activePremiumOrder = order;
+  paymentViewDismissed = false;
   const host = document.querySelector(".premium-action") || resultRoot;
   clearTimeout(paymentPollTimer);
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
@@ -462,17 +468,19 @@ function renderLorentsenState(host, order) {
   const methodExpiresAt = Date.parse(method?.expiresAt || "");
   const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
   if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Проверяем статус оплаты…</div><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Проверяем статус оплаты…</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
   } else {
     const copy = { preparing: ["Платёж создаётся", "QR-код появится, когда оплата будет готова."], processing: ["Платёж обрабатывается", "Проверяем статус оплаты."], requires_action: ["Проверяем срок действия QR-кода", "Обновляем статус оплаты."], succeeded_pending: ["Оплата принята в обработку", "Подтверждение оплаты может занять немного времени."], manual_review: ["Платёж проверяется", "Проверка занимает больше времени. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — подтверждение может появиться позже.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
   }
+  host.querySelector('[data-action="check-payment"]')?.addEventListener("click", event => checkPaymentNow(event.currentTarget));
   host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   schedulePaymentPoll(order.orderId, order.nextPollAt);
 }
 
 function leaveLorentsenPaymentFlow(host, order) {
   clearTimeout(paymentPollTimer);
+  paymentViewDismissed = true;
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>Платёж не отменён и его статус не изменён. Можно изменить данные рождения и рассчитать новую карту; эта попытка останется связана только с прежними данными.</p><button type="button" class="secondary-checkout-button" data-action="resume-payment">Вернуться к оплате</button></section>`;
   host.querySelector('[data-action="resume-payment"]').addEventListener("click", () => resumeLorentsenPayment(order.orderId));
   document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -503,7 +511,8 @@ function isActivePaymentOrder(order) {
 async function resumeLorentsenPayment(orderId) {
   if (premiumBusy) return;
   premiumBusy = true;
-  try { renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(orderId)}`)).order); }
+  paymentViewDismissed = false;
+  try { await refreshPremiumOrder("resume", { force: true, orderId }); }
   catch (error) { showPremiumError(error.message); }
   finally { premiumBusy = false; }
 }
@@ -511,7 +520,48 @@ async function resumeLorentsenPayment(orderId) {
 function schedulePaymentPoll(orderId, nextPollAt) {
   clearTimeout(paymentPollTimer);
   const delay = Math.max(1000, Math.min(30000, Date.parse(nextPollAt || "") - Date.now() || 5000));
-  paymentPollTimer = setTimeout(async () => { try { renderPaymentState((await api(`/api/premium/order/${encodeURIComponent(orderId)}`)).order); } catch { schedulePaymentPoll(orderId, null); } }, delay);
+  paymentPollTimer = setTimeout(() => { void refreshPremiumOrder("polling", { orderId }).catch(() => {}); }, delay);
+}
+
+async function checkPaymentNow(button) {
+  if (button) { button.disabled = true; button.textContent = "Проверяем оплату…"; }
+  try { await refreshPremiumOrder("manual", { force: true }); }
+  catch (error) { showPremiumError(error.message); }
+  finally { if (button?.isConnected) { button.disabled = false; button.textContent = "Проверить оплату"; } }
+}
+
+function premiumOrderUrl(orderId, options = {}) {
+  const query = new URLSearchParams({ source: options.source || "polling" });
+  if (options.force) query.set("refresh", "1");
+  if (options.includePreview) query.set("includePreview", "1");
+  return `/api/premium/order/${encodeURIComponent(orderId)}?${query}`;
+}
+
+async function refreshPremiumOrder(source, options = {}) {
+  const orderId = options.orderId || activePremiumOrder?.orderId || localStorage.getItem("tianMinOrderId");
+  if (!orderId) return null;
+  if (source !== "manual" && typeof document.visibilityState === "string" && document.visibilityState === "hidden") return null;
+  if (premiumRefreshPromise) return premiumRefreshPromise;
+  clearTimeout(paymentPollTimer);
+  premiumRefreshPromise = (async () => {
+    const result = await api(premiumOrderUrl(orderId, { source, force: options.force, includePreview: options.includePreview }));
+    activePremiumOrder = result.order;
+    restoreFreePreview(result.freePreview);
+    const fulfilled = ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(result.order.status) || result.order.accessReason === "complimentary_promo";
+    if (!paymentViewDismissed || fulfilled) renderPaymentState(result.order);
+    else if (isActivePaymentOrder(result.order)) schedulePaymentPoll(result.order.orderId, result.order.nextPollAt);
+    return result.order;
+  })().catch(error => {
+    if (isActivePaymentOrder(activePremiumOrder)) schedulePaymentPoll(activePremiumOrder.orderId, null);
+    throw error;
+  }).finally(() => { premiumRefreshPromise = null; });
+  return premiumRefreshPromise;
+}
+
+function restoreFreePreview(freePreview) {
+  if (!freePreview || resultRoot.querySelector?.(".free-preview")) return;
+  resultRoot.innerHTML = renderFreePreview(freePreview);
+  bindPreviewActions();
 }
 
 async function simulatePayment(orderId, outcome) {
@@ -530,7 +580,9 @@ async function simulatePayment(orderId, outcome) {
 
 function renderPaidState(host, order) {
   host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Доступ подтверждён</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает 1–3 минуты.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
-  void api("/api/premium/generate",{ orderId:order.orderId }).then(result=>renderPaymentState(result.order)).catch(error=>showPremiumError(error.message));
+  if (generationRequestedOrders.has(order.orderId)) return;
+  generationRequestedOrders.add(order.orderId);
+  void api("/api/premium/generate",{ orderId:order.orderId }).then(result=>renderPaymentState(result.order)).catch(error=>{ generationRequestedOrders.delete(order.orderId); showPremiumError(error.message); });
 }
 
 function renderGeneratingState(host,order) {
@@ -554,32 +606,35 @@ async function restorePremiumOrder() {
   if (!orderId) return;
   try {
     premiumConfig = await api("/api/premium/config");
-    const result = await api(`/api/premium/order/${encodeURIComponent(orderId)}`);
+    const result = await api(premiumOrderUrl(orderId, { source: "reload", force: true, includePreview: true }));
     activePremiumOrder = result.order;
+    restoreFreePreview(result.freePreview);
+    const recoveryMarkup = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+    const ensureRecoveryHost = () => { if (!resultRoot.querySelector(".premium-action")) resultRoot.innerHTML = recoveryMarkup; };
     if (result.order.accessReason === "complimentary_promo") {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderPaymentState(result.order);
     } else if (result.order.amount === 0 && result.order.promoCode) {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig, { pricing: { baseAmount: result.order.baseAmount, discountAmount: result.order.baseAmount, finalAmount: 0, currency: result.order.currency, promoCode: result.order.promoCode } });
     } else if (["PAID", "REPORT_GENERATING", "REPORT_FAILED"].includes(result.order.status)) {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderPaymentState(result.order);
     } else if (result.order.status === "REPORT_READY") {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderReadyState(resultRoot.querySelector(".premium-action"), result.order);
     } else if (isTerminalPaymentOrder(result.order)) {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig);
     } else if (result.order.status === "CHECKOUT_STARTED" && !result.order.paymentFailureReason) {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       if (premiumConfig.paymentMode === "lorentsen") renderConsentCheckout(result.order);
       else { const payment = await api("/api/premium/payment/start", { orderId }); renderPaymentState(payment.order); }
     } else if (["CHECKOUT_STARTED", "PAYMENT_PENDING"].includes(result.order.status)) {
-      resultRoot.innerHTML = '<section class="premium-recovery shell"><div class="premium-action"></div></section>';
+      ensureRecoveryHost();
       renderPaymentState(result.order);
     }
-  } catch { localStorage.removeItem("tianMinOrderId"); }
+  } catch { /* Preserve the recovery capability across temporary network/provider failures. */ }
 }
 
 async function api(url, body) {
@@ -745,4 +800,11 @@ function e(value) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
 }
 
+if (typeof addEventListener === "function") {
+  addEventListener("focus", () => { void refreshPremiumOrder("focus", { force: true, includePreview: true }).catch(() => {}); });
+  addEventListener("pageshow", () => { void refreshPremiumOrder("pageshow", { force: true, includePreview: true }).catch(() => {}); });
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") void refreshPremiumOrder("visibility", { force: true, includePreview: true }).catch(() => {});
+});
 restorePremiumOrder();

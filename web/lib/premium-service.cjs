@@ -5,6 +5,7 @@ const { createFingerprints } = require("./report-fingerprint.cjs");
 const { currentReportYears } = require("./report-service.cjs");
 const { generateReportRequest } = require("./report-service.cjs");
 const { createPdfFromSavedReport } = require("./pdf-service.cjs");
+const { createFreePreviewRequest } = require("./free-preview.cjs");
 const { getProductConfig } = require("./product-config.cjs");
 const { normalizePromoCode, promoAvailability } = require("./promo-config.cjs");
 const { TERMINAL_STATUSES } = require("./lorentsen-provider.cjs");
@@ -24,6 +25,7 @@ class PremiumService {
     this.pdfRenderer = options.pdfRenderer || createPdfFromSavedReport;
     this.logger = options.logger || console;
     this.generationPromises = new Map();
+    this.reconciliationPromises = new Map();
     this.webhookJobs = new Set();
     this.now = options.now || (() => new Date());
   }
@@ -202,6 +204,15 @@ class PremiumService {
   }
 
   async reconcilePayment(paymentPublicId, options = {}) {
+    const existing = this.reconciliationPromises.get(paymentPublicId);
+    if (existing) return existing;
+    const reconciliation = this.runPaymentReconciliation(paymentPublicId, options)
+      .finally(() => this.reconciliationPromises.delete(paymentPublicId));
+    this.reconciliationPromises.set(paymentPublicId, reconciliation);
+    return reconciliation;
+  }
+
+  async runPaymentReconciliation(paymentPublicId, options = {}) {
     const attempt = await this.orderStore.findAttemptByPaymentId(paymentPublicId);
     if (!attempt) return failure(404, "Платёжная попытка не найдена.");
     const order = await this.orderStore.load(attempt.orderId);
@@ -212,7 +223,7 @@ class PremiumService {
       const authoritative = attempt.providerStatus === "settled" ? { ...payment, status: "settled" } : options.eventType === "payment.succeeded" && payment.status === "settled" ? { ...payment, status: "succeeded_pending" } : payment;
       const updated = updateAttempt(attempt, authoritative, this.isoNow());
       await this.orderStore.saveAttempt(updated);
-      return this.applyProviderStatus(order, updated, authoritative);
+      return this.applyProviderStatus(order, updated, authoritative, options);
     } catch (error) {
       const now = this.isoNow();
       attempt.retryTimestamps = [...attempt.retryTimestamps, now];
@@ -224,11 +235,12 @@ class PremiumService {
     }
   }
 
-  async applyProviderStatus(order, attempt, payment) {
+  async applyProviderStatus(order, attempt, payment, options = {}) {
     const changes = {
       status: "PAYMENT_PENDING", paymentId: attempt.paymentPublicId, currentAttemptId: attempt.attemptId,
       providerStatus: attempt.providerStatus, paymentMethod: attempt.paymentMethod || order.paymentMethod,
       nextPollAt: attempt.nextPollAt, paymentFailureReason: null,
+      lastProviderCheckAt: attempt.updatedAt,
     };
     const alreadyFulfilled = ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(order.status);
     if (attempt.providerStatus === "settled") {
@@ -244,6 +256,7 @@ class PremiumService {
       Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
     }
     const saved = await this.saveOrder(order, changes);
+    this.logPaymentState(order, saved, attempt, options.source || "provider_poll");
     if (attempt.providerStatus === "settled") {
       await this.recordPromoEvent(saved, "settled");
     }
@@ -279,7 +292,7 @@ class PremiumService {
     if (!event || !event.paymentPublicId || !["payment.succeeded", "payment.settled"].includes(event.eventType)) return { status: "not_applicable" };
     const attempts = Number(event.processingAttempts || 0) + 1;
     await this.orderStore.updateWebhook(eventId, { processingStatus: "processing", processingAttempts: attempts, lastProcessingStartedAt: this.isoNow(), processingLeaseUntil: futureIso(this.now(), 60) });
-    const result = await this.reconcilePayment(event.paymentPublicId, { eventType: event.eventType });
+    const result = await this.reconcilePayment(event.paymentPublicId, { eventType: event.eventType, source: "callback" });
     if (result.status >= 400) {
       await this.orderStore.updateWebhook(eventId, { processingStatus: "retry", processingLeaseUntil: null, nextProcessingAt: result.body?.order?.nextPollAt || futureIso(this.now(), 15), lastProcessingError: { code: "RECONCILIATION_FAILED", httpStatus: result.status, at: this.isoNow() } });
       return { status: "retry", result };
@@ -313,24 +326,35 @@ class PremiumService {
     return success(200, await this.saveOrder(order, { status: "PAYMENT_PENDING" }));
   }
 
-  async getOrder(orderId) {
+  async getOrder(orderId, options = {}) {
     let order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
     order=await this.ensureReportAccess(order);
-    if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && (!order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) {
-      if (order.paymentId) return this.reconcilePayment(order.paymentId);
+    const forceRefresh = options.refresh === true && Date.parse(order.lastProviderCheckAt || 0) <= this.now().getTime() - 2_000;
+    if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && (forceRefresh || !order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) {
+      if (order.paymentId) return this.finalizeOrderResult(orderId, this.reconcilePayment(order.paymentId, { source: options.source }), options);
       const attempt = order.currentAttemptId ? await this.orderStore.loadAttempt(order.currentAttemptId) : null;
       if (attempt && ACTIVE_PROVIDER_STATUSES.has(attempt.providerStatus)) {
-        if (attempt.paymentPublicId) return this.reconcilePayment(attempt.paymentPublicId);
-        return this.createProviderPayment(order, attempt);
+        if (attempt.paymentPublicId) return this.finalizeOrderResult(orderId, this.reconcilePayment(attempt.paymentPublicId, { source: options.source }), options);
+        return this.finalizeOrderResult(orderId, this.createProviderPayment(order, attempt), options);
       }
     }
     if (order.status === "REPORT_GENERATING") {
       if(Date.parse(order.reportGenerationLeaseUntil || 0) <= this.now().getTime()) {
-        return this.generate(order.orderId);
+        return this.finalizeOrderResult(orderId, this.generate(order.orderId), options);
       }
     }
-    return success(200, order);
+    return this.finalizeOrderResult(orderId, success(200, order), options);
+  }
+
+  async finalizeOrderResult(orderId, resultOrPromise, options = {}) {
+    const result = await resultOrPromise;
+    if (result.status >= 400 || options.includePreview !== true) return result;
+    const order = await this.orderStore.load(orderId);
+    if (!order?.birthInput) return result;
+    const preview = createFreePreviewRequest({ ...order.birthInput, name: order.displayName || "" });
+    if (preview.status !== 200) return result;
+    return { ...result, body: { ...result.body, freePreview: preview.body } };
   }
 
   async generate(orderId, options = {}) {
@@ -385,6 +409,17 @@ class PremiumService {
 
   logGenerationStage(order, stage, details = {}) {
     this.logger.info?.("[REPORT_GENERATION_STAGE]",JSON.stringify({ orderId:order.orderId,reportId:order.reportId,stage,attempt:details.attempt || null,model:details.model || null,providerType:details.providerType || null,durationMs:Number.isFinite(details.durationMs)?details.durationMs:null,requestId:details.requestId || null,responseStatus:details.responseStatus || null }));
+  }
+
+  logPaymentState(previous, current, attempt, source) {
+    this.logger.info?.("[PAYMENT_STATE_TRANSITION]",JSON.stringify({
+      timestamp:this.isoNow(),source:safePaymentSource(source),orderId:current.orderId,paymentId:attempt.paymentPublicId || null,
+      attemptId:attempt.attemptId,previousOrderStatus:previous.status,previousProviderStatus:previous.providerStatus || null,
+      providerPaymentStatus:attempt.providerPaymentStatus || attempt.providerStatus,providerStatus:attempt.providerStatus,
+      settlementConfirmed:Boolean(attempt.settlement?.confirmed),serverPaymentState:current.status,
+      frontendState:current.status === "PAID" ? "frontend_paid" : "frontend_processing",
+      fulfillment:current.status === "PAID" ? "report_unlocked" : "pending",
+    }));
   }
 
   async waitForGenerationJobs() { await Promise.allSettled([...this.generationPromises.values()]); }
@@ -451,8 +486,11 @@ function validatePaymentInput(input) {
 function updateAttempt(attempt, payment, now) {
   const status = payment.status || "provider_result_unknown";
   const history = attempt.statusHistory.at(-1)?.status === status ? attempt.statusHistory : [...attempt.statusHistory, { status, at: now }];
-  return { ...attempt, paymentPublicId: payment.paymentPublicId || attempt.paymentPublicId, providerStatus: status, statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry, nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
+  return { ...attempt, paymentPublicId: payment.paymentPublicId || attempt.paymentPublicId, providerStatus: status,
+    providerPaymentStatus:payment.providerPaymentStatus || status,settlement:payment.settlement || attempt.settlement || null,
+    statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry, nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
 }
+function safePaymentSource(value) { const source=String(value || "provider_poll"); return new Set(["polling","focus","visibility","pageshow","reload","resume","manual","callback","provider_poll"]).has(source) ? source : "provider_poll"; }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }
 async function generatePremiumReport(order,env,onStage) {
   const result=await generateReportRequest({ ...order.birthInput,name:order.displayName || "" },{ env,hasFullReport:true,onStage });

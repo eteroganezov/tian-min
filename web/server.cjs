@@ -72,8 +72,13 @@ async function handlePremiumAction(request, response, action, limit = 10_000) {
 }
 
 async function handlePremiumOrder(request, response, premiumService) {
-  const orderId = decodeURIComponent(new URL(request.url, "http://localhost").pathname.split("/").pop() || "");
-  const result = await premiumService.getOrder(orderId);
+  const url = new URL(request.url, "http://localhost");
+  const orderId = decodeURIComponent(url.pathname.split("/").pop() || "");
+  const result = await premiumService.getOrder(orderId, {
+    source: url.searchParams.get("source") || "polling",
+    refresh: url.searchParams.get("refresh") === "1",
+    includePreview: url.searchParams.get("includePreview") === "1",
+  });
   return sendJson(response, result.status, result.body);
 }
 
