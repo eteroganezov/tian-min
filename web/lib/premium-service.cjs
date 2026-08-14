@@ -397,7 +397,8 @@ class PremiumService {
     if (!saved || saved.kind !== "semantic-report" || saved.reportId !== order.reportId || saved.chartId !== order.chartId) return { status:404,error:"Отчёт не найден." };
     const rendered=await this.pdfRenderer(saved);
     if (rendered?.status !== 200 || !Buffer.isBuffer(rendered.buffer)) return { status:503,error:"Не удалось открыть отчёт. Попробуйте ещё раз." };
-    return { status:200,buffer:rendered.buffer,filename:"tian-min-personal-report.pdf" };
+    const filename=buildPersonalReportFilename(saved.presentation?.displayName || order.displayName,saved.input?.date || order.birthInput?.date);
+    return { status:200,buffer:rendered.buffer,filename };
   }
 
   async hasLegitimateEntitlement(order) {
@@ -487,4 +488,20 @@ function promoCustomerMessage(error) {
 }
 function safeMessage(error) { return String(error?.message || "Некорректные данные рождения.").replace(/^(Некорректные данные рождения|排盘计算失败):\s*/, ""); }
 
-module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, customerPaymentError, generatePremiumReport, promoCustomerMessage, publicOrder, validatePaymentInput };
+function buildPersonalReportFilename(displayName,birthDate) {
+  const firstName=sanitizeFilenameFirstName(displayName);
+  const yearMatch=String(birthDate || "").match(/^(\d{4})-/u);
+  const year=yearMatch && Number(yearMatch[1]) >= 1900 && Number(yearMatch[1]) <= 2100 ? yearMatch[1] : "";
+  if(firstName && year) return `Tian-Min_${firstName}_${year}.pdf`;
+  if(year) return `Tian-Min_${year}.pdf`;
+  if(firstName) return "Tian-Min_Report.pdf";
+  return "tian-min-personal-report.pdf";
+}
+
+function sanitizeFilenameFirstName(value) {
+  const firstToken=String(value || "").normalize("NFC").trim().split(/\s+/u)[0] || "";
+  const safe=firstToken.replace(/[^\p{L}\p{M}'’\-]/gu,"").replace(/^['’\-]+|['’\-]+$/gu,"");
+  return [...safe].slice(0,40).join("").replace(/^['’\-]+|['’\-]+$/gu,"");
+}
+
+module.exports = { ACTIVE_PROVIDER_STATUSES, ORDER_STATES, PremiumService, buildConsentRecord, buildPersonalReportFilename, customerPaymentError, generatePremiumReport, promoCustomerMessage, publicOrder, validatePaymentInput };

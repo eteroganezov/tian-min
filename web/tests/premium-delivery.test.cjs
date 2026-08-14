@@ -3,7 +3,7 @@ const assert=require("node:assert/strict");
 const {Readable}=require("node:stream");
 const {MemoryOrderStore}=require("../lib/order-store.cjs");
 const {MockPaymentProvider}=require("../lib/payment-provider.cjs");
-const {PremiumService}=require("../lib/premium-service.cjs");
+const {PremiumService,buildPersonalReportFilename}=require("../lib/premium-service.cjs");
 const {locationProvider}=require("../lib/location-provider.cjs");
 const {createServer}=require("../server.cjs");
 const fs=require("node:fs");
@@ -43,7 +43,11 @@ test("FAMILY0 end-to-end: no payment/PAID, one immutable generation, authorized 
   const completed=await ready(ctx,redeemed.body.order.orderId);
   assert.equal(completed.status,"REPORT_READY"); assert.equal(ctx.generationCalls,1); assert.equal(ctx.reportStore.writes,1); assert.equal(paymentCalls,0);
   const opened=await ctx.service.deliver(completed.reportAccessToken);
-  assert.equal(opened.status,200); assert.equal(opened.buffer.subarray(0,5).toString(),"%PDF-"); assert.equal(opened.filename,"tian-min-personal-report.pdf");
+  assert.equal(opened.status,200); assert.equal(opened.buffer.subarray(0,5).toString(),"%PDF-"); assert.equal(opened.filename,"Tian-Min_Тест_1995.pdf");
+  const savedWithoutPresentationMetadata=ctx.reportStore.records.get(completed.reportId);
+  ctx.reportStore.records.set(completed.reportId,{...savedWithoutPresentationMetadata,presentation:{},input:{...savedWithoutPresentationMetadata.input,date:""}});
+  const legacyOpened=await ctx.service.deliver(completed.reportAccessToken);
+  assert.equal(legacyOpened.filename,"Tian-Min_Тест_1995.pdf"); assert.equal(ctx.generationCalls,1);
   const restored=setup({orderStore:ctx.orderStore,reportStore:ctx.reportStore,paymentProvider:ctx.paymentProvider,reportGenerator:async()=>{throw new Error("must not regenerate");}});
   assert.equal((await restored.service.getOrder(completed.orderId)).body.order.status,"REPORT_READY");
   assert.equal((await restored.service.generate(completed.orderId)).body.order.status,"REPORT_READY");
@@ -163,11 +167,23 @@ test("report capability is high-entropy, bound server-side and unauthorized toke
   assert.equal((await ctx.service.deliver(order.reportAccessToken)).status,404);
 });
 
+test("personalized report filename uses only sanitized first name and birth year",()=>{
+  assert.equal(buildPersonalReportFilename("Эдуард Иванов","1995-09-03"),"Tian-Min_Эдуард_1995.pdf");
+  assert.equal(buildPersonalReportFilename("Роза","1971-01-01"),"Tian-Min_Роза_1971.pdf");
+  assert.equal(buildPersonalReportFilename("  Anne-Marie O'Neil  ","2000-02-29"),"Tian-Min_Anne-Marie_2000.pdf");
+  assert.equal(buildPersonalReportFilename("O'Neil","2000-02-29"),"Tian-Min_O'Neil_2000.pdf");
+  assert.equal(buildPersonalReportFilename("../\\<script>Эдуард\u0000:*?","1995-09-03"),"Tian-Min_scriptЭдуард_1995.pdf");
+  assert.equal(buildPersonalReportFilename("ОченьДлинноеИмя".repeat(8),"1995-09-03").length<100,true);
+  assert.equal(buildPersonalReportFilename("","1995-09-03"),"Tian-Min_1995.pdf");
+  assert.equal(buildPersonalReportFilename("Эдуард",""),"Tian-Min_Report.pdf");
+  assert.equal(buildPersonalReportFilename("",""),"tian-min-personal-report.pdf");
+});
+
 function get(server,url){return new Promise((resolve,reject)=>{const request=Readable.from([]);request.method="GET";request.url=url;request.headers={};const chunks=[];const response={status:0,headers:{},writeHead(status,headers){this.status=status;this.headers=headers;},end(value=""){chunks.push(Buffer.from(value));resolve({status:this.status,headers:this.headers,body:Buffer.concat(chunks)});},write(value){chunks.push(Buffer.from(value));}};server.emit("request",request,response);});}
 
 test("open/download routes set inline vs attachment and never expose internal filename",async()=>{
   const deliveredTokens=[];
-  const premiumService={deliver:async token=>{deliveredTokens.push(token);return /^[A-Za-z0-9_-]{43}$/.test(token)?{status:200,buffer:Buffer.from("%PDF-route"),filename:"ignored-provider-name"}:{status:404,error:"Отчёт не найден."};}};
+  const premiumService={deliver:async token=>{deliveredTokens.push(token);return /^[A-Za-z0-9_-]{43}$/.test(token)?{status:200,buffer:Buffer.from("%PDF-route"),filename:"Tian-Min_Эдуард_1995.pdf"}:{status:404,error:"Отчёт не найден."};}};
   const server=createServer({premiumService});
   try{
     const token="A".repeat(43);
@@ -178,8 +194,9 @@ test("open/download routes set inline vs attachment and never expose internal fi
     const invalidFilename=await get(server,"/api/premium/report/"+token+"/"+token);
     assert.equal(legacyOpen.status,200); assert.equal(open.status,200); assert.equal(download.status,200);
     assert.equal(open.headers["Content-Type"],"application/pdf"); assert.equal(download.headers["Content-Type"],"application/pdf");
-    assert.match(open.headers["Content-Disposition"],/^inline; filename="tian-min-personal-report\.pdf"; filename\*=UTF-8''tian-min-personal-report\.pdf$/);
-    assert.match(download.headers["Content-Disposition"],/^attachment; filename="tian-min-personal-report\.pdf"; filename\*=UTF-8''tian-min-personal-report\.pdf$/);
+    const encodedPersonalized="Tian-Min_%D0%AD%D0%B4%D1%83%D0%B0%D1%80%D0%B4_1995.pdf";
+    assert.equal(open.headers["Content-Disposition"],`inline; filename="tian-min-personal-report.pdf"; filename*=UTF-8''${encodedPersonalized}`);
+    assert.equal(download.headers["Content-Disposition"],`attachment; filename="tian-min-personal-report.pdf"; filename*=UTF-8''${encodedPersonalized}`);
     assert.doesNotMatch(open.headers["Content-Disposition"],new RegExp(token));
     assert.doesNotMatch(download.headers["Content-Disposition"],new RegExp(token));
     assert.equal(invalidToken.status,404); assert.equal(invalidFilename.status,404);
@@ -201,6 +218,7 @@ test("existing personal-report-v4 mock pipeline and frozen PDF renderer integrat
   const saved=reportStore.load(order.reportId);
   assert.equal(saved.kind,"semantic-report"); assert.equal(saved.schemaVersion,"personal-report-v4");
   const delivery=await service.deliver(order.reportAccessToken);
+  assert.equal(delivery.filename,"Tian-Min_Тест_1995.pdf");
   assert.equal(delivery.status,200); assert.equal(delivery.buffer.subarray(0,5).toString(),"%PDF-"); assert.ok(delivery.buffer.length>50000);
 });
 

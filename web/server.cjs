@@ -85,13 +85,15 @@ async function handlePremiumDelivery(request,response,premiumService) {
   const result=await premiumService.deliver(token);
   if(result.status!==200) return sendJson(response,result.status,{ error:result.error });
   const disposition=url.searchParams.get("download") === "1" ? "attachment" : "inline";
-  response.writeHead(200,{ "Content-Type":"application/pdf","Content-Disposition":reportContentDisposition(disposition),
+  response.writeHead(200,{ "Content-Type":"application/pdf","Content-Disposition":reportContentDisposition(disposition,result.filename),
     "Content-Length":result.buffer.length,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer" });
   return response.end(result.buffer);
 }
 
-function reportContentDisposition(disposition) {
-  return `${disposition}; filename="${PREMIUM_REPORT_FILENAME}"; filename*=UTF-8''${encodeURIComponent(PREMIUM_REPORT_FILENAME)}`;
+function reportContentDisposition(disposition,personalizedFilename) {
+  const utf8Filename=String(personalizedFilename || PREMIUM_REPORT_FILENAME);
+  const encodedFilename=encodeURIComponent(utf8Filename).replace(/['()*]/gu,character=>`%${character.codePointAt(0).toString(16).toUpperCase()}`);
+  return `${disposition}; filename="${PREMIUM_REPORT_FILENAME}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 async function handleLorentsenWebhook(request, response, premiumService) {
