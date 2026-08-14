@@ -71,7 +71,7 @@ test("v4 PDF является самостоятельным premium-докум�
   assert.match(parsed.text, /Персональный план на 12 месяцев/);
   assert.match(parsed.text, /Итоговая персональная линия/);
   assert.match(parsed.text, /Москва, Россия/);
-  assert.equal(parsed.numpages,36,`Получилось ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages,37,`Получилось ${parsed.numpages} страниц`);
   assert.equal(parsed.info.Title,"Эдуард - Ба-цзы + Цзы Вэй Доу Шу · Персональный разбор");
   assert.equal(parsed.info.Author,"Тянь Мин");
   assert.match(parsed.info.Keywords,/personal-report-v4/);
@@ -79,7 +79,7 @@ test("v4 PDF является самостоятельным premium-докум�
   const pdfDocument=await pdfjs.getDocument({ data:new Uint8Array(result.buffer) }).promise;
   const tocPage=await pdfDocument.getPage(2);
   const tocLinks=(await tocPage.getAnnotations()).filter(annotation=>annotation.subtype==="Link");
-  assert.equal(tocLinks.length,27,"каждый пункт содержания должен иметь internal link");
+  assert.equal(tocLinks.length,28,"каждый пункт содержания должен иметь internal link");
   const destinationPages=[];
   for(const annotation of tocLinks){
     assert.match(String(annotation.dest),/^section-\d+$/);
@@ -87,10 +87,11 @@ test("v4 PDF является самостоятельным premium-докум�
     assert.ok(destination?.[0],annotation.dest);
     destinationPages.push((await pdfDocument.getPageIndex(destination[0]))+1);
   }
-  assert.deepEqual(destinationPages,[3,4,5,6,7,8,10,11,13,15,16,17,18,19,21,22,23,24,25,26,27,28,29,32,34,35,36]);
+  assert.deepEqual(destinationPages,[3,4,5,6,7,8,10,11,13,15,16,17,18,19,21,22,23,24,25,26,27,28,29,30,33,35,36,37]);
   const outline=await pdfDocument.getOutline();
   assert.equal(outline.some(item=>item.title==="Как читать этот отчёт"),true);
   assert.equal(outline.some(item=>item.title==="Методология и границы интерпретации"),true);
+  assert.equal(outline.some(item=>item.title==="Техническая основа отчёта"),true);
   const normalizedText=parsed.text.replace(/\s+/gu," ");
   const opening=["Содержание","Ваша карта · Ба-цзы","Ваша карта · Пять элементов","Ваша карта · Цзы Вэй","Ваше место на временной карте","Как читать этот отчёт","Ваш портрет в двух минутах"].map((title,index)=>index===0?normalizedText.indexOf(title):normalizedText.lastIndexOf(title));
   assert.equal(opening.every((position,index)=>position>=0&&(index===0||position>opening[index-1])),true,opening.join(" < "));
@@ -115,6 +116,12 @@ test("v4 PDF является самостоятельным premium-докум�
   for(const area of ["Карьера","Финансы","Отношения","Самовыражение","Окружение"])assert.match(parsed.text,new RegExp(area,"i"));
   assert.match(parsed.text,/ОБЩИЙ ВЫВОД/i);
   assert.doesNotMatch(parsed.text,/\bСИНТЕЗ\b|ДОПОЛНИТЕЛЬНЫЕ АКЦЕНТЫ/i);
+  assert.match(parsed.text,/6\s+КАК ВСЁ СВЯЗАНО/i);
+  assert.match(parsed.text,/Основной персональный разбор завершён на предыдущей странице/i);
+  assert.match(parsed.text,/Скрытые стволы — элементы внутри земных ветвей/i);
+  assert.match(parsed.text,/сами по себе они не описывают буквальные события/i);
+  assert.match(parsed.text,/Дворцы расположены в традиционном порядке карты/i);
+  assert.match(parsed.text,/нулевой возраст в этой шкале не используется/i);
 });
 
 test("systemic renderer использует динамические Day Master, balance, palace и Ten Gods", async () => {
@@ -138,7 +145,7 @@ test("systemic renderer использует динамические Day Master
     if(present.has(original)){assert.match(glossary,new RegExp(name));assert.ok(tenGodMeaning(original));}
     else assert.doesNotMatch(glossary,new RegExp(name));
   }
-  assert.equal(parsed.numpages,36,`distinct: ${parsed.numpages} страниц`);
+  assert.equal(parsed.numpages,37,`distinct: ${parsed.numpages} страниц`);
   const renderer=require("node:fs").readFileSync(require("node:path").join(__dirname,"../lib/pdf-template-v4.cjs"),"utf8");
   assert.doesNotMatch(renderer,/Александр|1995-09-03|05:50/u);
   assert.match(renderer,/function row\([^)]*metaWidth=145/u);
@@ -334,6 +341,22 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
   const approximate=review.find(value=>value.key==="approximate");
   const longStressSentence="Ценность становится понятнее, когда путь от исходной неопределённости до принятого решения можно показать на одном завершённом примере.";
   assert.equal((JSON.stringify(long.report).match(new RegExp(longStressSentence.replace(/[.*+?^${}()|[\]\\]/g,"\\$&"),"g"))||[]).length,1);
+  const singleAdditionalReport=structuredClone(exact.report);
+  singleAdditionalReport.strengths=singleAdditionalReport.strengths.slice(0,5);
+  singleAdditionalReport.challenges=singleAdditionalReport.challenges.slice(0,5);
+  singleAdditionalReport.challenges[0].pattern="Самонаказание как традиционная связь ветвей";
+  assert.equal(singleAdditionalReport.strengths.slice(4).length,1,"fixture покрывает один дополнительный ресурс");
+  assert.equal(singleAdditionalReport.challenges.slice(4).length,1,"fixture покрывает одну дополнительную точку роста");
+  const singleAdditionalPdf=await createPdfRequest({ ...exact.input,report:singleAdditionalReport },{ hasFullReport:true });
+  assert.equal(singleAdditionalPdf.status,200);
+  const singleAdditionalText=(await pdfParse(singleAdditionalPdf.buffer)).text;
+  assert.match(singleAdditionalText,/дополнительные\s+ресурсы\s+собраны\s+компактно\s+ниже/i);
+  assert.match(singleAdditionalText,/дополнительные\s+ситуации\s+для\s+наблюдения\s+собраны\s+компактно\s+ниже/i);
+  assert.match(singleAdditionalText,/«Наказание» — традиционное название типа взаимодействия земных ветвей/i);
+  assert.equal(exact.evidenceCatalog.items.some(value=>value.id.startsWith("ziwei.palace.")&&Array.isArray(value.data?.mainStars)&&value.data.mainStars.length===0),true,"fixture покрывает дворец без главной звезды");
+  assert.equal(String(exact.calculationMetadata.calculationSensitivity).toUpperCase()==="HIGH"||Object.values(exact.calculationMetadata.sensitivityFlags||{}).some(Boolean),true,"Exact fixture покрывает high sensitivity");
+  const palaceStarts=exact.evidenceCatalog.items.filter(value=>value.id.startsWith("ziwei.age_period.")).map(value=>value.data?.startAge).filter(Number.isFinite);
+  assert.equal(palaceStarts.some((value,index)=>index>0&&value<palaceStarts[index-1]),true,"fixture покрывает обратное направление возрастных дворцов");
   assert.deepEqual(
     { ...exact.input,birthTimeCertainty:undefined },
     { ...approximate.input,birthTimeCertainty:undefined },
@@ -356,13 +379,16 @@ test("v4 renderer выдерживает exact, approximate и внутренн�
     assert.equal(pages.every(text=>text.replace(/\s+/g,"").length>25),true,`${variant.key}: пустая или случайная страница`);
     assert.match(parsed.text,/Итоговая персональная линия/i);
     assert.doesNotMatch(parsed.text,/(?:bazi|ziwei|time)\.[a-z0-9_.-]+|\[object Object\]|[\u0000\uFFFD\uFFFE\uFFFF]/iu);
-    assert.equal(parsed.numpages,36,`${variant.key}: ${parsed.numpages} страниц`);
+    assert.equal(parsed.numpages,37,`${variant.key}: ${parsed.numpages} страниц`);
     assert.doesNotMatch(parsed.text,/raw JSON|evidence ID|calculation core|provider|parser|renderer|terracotta|jade|sage|sand|\bscore\b|\bHIGH\b|\bNORMAL\b|конфигурац/i);
     const highSensitivity=String(variant.calculationMetadata.calculationSensitivity).toUpperCase()==="HIGH"||Object.values(variant.calculationMetadata.sensitivityFlags||{}).some(Boolean);
-    assert.equal((parsed.text.match(/Зависит от времени рождения/gu)||[]).length,highSensitivity?2:0,`${variant.key}: знак чувствительности должен быть только в руководстве и текущем периоде`);
+    const sensitivityMentions=parsed.text.match(/зависит от времени рождения/giu)||[];
+    assert.equal(sensitivityMentions.length,highSensitivity?3:1,`${variant.key}: два знака чувствительности дополняют одну строку о границах точности`);
     if(variant.key==="long"){
       const relationshipText=parsed.text.slice(parsed.text.indexOf("Отношения и границы"),parsed.text.indexOf("Как вас видят"));
       assert.equal((relationshipText.match(/Самостоятельность здесь не противостоит привязанности/giu)||[]).length,1,"Long relationship duplicate должен удаляться общим renderer rule");
+      assert.match(parsed.text,/Последовательное\s+согласование\s+долгосрочных\s+приоритетов[\s\S]{0,260}личной\s+ответственности/i);
+      assert.match(parsed.text,/Дополнительная\s+проверка\s+показывает[\s\S]{0,420}принимать\s+решения/i,"длинный synthesis вывод должен сохраняться целиком");
     }
     if(variant.key==="approximate"){
       assert.match(parsed.text,/Время (?:рождения )?(?:указано|указали) приблизительно/i);

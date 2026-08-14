@@ -202,6 +202,7 @@ function hasBrokenPlaceholder(value) {
   const text = String(value).trim();
   return /^(?:-|–|—|undefined|null|nan)$/i.test(text)
     || /(?:столкновени\p{L}*|сочетани\p{L}*|соединени\p{L}*|вред\p{L}*)\s*[-–—](?=[\s.,;]|$)/iu.test(text)
+    || /(?:связана\s+с\s*(?:[;,.!?—-]|$)|с\s+дворцом\s*[—-]|Ба-цзы\s*[—-]\s*(?:[;,.!?]|$))/iu.test(text)
     || /\b(?:undefined|null|nan)\b/i.test(text);
 }
 

@@ -115,6 +115,29 @@ test("yearly themes имеют evidence конкретного года и не 
   assert.equal(validatePersonalReport(hostile,{ evidenceCatalog:context.evidenceCatalog }).valid,false);
 });
 
+test("незаполненные annual и palace clauses блокируются до PDF", () => {
+  const { context } = contextFor();
+  for (const brokenText of [
+    "Годовая тема Ба-цзы связана с ;",
+    "Сопоставление Цзы Вэй с дворцом — лишь тематическая рамка.",
+    "Годовая тема Ба-цзы — ;",
+  ]) {
+    const report=createMockReport(context);
+    report.yearlyOutlook[0].theme=brokenText;
+    const validation=validatePersonalReport(report,{ evidenceCatalog:context.evidenceCatalog });
+    assert.equal(validation.valid,false,brokenText);
+    assert.match(validation.errors.join("\n"),/незаполненный шаблон/);
+  }
+});
+
+test("annual age использует традиционную шкалу и не зависит от дня рождения внутри года", () => {
+  const birthInput={ ...input,date:"1995-12-31" };
+  const calculation=calculateBirthChart(birthInput);
+  const context=buildReportContext(calculation,{ displayName:"Тест" },{ model:"mock-v1",reportYears:[2025,2026,2027] });
+  const annual=context.evidenceCatalog.items.find(value=>value.id==="bazi.annual.2025");
+  assert.equal(annual.data.age,31,"2025 − 1995 + 1: год рождения считается первым независимо от дня рождения");
+});
+
 test("action plan ссылается на существующие executive insights", () => {
   const { context } = contextFor();
   const report = createMockReport(context);
