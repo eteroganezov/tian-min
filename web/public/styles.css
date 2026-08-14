@@ -144,6 +144,7 @@ html{overflow-x:hidden}body{overflow-x:visible}
 /* Free Result Variant B iteration 2: compact orientation, two honest map disclosures, then synthesis. */
 .preview-cover{padding-bottom:54px}.result-orientation{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-width:700px;margin:28px auto 0;text-align:left}.result-orientation article{min-width:0;padding:18px 20px;border:1px solid var(--line);border-radius:10px;background:var(--paper)}.result-orientation span{display:block;color:var(--gold);font-size:9px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.result-orientation p{display:flex;align-items:center;gap:10px;margin:10px 0 0;color:var(--jade)}.result-orientation p>b{color:var(--red);font:28px/1 "Songti SC",serif}.result-orientation strong{font:500 18px/1.25 "Iowan Old Style",Georgia,serif}.result-orientation small{display:block;margin-top:5px;color:var(--muted);font-size:9px}.map-proof{padding:66px 0 74px}.map-proof-heading{display:grid;grid-template-columns:.75fr 1fr 1.25fr;gap:28px;align-items:end;margin-bottom:24px}.map-proof-heading .section-label{margin:0}.map-proof-heading h2{margin:0;font:500 38px/1.1 "Iowan Old Style",Georgia,serif}.map-proof-heading>p:last-child{margin:0;color:var(--muted);font-size:11px;line-height:1.65}.map-disclosures{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;align-items:start}.technical-disclosure{min-width:0;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:var(--white)}.technical-disclosure[data-expanded="true"]{grid-column:1/-1}.technical-disclosure-trigger{display:flex;align-items:center;justify-content:space-between;gap:20px;width:100%;min-height:126px;padding:22px 24px;border:0;background:#fbf8f1;color:var(--ink);text-align:left;cursor:pointer}.technical-disclosure-trigger:hover{background:#f2ecdf}.technical-disclosure-trigger:focus-visible{position:relative;z-index:2;outline:3px solid var(--gold);outline-offset:-3px}.technical-disclosure-trigger>span{display:flex;min-width:0;flex-direction:column;gap:7px}.technical-disclosure-trigger b{font:500 23px/1.2 "Iowan Old Style",Georgia,serif}.technical-disclosure-trigger small{color:var(--muted);font-size:10px;line-height:1.45}.disclosure-action{margin-top:5px;color:var(--jade);font-size:9px;font-style:normal;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.technical-disclosure-trigger>i{display:grid;place-items:center;width:36px;height:36px;flex:0 0 36px;border:1px solid var(--line);border-radius:50%;color:var(--jade);font:normal 20px/1 sans-serif;transition:transform .18s ease}.technical-disclosure-trigger[aria-expanded="true"]>i{transform:rotate(45deg)}.technical-disclosure-panel[hidden]{display:none}.technical-disclosure-panel{padding:0 24px;box-sizing:border-box}.technical-disclosure-panel .preview-section{border-top:0}.technical-explainer{margin:0;color:var(--muted)}.technical-explainer b{display:block;margin-bottom:7px;color:var(--jade);font-size:11px}.technical-explainer p{margin:0;font-size:11px;line-height:1.65}.ten-gods-note{max-width:760px;margin:30px 0 0;padding:18px 20px;border-left:3px solid var(--gold);background:var(--paper)}.ten-gods-note b{color:var(--jade);font-size:11px}.ten-gods-note p{margin:7px 0 0;color:var(--muted);font-size:10px;line-height:1.65}.pillars-grid small>i{display:block;margin-top:4px;font-style:normal;font-size:8px;line-height:1.35}.technical-disclosure-panel .ziwei-facts{margin-top:34px}.technical-disclosure-panel .ziwei-section>.current-palace{margin:18px 0 0}.early-premium-bridge{padding:76px 0}.early-premium-bridge h2{font-size:clamp(36px,4.4vw,52px)}.early-premium-bridge .premium-action{margin-top:30px}
 .birth-date-field{min-width:0;margin-inline:0;padding:0;border:0}.birth-date-field>legend{padding:0;color:var(--ink);font-size:10px;font-weight:750}.birth-date-parts{display:grid;grid-template-columns:.62fr 1.45fr .9fr;gap:7px;margin-top:8px}.birth-date-parts label{display:grid;min-width:0;gap:6px}.birth-date-parts label>span{color:var(--muted);font-size:8px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}.birth-date-parts input,.birth-date-parts select{display:block;width:100%;min-width:0;height:52px;box-sizing:border-box;padding:0 11px;border:1px solid rgba(24,34,31,.16);border-radius:8px;background:#fffefa;color:var(--ink);font-size:16px}.birth-date-parts select{padding-right:6px}.birth-date-parts input:focus,.birth-date-parts select:focus{border-color:var(--gold);outline:3px solid rgba(169,128,67,.13)}
+.birth-date-native{display:none}
 @media(max-width:760px){.preview-cover{padding-bottom:44px}.result-orientation{grid-template-columns:1fr;gap:8px;margin-top:22px}.result-orientation article{padding:15px 17px}.result-orientation p{margin-top:7px}.map-proof{padding:46px 0 54px}.map-proof-heading{display:block;margin-bottom:18px}.map-proof-heading h2{margin-top:8px;font-size:32px}.map-proof-heading>p:last-child{margin-top:10px}.map-disclosures{grid-template-columns:1fr;gap:8px}.technical-disclosure[data-expanded="true"]{grid-column:auto}.technical-disclosure-trigger{min-height:96px;padding:17px 18px}.technical-disclosure-trigger b{font-size:20px}.technical-disclosure-panel{padding:0 16px}.technical-disclosure-panel .preview-section{padding-block:38px}.technical-explainer{margin-top:4px}.ten-gods-note{margin-top:24px;padding:16px}.technical-disclosure-panel .ziwei-facts{margin-top:26px}.early-premium-bridge{padding:56px 0}.early-premium-bridge h2{font-size:35px}}
 @media(max-width:390px){.preview-cover h2{font-size:38px}.technical-disclosure-trigger{gap:12px;padding-inline:15px}.technical-disclosure-panel{padding-inline:12px}.birth-date-parts{grid-template-columns:.62fr 1.38fr .9fr;gap:5px}.birth-date-parts input,.birth-date-parts select{padding-inline:8px}.birth-date-parts label>span{font-size:7px}}
 
@@ -163,9 +164,12 @@ html{overflow-x:hidden}body{overflow-x:visible}
   .birth-form .form-heading{padding-bottom:0;border-bottom:0}
   .birth-form .field{margin-top:13px}
   .birth-form .form-row{gap:10px}
-  .birth-form .birth-date-parts{gap:7px;margin-top:6px}
-  .birth-form .birth-date-parts label{gap:4px}
-  .birth-form .birth-date-parts input,.birth-form .birth-date-parts select{height:44px}
+  .birth-form .birth-date-field,.birth-form .birth-date-field+.field{grid-column:auto}
+  .birth-form .birth-date-parts{display:none}
+  .birth-form .birth-date-native{display:block;margin-top:8px}
+  .birth-form .birth-date-native input{display:block;width:100%;height:46px;box-sizing:border-box;padding:0 13px;border:1px solid rgba(24,34,31,.16);border-radius:8px;background:#fffefa;color:var(--ink);font-size:16px}
+  .birth-form .birth-date-native input:focus{border-color:var(--gold);outline:3px solid rgba(169,128,67,.13)}
+  .birth-form .birth-date-field .field-help{display:none}
   .birth-form .field input{height:46px}
   .birth-form .time-certainty-field{margin-top:14px}
   .birth-form .time-certainty-options span{min-height:42px;padding-block:10px}
@@ -195,13 +199,13 @@ html{overflow-x:hidden}body{overflow-x:visible}
   .ziwei-section>.current-palace{margin-top:22px}
   .palaces-guide{max-width:720px;margin:48px 0 20px;padding:4px 0 4px 22px;background:transparent}
   .technical-chart{border-width:1px 0;background:transparent}
-  .technical-chart>summary{padding-inline:0}
+  .technical-chart>summary,.technical-chart[open]>summary{padding-inline:0;background:transparent}
   .palaces-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:12px 0;border-top:1px solid rgba(24,34,31,.12)}
-  .palaces-grid article.palace-card{border-color:rgba(24,34,31,.1);border-radius:8px;background:rgba(255,253,248,.62)}
-  .palaces-grid article.palace-card.active{border-color:rgba(169,128,67,.65);box-shadow:inset 0 3px var(--gold)}
-  .palace-trigger{padding:19px 18px}
-  .palace-trigger:hover{background:rgba(246,240,226,.62)}
-  .palace-explanation{padding-inline:18px;background:rgba(246,240,226,.46)}
+  .palaces-grid article.palace-card{border-width:1px 0 0;border-color:rgba(24,34,31,.12);border-radius:0;background:transparent}
+  .palaces-grid article.palace-card.active{border-color:var(--gold);box-shadow:none}
+  .palace-trigger{padding:19px 8px 21px}
+  .palace-trigger:hover{background:rgba(246,240,226,.4)}
+  .palace-explanation{padding-inline:8px;background:rgba(246,240,226,.38)}
 }
 
 @media(min-width:761px) and (max-width:959px){

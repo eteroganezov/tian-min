@@ -38,9 +38,13 @@ test("date UI exposes explicit accessible day, month and year controls", () => {
   assert.match(html, /<span>Месяц<\/span><select id="birth-month"[^>]*autocomplete="bday-month"/);
   assert.match(html, /<span>Год<\/span><input id="birth-year"[^>]*inputmode="numeric"[^>]*autocomplete="bday-year"/);
   assert.match(html, /id="birth-date" name="date" type="hidden"/);
+  assert.match(html, /id="birth-date-desktop" type="date"[^>]*autocomplete="bday"/);
   assert.match(html, /ДД\.ММ\.ГГГГ/);
   assert.match(styles, /\.birth-date-parts input:focus,\.birth-date-parts select:focus/);
   assert.match(styles, /\.birth-date-field,\.birth-date-field\+\.field\{grid-column:1\/-1\}/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.birth-form \.birth-date-field,\.birth-form \.birth-date-field\+\.field\{grid-column:auto\}/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.birth-form \.birth-date-parts\{display:none\}/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.birth-form \.birth-date-native\{display:block/);
 });
 
 test("full DD.MM.YYYY paste distributes values and syncs canonical date", () => {
@@ -48,7 +52,20 @@ test("full DD.MM.YYYY paste distributes values and syncs canonical date", () => 
   assert.match(script, /birthDayInput\.value = match\[1\]\.padStart\(2, "0"\)/);
   assert.match(script, /birthMonthInput\.value = match\[2\]\.padStart\(2, "0"\)/);
   assert.match(script, /birthYearInput\.value = match\[3\]/);
-  assert.match(script, /birthDateInput\.value = normalizeBirthDateParts/);
+  assert.match(script, /birthDateInput\.value = value/);
+});
+
+test("desktop native date and mobile parts synchronize one canonical date state", () => {
+  const syncToDesktop = script.match(/function syncBirthDateValue\(\) \{[\s\S]*?\n\}/u)?.[0] || "";
+  const syncToParts = script.match(/function syncBirthDatePartsFromDesktop\(\) \{[\s\S]*?\n\}/u)?.[0] || "";
+  assert.match(syncToDesktop, /normalizeBirthDateParts\(birthDayInput\.value, birthMonthInput\.value, birthYearInput\.value\)/);
+  assert.match(syncToDesktop, /birthDateInput\.value = value/);
+  assert.match(syncToDesktop, /birthDesktopDateInput\.value = value/);
+  assert.match(syncToParts, /birthYearInput\.value = match\[1\]/);
+  assert.match(syncToParts, /birthMonthInput\.value = match\[2\]/);
+  assert.match(syncToParts, /birthDayInput\.value = match\[3\]/);
+  assert.match(script, /birthDesktopDateInput\.addEventListener\("input", syncBirthDatePartsFromDesktop\)/);
+  assert.equal((html.match(/name="date"/g) || []).length, 1);
 });
 
 test("submit validates parts before FormData and sends the existing date field", () => {

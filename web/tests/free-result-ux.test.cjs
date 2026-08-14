@@ -123,6 +123,9 @@ test("responsive presentation раскрывает editorial proof на desktop 
   assert.match(script, /syncTechnicalDisclosures\(\)/);
   assert.match(styles, /@media\(min-width:960px\)[^]*\.technical-disclosure-trigger\{display:none\}/);
   assert.match(styles, /@media\(min-width:960px\)[^]*\.technical-disclosure\{overflow:visible;border:0/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.map-proof-heading\{display:block/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.palaces-grid article\.palace-card\{border-width:1px 0 0[^}]*border-radius:0[^}]*background:transparent/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.technical-chart>summary,\.technical-chart\[open\]>summary\{[^}]*background:transparent/);
   assert.match(styles, /@media\(max-width:760px\)[^]*\.map-disclosures\{grid-template-columns:1fr/);
   assert.match(styles, /\.technical-disclosure-panel\{[^}]*box-sizing:border-box/);
   assert.match(styles, /html\{overflow-x:hidden\}/);

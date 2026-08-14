@@ -14,6 +14,7 @@ const heroLayout = document.querySelector(".hero-layout");
 const mobileFormSlot = document.querySelector("#mobile-form-slot");
 const timeCertaintyHelper = document.querySelector("#time-certainty-helper");
 const birthDateInput = document.querySelector("#birth-date");
+const birthDesktopDateInput = document.querySelector("#birth-date-desktop");
 const birthDayInput = document.querySelector("#birth-day");
 const birthMonthInput = document.querySelector("#birth-month");
 const birthYearInput = document.querySelector("#birth-year");
@@ -61,6 +62,7 @@ if (typeof addEventListener === "function") addEventListener("orientationchange"
 }));
 birthMonthInput.addEventListener("change", syncBirthDateValue);
 [birthDayInput, birthMonthInput, birthYearInput].forEach(input => input.addEventListener("paste", pasteBirthDate));
+birthDesktopDateInput.addEventListener("input", syncBirthDatePartsFromDesktop);
 
 placeInput.addEventListener("input", () => {
   selectedPlace = null;
@@ -751,7 +753,24 @@ function normalizeBirthDateParts(dayValue, monthValue, yearValue, todayValue = n
 }
 
 function syncBirthDateValue() {
-  birthDateInput.value = normalizeBirthDateParts(birthDayInput.value, birthMonthInput.value, birthYearInput.value).value;
+  const value = normalizeBirthDateParts(birthDayInput.value, birthMonthInput.value, birthYearInput.value).value;
+  birthDateInput.value = value;
+  birthDesktopDateInput.value = value;
+}
+
+function syncBirthDatePartsFromDesktop() {
+  const match = String(birthDesktopDateInput.value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/u);
+  if (!match) {
+    birthDayInput.value = "";
+    birthMonthInput.value = "";
+    birthYearInput.value = "";
+    birthDateInput.value = "";
+    return;
+  }
+  birthYearInput.value = match[1];
+  birthMonthInput.value = match[2];
+  birthDayInput.value = match[3];
+  syncBirthDateValue();
 }
 
 function pasteBirthDate(event) {
