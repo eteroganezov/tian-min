@@ -53,7 +53,7 @@ In the first two real-user tests, both users selected `approximate` / ±30 minut
 - Production uses the personal-first **Free Result Variant B** (`b31bcbe2494351cb11756c5fe244c174914eb372`). It presents personal meaning first, calculation proof second, Premium value next and professional detail through progressive disclosure. Technical depth was not removed.
 - The technical-first Variant A remains preserved at commit `34f7358d4e3f1dc704cdfedc9439a9d4ea36920b` and tag `free-result-v1-technical-first`. Do not build automated A/B infrastructure yet; compare qualitative observations after 3–5 additional Variant B tests.
 - The free Zi Wei result explains the 12 life-area palaces in human language. Palace cards use local static accessible disclosures for generic sphere meanings; calculated stars and age periods remain unchanged, while the Premium bridge clearly reserves personal interpretation for the existing paid flow.
-- WEB visual v1 is **FROZEN**. Do not continue cosmetic polish without a separate material requirement.
+- WEB visual v1 is **FROZEN**. Variant B Iteration 2, including its final Free→Premium framing micro-polish, is frozen for the next 3–5 real-user tests. Do not continue subjective frontend iteration without repeated user feedback, an objective bug or conversion/analytics evidence.
 
 Run from `web/`:
 

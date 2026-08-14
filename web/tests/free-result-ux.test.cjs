@@ -10,13 +10,23 @@ const script = fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js")
 const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
 
 test("Variant B iteration 2 интегрирует два dynamic orientation facts без отдельной сухой секции", () => {
-  assert.match(script, /ваша персональная карта готова/);
+  assert.match(script, /Ваша персональная карта рассчитана/);
   assert.match(script, /Главный знак[\s\S]*data\.bazi\.dayMaster/);
   assert.match(script, /personalStemName\(data\.bazi\.dayMasterDisplay\?\.name\)/);
   assert.match(script, /Текущий жизненный этап[\s\S]*current\.years/);
   assert.doesNotMatch(script, /Что карта показывает сейчас|class="personal-first"|Ваша текущая сфера Цзы Вэй/);
   const opening = script.slice(script.indexOf('class="preview-cover'), script.indexOf('class="map-proof'));
   assert.doesNotMatch(opening, /Грабитель богатства|Семь убийц|Небесный ствол|Земная ветвь|Хуа Лу|Хуа Цюань/);
+});
+
+test("final framing отделяет calculated map data от полного персонального разбора", () => {
+  assert.match(script, /Ваша персональная карта рассчитана/);
+  assert.match(script, /Ниже — основные данные двух систем, из которых складывается ваша карта\./);
+  assert.match(script, /В полном персональном разборе мы объясняем, что их сочетание означает именно для вас\./);
+  const endingNote = "Это рассчитанные данные, из которых строится ваша карта. Персональный смысл этих данных раскрывается в полном разборе.";
+  assert.equal(script.split(endingNote).length - 1, 2);
+  assert.match(styles, /\.map-ending-note\{/);
+  assert.doesNotMatch(script, /Поделиться PDF|navigator\.share/);
 });
 
 test("technical proof сохраняет 12 дворцов и границу между generic data и Premium meaning", () => {

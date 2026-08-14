@@ -137,15 +137,15 @@ async function submitFreeCalculation(timeOccurrence) {
 }
 
 function renderFreePreview(data) {
-  const name = data.person.displayName;
   const current = data.bazi.currentPeriod;
   const currentPalace = data.ziwei.currentPalace;
   const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
   return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
     <header class="preview-cover shell">
       <p class="section-label">Расчёт завершён</p>
-      <h2>${name ? `${e(name)}, ваша персональная карта готова` : "Ваша персональная карта готова"}</h2>
-      <p>Обе системы рассчитаны по вашим данным рождения.</p>
+      <h2>Ваша персональная карта рассчитана</h2>
+      <p>Ниже — основные данные двух систем, из которых складывается ваша карта.</p>
+      <p class="preview-interpretation-note">В полном персональном разборе мы объясняем, что их сочетание означает именно для вас.</p>
       <div class="birth-summary"><span>${e(formatDate(data.person.date))}</span><span>${e(data.person.time)}${data.person.birthTimeCertainty === "approximate" ? " · указано примерно" : ""}</span><span>${e(data.person.birthPlace?.label || "")}</span></div>
       <div class="result-orientation" aria-label="Короткие ориентиры карты">
         <article><span>Главный знак</span><p><b>${e(data.bazi.dayMaster)}</b><strong>${e(personalStemName(data.bazi.dayMasterDisplay?.name))}</strong></p></article>
@@ -170,6 +170,7 @@ function renderFreePreview(data) {
               <article><span>Текущий большой период</span><h3>${current ? e(current.years) : "Не определён"}</h3>${current ? `<div class="current-period-ganzhi"><b>${e(current.ganZhi)}</b><small>${e(current.gan)} · ${e(compactStemName(current.stemDisplay.name))}<br>${e(current.zhi)} · ${e(compactBranchName(current.branchDisplay.name))}</small></div><p>${e(current.range)} · ${e(current.detailDisplay.map(item => item.name).join(" · "))}</p>` : "<p>Период не входит в первые рассчитанные циклы.</p>"}</article>
             </div>
             <div class="elements-card"><div><span>Пять элементов</span><h3>Внутреннее соотношение карты</h3><p>Рассчитанное присутствие Дерева, Огня, Земли, Металла и Воды.</p></div><div class="elements-bars">${data.bazi.elements.map(item => `<div><b>${e(item.name)} <small>${e(item.original)}</small></b><i><span style="width:${Math.max(4, Number(item.value) / maxElement * 100)}%"></span></i><strong>${e(item.displayValue ?? item.value)}</strong></div>`).join("")}</div></div>
+            <p class="map-ending-note">Это рассчитанные данные, из которых строится ваша карта. Персональный смысл этих данных раскрывается в полном разборе.</p>
           </section>
         </div>
       </section>
@@ -189,6 +190,7 @@ function renderFreePreview(data) {
             <div class="palaces-guide"><h3>Что показывают 12 дворцов?</h3><p>Карта Цзы Вэй делит жизненный путь на 12 сфер: отношения, работу, деньги, окружение, внутреннее состояние и другие области. Звёзды внутри показывают рассчитанные акценты каждой сферы.</p><p>Короткие пояснения карточек описывают только саму жизненную сферу, не персональное значение звёзд.</p></div>
             <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть 12 дворцов</b><b class="disclosure-close">Скрыть 12 дворцов</b><small>Нажмите на дворец, чтобы узнать значение жизненной сферы</small></span><i aria-hidden="true"></i></summary><div class="palaces-direction-note">Возрастные периоды проходят по дворцам в направлении, рассчитанном для вашей карты, поэтому соседние значения могут идти не по возрастанию.</div><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
             <article class="current-palace" id="current-life-period"><div><span>Текущая возрастная сфера · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определена")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
+            <p class="map-ending-note">Это рассчитанные данные, из которых строится ваша карта. Персональный смысл этих данных раскрывается в полном разборе.</p>
           </section>
         </div>
       </section>
@@ -512,19 +514,19 @@ async function simulatePayment(orderId, outcome) {
 }
 
 function renderPaidState(host, order) {
-  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Доступ подтверждён</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает немного времени.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="${e(order.status)}"><p class="section-label">Доступ подтверждён</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает 1–3 минуты.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
   void api("/api/premium/generate",{ orderId:order.orderId }).then(result=>renderPaymentState(result.order)).catch(error=>showPremiumError(error.message));
 }
 
 function renderGeneratingState(host,order) {
-  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="REPORT_GENERATING"><p class="section-label">Персональный разбор</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает немного времени.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
+  host.innerHTML = `<section class="checkout-panel paid-state" data-checkout-state="REPORT_GENERATING"><p class="section-label">Персональный разбор</p><h3>Готовим ваш персональный разбор</h3><p>Обычно это занимает 1–3 минуты.</p><div class="checkout-progress" aria-label="Подготовка отчёта"><i></i></div></section>`;
   scheduleGenerationPoll(order.orderId);
 }
 
 function renderReadyState(host, order) {
   clearTimeout(paymentPollTimer);
   const url=`/api/premium/report/${encodeURIComponent(order.reportAccessToken)}`;
-  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор</p><h3>Ваш персональный разбор готов</h3><p>Отчёт можно открыть прямо в браузере или сохранить как PDF.</p><a class="premium-button" data-action="open-report" href="${e(url)}" target="_blank" rel="noopener noreferrer">Открыть отчёт</a><a class="secondary-checkout-button" data-action="download-report" href="${e(`${url}?download=1`)}" download="tian-min-personal-report.pdf">Скачать PDF</a></section>`;
+  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор</p><h3>Ваш персональный разбор готов</h3><p>Сохраните PDF, чтобы вернуться к нему в любое время.</p><a class="premium-button" data-action="download-report" href="${e(`${url}?download=1`)}" download="tian-min-personal-report.pdf">Сохранить PDF</a><a class="secondary-checkout-button" data-action="open-report" href="${e(url)}" target="_blank" rel="noopener noreferrer">Открыть отчёт</a></section>`;
 }
 
 function scheduleGenerationPoll(orderId) {

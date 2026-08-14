@@ -152,3 +152,7 @@ html{overflow-x:hidden}body{overflow-x:visible}
 @media(max-width:760px){.preview-cover{padding:48px 0 34px}.result-orientation{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin-top:18px}.result-orientation article{padding:13px 14px}.result-orientation p{align-items:flex-start;gap:7px;margin-top:7px}.result-orientation strong{font-size:16px}}
 @media(max-width:390px){.preview-cover h2{font-size:36px}.result-orientation article{padding-inline:11px}.result-orientation span{font-size:8px}.result-orientation p>b{font-size:25px}.result-orientation strong{font-size:15px}}
 .birth-date-field,.birth-date-field+.field{grid-column:1/-1}
+
+/* Variant B final micro-polish: calm map boundaries and report delivery hierarchy. */
+.preview-interpretation-note{max-width:700px;margin:8px auto 0;color:var(--jade)}.map-ending-note{max-width:760px;margin:30px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:10px;line-height:1.65}.ready-state .premium-button,.ready-state .secondary-checkout-button{display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none}.ready-state .secondary-checkout-button{box-sizing:border-box}.ready-state{max-width:680px;margin-inline:auto}
+@media(max-width:620px){.preview-interpretation-note{margin-top:7px}.map-ending-note{margin-top:24px;padding-top:16px}.ready-state{max-width:none}}

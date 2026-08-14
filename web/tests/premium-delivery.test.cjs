@@ -200,13 +200,17 @@ test("production persistence owns atomic generation claim and immutable report i
 
 test("customer UX contains generating, failed, ready, open/download and same-browser recovery without stub copy",()=>{
   const source=fs.readFileSync(path.resolve(__dirname,"../public/app.js"),"utf8");
-  assert.match(source,/Готовим ваш персональный разбор/); assert.match(source,/Обычно это занимает немного времени/);
+  assert.match(source,/Готовим ваш персональный разбор/); assert.match(source,/Обычно это занимает 1–3 минуты\./);
   assert.match(source,/Не удалось подготовить отчёт\. Попробуйте ещё раз\./);
   assert.match(source,/Вернуться к результату/); assert.match(source,/reportGenerationAttempt:order\.reportGenerationAttempt/);
-  assert.match(source,/Ваш персональный разбор готов/); assert.match(source,/>Открыть отчёт</); assert.match(source,/>Скачать PDF</);
+  assert.match(source,/Ваш персональный разбор готов/); assert.match(source,/Сохраните PDF, чтобы вернуться к нему в любое время\./);
+  assert.match(source,/class="premium-button" data-action="download-report"[^>]*>Сохранить PDF</);
+  assert.match(source,/class="secondary-checkout-button" data-action="open-report"[^>]*>Открыть отчёт</);
+  assert.ok(source.indexOf('data-action="download-report"') < source.indexOf('data-action="open-report"'));
   assert.match(source,/\/api\/premium\/report\/\$\{encodeURIComponent\(order\.reportAccessToken\)\}/);
   assert.match(source,/localStorage\.getItem\("tianMinOrderId"\)/); assert.match(source,/scheduleGenerationPoll/);
   assert.doesNotMatch(source,/Тестовый отчёт сохранён|Открыть тестовый результат|Report ID:/);
   const styles=fs.readFileSync(path.resolve(__dirname,"../public/styles.css"),"utf8");
   assert.match(styles,/checkout-progress-indeterminate/); assert.doesNotMatch(styles,/\.checkout-progress i\{display:block;width:65%/);
+  assert.doesNotMatch(source,/Поделиться PDF|Web Share|navigator\.share/);
 });
