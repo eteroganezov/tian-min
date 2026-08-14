@@ -33,7 +33,7 @@ let premiumConfig = null;
 let activePremiumOrder = null;
 let paymentPollTimer = null;
 let premiumRefreshPromise = null;
-let paymentViewDismissed = false;
+let lastPremiumViewState = null;
 const generationRequestedOrders = new Set();
 
 const mobileFormMedia = typeof matchMedia === "function" ? matchMedia("(max-width: 620px)") : null;
@@ -304,7 +304,6 @@ async function openPremiumOffer() {
       return;
     }
     if (activePremiumOrder && (activePremiumOrder.accessReason === "complimentary_promo" || ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(activePremiumOrder.status))) {
-      paymentViewDismissed = false;
       await refreshPremiumOrder("resume", { force: true });
       return;
     }
@@ -313,7 +312,6 @@ async function openPremiumOffer() {
       return;
     }
     if (isActivePaymentOrder(activePremiumOrder)) {
-      paymentViewDismissed = false;
       await refreshPremiumOrder("resume", { force: true });
       return;
     }
@@ -390,9 +388,12 @@ function renderComplimentaryState(host, order) {
 
 function renderPaymentState(order) {
   activePremiumOrder = order;
-  paymentViewDismissed = false;
   const host = document.querySelector(".premium-action") || resultRoot;
+  const viewState = premiumViewState(order);
+  const shouldRevealTransition = Boolean(lastPremiumViewState && lastPremiumViewState !== viewState && ["PAYMENT", "GENERATION", "READY"].includes(viewState));
+  lastPremiumViewState = viewState;
   clearTimeout(paymentPollTimer);
+  try {
   if (order.status === "REPORT_READY") return renderReadyState(host, order);
   if (order.status === "REPORT_FAILED") {
     host.innerHTML = `<section class="checkout-panel" data-checkout-state="REPORT_FAILED"><p class="section-label">Персональный разбор</p><h3>Не удалось подготовить отчёт. Попробуйте ещё раз.</h3><p>Доступ сохранён. Повторная попытка не создаст новый заказ, платёж или промокод.</p><button type="button" class="premium-button" data-action="retry-generation">Попробовать ещё раз</button><button type="button" class="secondary-checkout-button" data-action="leave-generation">Вернуться к результату</button></section>`;
@@ -421,6 +422,9 @@ function renderPaymentState(order) {
   }
   host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="${e(order.status)}"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Проверка платёжного сценария</h3><p>Реальные деньги не списываются. Эта панель недоступна в production.</p><div class="payment-notice">Статус оплаты: ожидает подтверждения</div><button type="button" class="premium-button" data-outcome="succeeded">Симулировать успешную оплату</button><button type="button" class="secondary-checkout-button" data-outcome="failed">Симулировать ошибку оплаты</button></section>`;
   host.querySelectorAll("[data-outcome]").forEach(button => button.addEventListener("click", () => simulatePayment(order.orderId, button.dataset.outcome)));
+  } finally {
+    if (shouldRevealTransition) revealCheckout(host);
+  }
 }
 
 function leaveGenerationFailure() {
@@ -437,11 +441,11 @@ function renderConsentCheckout(order, options = {}) {
   if (!config?.consent) return showPremiumError("Платёжная форма пока не настроена.");
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="CONSENT">
     <p class="section-label">Оплата полного разбора</p><h3>${e(formatPrice(order.amount, order.currency))}</h3>
-    <label class="checkout-field">Email для оформления покупки<input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done" required></label>
+    <label class="checkout-field">Email для оформления покупки<input type="email" name="payerEmail" autocomplete="email" inputmode="email" enterkeyhint="done" required value="${e(options.email ?? order.checkoutEmail ?? "")}"></label>
     <label class="consent-check"><input type="checkbox" name="termsAccepted"><span>Я принимаю <a href="${e(config.consent.termsUrl)}" target="_blank" rel="noopener noreferrer">условия покупки сертификата Lorentsen</a> и <a href="${e(config.consent.privacyUrl)}" target="_blank" rel="noopener noreferrer">политику конфиденциальности</a></span></label>
     <label class="consent-check"><input type="checkbox" name="autoRedemptionAccepted"><span>Я согласен, что сертификат, приобретаемый этой оплатой, будет немедленно погашен у партнёра «${e(config.partnerPublicName)}». <a href="${e(config.consent.autoRedemptionTermsUrl)}" target="_blank" rel="noopener noreferrer">Подробнее</a></span></label>
     <button type="button" class="premium-button" data-action="confirm-payment" disabled>${e(options.actionLabel || "Перейти к оплате")}</button>
-    <button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button>
+    <button type="button" class="secondary-checkout-button" data-action="back-to-offer">Вернуться к предложению</button>
     <p>Сумма определяется сервером. После оплаты мы автоматически проверим её статус.</p>
   </section>`;
   const email = host.querySelector('[name="payerEmail"]');
@@ -457,7 +461,10 @@ function renderConsentCheckout(order, options = {}) {
     email.blur();
   });
   button.addEventListener("click", () => submitLorentsenPayment(order.orderId, { email: email.value.trim(), termsAccepted: terms.checked, autoRedemptionAccepted: redemption.checked }, button));
-  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
+  host.querySelector('[data-action="back-to-offer"]').addEventListener("click", () => {
+    renderPremiumOffer(host, premiumConfig, { pricing: pricingFromOrder(order) });
+    revealCheckout(host);
+  });
   revealCheckout(host);
 }
 
@@ -465,37 +472,49 @@ async function submitLorentsenPayment(orderId, consent, button) {
   if (premiumBusy) return;
   premiumBusy = true;
   if (button) button.disabled = true;
+  const host = document.querySelector(".premium-action") || resultRoot;
+  renderPaymentCreatingState(host);
   try { renderPaymentState((await api("/api/premium/payment/start", { orderId, ...consent })).order); }
-  catch (error) { if (button) button.disabled = false; showPremiumError(error.message); }
+  catch (error) {
+    if (error.payload?.order) renderPaymentState(error.payload.order);
+    else {
+      renderConsentCheckout(activePremiumOrder, { email: consent.email });
+      showPremiumError(error.message);
+    }
+  }
   finally { premiumBusy = false; }
+}
+
+function renderPaymentCreatingState(host) {
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_CREATING"><p class="section-label">Оплата полного разбора</p><h3>Создаём QR-код для оплаты</h3><p>Это обычно занимает несколько секунд.</p><div class="checkout-progress" aria-label="Создание QR-кода"><i></i></div></section>`;
 }
 
 function renderLorentsenState(host, order) {
   if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
   if (order.paymentSessionEndReason === "expired") {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_SESSION_EXPIRED"><p class="section-label">Оплата полного разбора</p><h3>Время оплаты истекло</h3><p>Этот QR-код больше не актуален. Получите новый, чтобы продолжить оплату.</p><button type="button" class="premium-button" data-action="new-payment-session">Получить новый QR-код</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
-    host.querySelector('[data-action="new-payment-session"]').addEventListener("click", () => renderConsentCheckout(order, { actionLabel: "Получить новый QR-код" }));
-    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveTerminalPaymentFlow(host, order));
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_SESSION_EXPIRED"><p class="section-label">Оплата полного разбора</p><h3>Время оплаты истекло</h3><p>Этот QR-код больше не актуален. Получите новый, чтобы продолжить оплату.</p><button type="button" class="premium-button" data-action="new-payment-session">Получить новый QR-код</button><button type="button" class="secondary-checkout-button" data-action="back-to-offer">Вернуться к предложению</button></section>`;
+    host.querySelector('[data-action="new-payment-session"]').addEventListener("click", () => renderConsentCheckout(order, { actionLabel: "Получить новый QR-код", email: order.checkoutEmail }));
+    host.querySelector('[data-action="back-to-offer"]').addEventListener("click", () => restartPremiumFromOffer(host, order));
     return;
   }
   if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button></section>`;
     host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => restartPremiumFromOffer(host, order));
-    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveTerminalPaymentFlow(host, order));
     return;
   }
   const method = order.paymentMethod;
   const methodExpiresAt = Date.parse(method?.expiresAt || "");
   const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
   if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}<p>QR-код действителен 15 минут. Если время истечёт, вы сможете получить новый.</p><div class="payment-notice">Статус платежа проверяется автоматически.</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="cancel-payment">Отменить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}<p>QR-код действителен 15 минут. Если время истечёт, вы сможете получить новый.</p><div class="payment-notice">После оплаты статус обновится автоматически. Иногда подтверждение занимает немного времени.</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="cancel-payment">Отменить оплату</button></section>`;
+  } else if (["creating", "preparing"].includes(order.providerStatus) && !method) {
+    renderPaymentCreatingState(host);
   } else {
     const copy = paymentWaitingCopy(order.providerStatus);
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "provider_result_unknown")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="payment-notice">${e(copy[2])}</div><p class="payment-recovery-copy">Если деньги уже списаны, повторно оплачивать не нужно.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "provider_result_unknown")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="payment-notice">${e(copy[2])}</div><p class="payment-recovery-copy">Если деньги уже списаны, повторно оплачивать не нужно.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button></section>`;
   }
   host.querySelector('[data-action="check-payment"]')?.addEventListener("click", event => checkPaymentNow(event.currentTarget));
   host.querySelector('[data-action="cancel-payment"]')?.addEventListener("click", event => cancelPaymentSession(order, event.currentTarget));
-  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   schedulePaymentPoll(order.orderId, order.nextPollAt);
 }
 
@@ -507,7 +526,6 @@ async function cancelPaymentSession(order, button) {
   try {
     const result = await api("/api/premium/payment/cancel", { orderId: order.orderId });
     activePremiumOrder = result.order;
-    paymentViewDismissed = false;
     renderPremiumOffer(document.querySelector(".premium-action") || resultRoot, premiumConfig, { pricing: pricingFromOrder(result.order) });
   } catch (error) {
     if (button) { button.disabled = false; button.textContent = "Отменить оплату"; }
@@ -515,26 +533,11 @@ async function cancelPaymentSession(order, button) {
   } finally { premiumBusy = false; }
 }
 
-function leaveLorentsenPaymentFlow(host, order) {
-  clearTimeout(paymentPollTimer);
-  paymentViewDismissed = true;
-  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>Платёж не отменён и его статус не изменён. Можно изменить данные рождения и рассчитать новую карту; эта попытка останется связана только с прежними данными.</p><button type="button" class="secondary-checkout-button" data-action="resume-payment">Вернуться к оплате</button></section>`;
-  host.querySelector('[data-action="resume-payment"]').addEventListener("click", () => resumeLorentsenPayment(order.orderId));
-  returnToFreeResult();
-}
-
 function restartPremiumFromOffer(host, order) {
   clearTimeout(paymentPollTimer);
   activePremiumOrder = order;
   renderPremiumOffer(host, premiumConfig);
   revealCheckout(host);
-}
-
-function leaveTerminalPaymentFlow(host, order) {
-  clearTimeout(paymentPollTimer);
-  activePremiumOrder = order;
-  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>История попытки оплаты сохранена. Когда будете готовы, снова откройте полный персональный разбор.</p></section>`;
-  returnToFreeResult();
 }
 
 function paymentWaitingCopy(status) {
@@ -569,17 +572,15 @@ function isPaymentOfferOrder(order) {
   return order.status === "CHECKOUT_STARTED" && !order.currentAttemptId && !order.paymentId;
 }
 
-function configFromOrder(order) {
-  return { amount: order.baseAmount ?? order.amount, currency: order.currency, priceIsDevPlaceholder: false };
+function premiumViewState(order) {
+  if (order?.status === "REPORT_READY") return "READY";
+  if (["PAID", "REPORT_GENERATING", "REPORT_FAILED"].includes(order?.status) || order?.accessReason === "complimentary_promo") return "GENERATION";
+  if (isActivePaymentOrder(order) || order?.paymentSessionEndReason === "expired" || isTerminalPaymentOrder(order)) return "PAYMENT";
+  return "OFFER";
 }
 
-async function resumeLorentsenPayment(orderId) {
-  if (premiumBusy) return;
-  premiumBusy = true;
-  paymentViewDismissed = false;
-  try { await refreshPremiumOrder("resume", { force: true, orderId }); }
-  catch (error) { showPremiumError(error.message); }
-  finally { premiumBusy = false; }
+function configFromOrder(order) {
+  return { amount: order.baseAmount ?? order.amount, currency: order.currency, priceIsDevPlaceholder: false };
 }
 
 function schedulePaymentPoll(orderId, nextPollAt) {
@@ -612,17 +613,14 @@ async function refreshPremiumOrder(source, options = {}) {
     const result = await api(premiumOrderUrl(orderId, { source, force: options.force, includePreview: options.includePreview }));
     activePremiumOrder = result.order;
     restoreFreePreview(result.freePreview);
-    const fulfilled = ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(result.order.status) || result.order.accessReason === "complimentary_promo";
-    if (!paymentViewDismissed || fulfilled) renderPaymentState(result.order);
-    else if (isActivePaymentOrder(result.order)) schedulePaymentPoll(result.order.orderId, result.order.nextPollAt);
+    renderPaymentState(result.order);
     return result.order;
   })().catch(error => {
     const recoveredOrder = error.payload?.order;
     if (recoveredOrder) {
       activePremiumOrder = recoveredOrder;
       restoreFreePreview(error.payload?.freePreview);
-      if (!paymentViewDismissed) renderPaymentCheckError(document.querySelector(".premium-action") || resultRoot, recoveredOrder, error.message);
-      else if (isActivePaymentOrder(recoveredOrder)) schedulePaymentPoll(recoveredOrder.orderId, recoveredOrder.nextPollAt);
+      renderPaymentCheckError(document.querySelector(".premium-action") || resultRoot, recoveredOrder, error.message);
       error.paymentStateRendered = true;
     }
     if (isActivePaymentOrder(activePremiumOrder)) schedulePaymentPoll(activePremiumOrder.orderId, null);
@@ -633,9 +631,8 @@ async function refreshPremiumOrder(source, options = {}) {
 
 function renderPaymentCheckError(host, order, message) {
   clearTimeout(paymentPollTimer);
-  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PROVIDER_ERROR"><p class="section-label">Оплата полного разбора</p><h3>Не удалось обновить статус</h3><p>${e(message || "Платёжный сервис временно недоступен.")}</p><div class="payment-notice">Существующая покупка сохранена. Повторно оплачивать не нужно.</div><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PROVIDER_ERROR"><p class="section-label">Оплата полного разбора</p><h3>Не удалось обновить статус</h3><p>${e(message || "Платёжный сервис временно недоступен.")}</p><div class="payment-notice">Существующая покупка сохранена. Повторно оплачивать не нужно.</div><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button></section>`;
   host.querySelector('[data-action="check-payment"]').addEventListener("click", event => checkPaymentNow(event.currentTarget));
-  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   schedulePaymentPoll(order.orderId, order.nextPollAt);
 }
 
@@ -685,6 +682,7 @@ function scheduleGenerationPoll(orderId) {
 async function restorePremiumOrder() {
   const orderId = localStorage.getItem("tianMinOrderId");
   if (!orderId) return;
+  const initialScrollY = typeof scrollY === "number" ? scrollY : 0;
   try {
     premiumConfig = await api("/api/premium/config");
     const result = await api(premiumOrderUrl(orderId, { source: "reload", force: true, includePreview: true }));
@@ -718,7 +716,15 @@ async function restorePremiumOrder() {
       ensureRecoveryHost();
       renderPaymentState(result.order);
     }
+    restorePremiumViewport(resultRoot.querySelector(".premium-action"), initialScrollY);
   } catch { /* Preserve the recovery capability across temporary network/provider failures. */ }
+}
+
+function restorePremiumViewport(host, initialScrollY) {
+  if (!host) return;
+  const currentScrollY = typeof scrollY === "number" ? scrollY : initialScrollY;
+  if (Math.abs(currentScrollY - initialScrollY) > 24) return;
+  host.querySelector(".checkout-panel")?.scrollIntoView({ behavior: "auto", block: "start" });
 }
 
 async function api(url, body) {

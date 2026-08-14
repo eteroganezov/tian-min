@@ -195,7 +195,11 @@ class PremiumService {
     if (!order.currentAttemptId) return success(200, order.status === "CHECKOUT_STARTED" ? order : await this.saveOrder(order, paymentOfferChanges("cancelled", null, this.isoNow())));
     const attempt = await this.orderStore.loadAttempt(order.currentAttemptId);
     if (!attempt) return success(200, await this.saveOrder(order, paymentOfferChanges("cancelled", order.currentAttemptId, this.isoNow())));
-    return success(200, await this.endPaymentSession(order, attempt, "cancelled"));
+    const ended = await this.endPaymentSession(order, attempt, "cancelled");
+    const result = success(200, ended);
+    const checkoutEmail = safeCheckoutEmail(attempt.requestBody?.payer_email);
+    if (checkoutEmail) result.body.order.checkoutEmail = checkoutEmail;
+    return result;
   }
 
   async endPaymentSession(order, attempt, reason) {
@@ -538,6 +542,10 @@ function validatePaymentInput(input) {
   if (input.termsAccepted !== true) return { error: "Нужно отдельно принять условия покупки сертификата и политику конфиденциальности." };
   if (input.autoRedemptionAccepted !== true) return { error: "Нужно отдельно подтвердить немедленное погашение сертификата у партнёра." };
   return { email };
+}
+function safeCheckoutEmail(value) {
+  const email = String(value || "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,254}$/.test(email) && email.length <= 320 ? email : "";
 }
 function updateAttempt(attempt, payment, now) {
   const status = payment.status || "provider_result_unknown";

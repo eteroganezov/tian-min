@@ -452,12 +452,14 @@ test("Cancel скрывает QR, сохраняет promo/history и explicit P
   assert.equal(cancelled.body.order.paymentMethod, null);
   assert.equal(cancelled.body.order.promoCode, "FRIEND100");
   assert.equal(cancelled.body.order.amount, 100);
+  assert.equal(cancelled.body.order.checkoutEmail, validConsent.email);
   const historical = await ctx.orderStore.loadAttempt(firstAttempt.attemptId);
   assert.equal(historical.userSessionStatus, "cancelled");
   assert.equal(historical.providerStatus, "requires_action");
   assert.equal(historical.paymentPublicId, firstAttempt.paymentPublicId);
   const reloaded = await ctx.service.getOrder(checkout.orderId, { refresh: true, source: "reload" });
   assert.equal(reloaded.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(reloaded.body.order.checkoutEmail, undefined);
   assert.equal(ctx.provider.createCalls.length, 1);
   const second = await ctx.service.startPayment({ orderId: checkout.orderId, ...validConsent });
   const secondAttempt = await ctx.orderStore.loadAttempt(second.body.order.currentAttemptId);

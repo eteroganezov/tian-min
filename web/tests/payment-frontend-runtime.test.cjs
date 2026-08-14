@@ -15,7 +15,7 @@ function element() {
     dispatch(type, event = {}) { return listeners.get(type)?.({ preventDefault() {}, key: "", target: node, currentTarget:node, ...event }); },
     appendChild() {}, setAttribute() {}, removeAttribute() {}, scrollIntoView(options) { node.scrollCalls.push(options); }, focus(options) { node.focusCalls.push(options); }, insertAdjacentHTML() {}, closest() { return null; },
     querySelector(selector) {
-      if (selector === ".checkout-panel") return html.includes("checkout-panel") ? element() : null;
+      if (selector === ".checkout-panel") return html.includes("checkout-panel") ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
       if (selector === ".free-preview") return html.includes('class="free-preview"') ? element() : null;
       if (selector === "#free-result") return html.includes('id="free-result"') ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
       if (selector === ".premium-action") return html.includes("premium-action") ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
@@ -55,13 +55,14 @@ function harness(fetchImpl) {
   };
   const storage = new Map();
   let timerId = 0;
+  const timers = new Map();
   const context = {
     document, fetch: fetchImpl, FormData: class {}, localStorage: { getItem: key => storage.get(key) || null, removeItem: key => storage.delete(key), setItem: (key, value) => storage.set(key, String(value)) },
-    setTimeout: () => ++timerId, clearTimeout() {}, console, Intl, URLSearchParams, encodeURIComponent,
+    setTimeout: callback => { const id = ++timerId; timers.set(id, callback); return id; }, clearTimeout(id) { timers.delete(id); }, console, Intl, URLSearchParams, encodeURIComponent,
     addEventListener(type, listener) { if (!windowListeners.has(type)) windowListeners.set(type, []); windowListeners.get(type).push(listener); },
   };
   vm.runInNewContext(fs.readFileSync(path.resolve(__dirname, "..", "public", "app.js"), "utf8"), context);
-  return { context, document, dispatchWindow(type) { for (const listener of windowListeners.get(type) || []) listener({ type }); }, host: nodes[".premium-action"], resultRoot: nodes["#result-root"] };
+  return { context, document, async runNextTimer() { const next = timers.entries().next().value; if (!next) return false; timers.delete(next[0]); await next[1](); return true; }, dispatchWindow(type) { for (const listener of windowListeners.get(type) || []) listener({ type }); }, host: nodes[".premium-action"], resultRoot: nodes["#result-root"] };
 }
 
 const config = {
@@ -77,7 +78,7 @@ function order(providerStatus, overrides = {}) {
   };
 }
 
-test("expired/failed показывают terminal UX, а возврат не вызывает API и не меняет payment", async () => {
+test("expired/failed показывают terminal UX без выхода в длинную карту", async () => {
   const calls = [];
   const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => config }; });
   await ui.context.openPremiumOffer();
@@ -86,10 +87,7 @@ test("expired/failed показывают terminal UX, а возврат не в
   ui.context.renderLorentsenState(ui.host, order("expired", { status: "CHECKOUT_STARTED", paymentFailureReason: "expired" }));
   assert.match(ui.host.innerHTML, /Платёж не завершён/);
   assert.match(ui.host.innerHTML, /Попробовать снова/);
-  assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к карте/);
-  ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
-  assert.match(ui.host.innerHTML, /data-checkout-state="PAYMENT_EXIT"/);
-  assert.doesNotMatch(ui.host.innerHTML, /resume-payment|Вернуться к оплате/);
+  assert.doesNotMatch(ui.host.innerHTML, /Вернуться к карте|leave-payment|PAYMENT_EXIT/);
   assert.deepEqual(calls, []);
 
   ui.context.renderLorentsenState(ui.host, order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed" }));
@@ -143,33 +141,6 @@ test("failed/expired retry возвращает в offer и double-click не с
   assert.equal(calls.length, 0);
 });
 
-test("terminal exit → повторное открытие показывает offer, active exit → восстанавливает ту же attempt", async () => {
-  const calls = [];
-  let current = order("failed", { status: "CHECKOUT_STARTED", paymentFailureReason: "failed" });
-  const ui = harness(async url => {
-    calls.push(url);
-    if (url === "/api/premium/config") return { ok: true, json: async () => config };
-    if (url.startsWith("/api/premium/order/")) return { ok: true, json: async () => ({ order: current }) };
-    throw new Error(`unexpected ${url}`);
-  });
-  await ui.context.openPremiumOffer();
-  ui.context.renderPaymentState(current);
-  ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
-  calls.length = 0;
-  await ui.context.openPremiumOffer();
-  assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
-  assert.deepEqual(calls, ["/api/premium/config"]);
-
-  current = order("requires_action", { paymentMethod: { link: "https://pay.example.test/same", image: null, expiresAt: "2099-01-01T00:00:00Z" } });
-  ui.context.renderPaymentState(current);
-  ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
-  calls.length = 0;
-  await ui.context.openPremiumOffer();
-  assert.match(ui.host.innerHTML, /https:\/\/pay\.example\.test\/same/);
-  assert.deepEqual(calls, ["/api/premium/config", "/api/premium/order/order_payment_ux?source=resume&refresh=1"]);
-  assert.equal(calls.includes("/api/premium/payment/start"), false);
-});
-
 test("processing/manual_review reopen восстанавливает status, а client expiry сначала делает authenticated GET", async () => {
   for (const status of ["processing", "manual_review"]) {
     const calls = [];
@@ -180,7 +151,6 @@ test("processing/manual_review reopen восстанавливает status, а 
       return { ok: true, json: async () => ({ order: active }) };
     });
     ui.context.renderPaymentState(active);
-    ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
     await ui.context.openPremiumOffer();
     assert.match(ui.host.innerHTML, new RegExp(`data-checkout-state="${status}"`));
     assert.equal(calls.includes("/api/premium/payment/start"), false);
@@ -190,7 +160,7 @@ test("processing/manual_review reopen восстанавливает status, а 
   const locallyExpired = order("requires_action", { paymentMethod: { link: "https://pay.example.test/old", expiresAt: "2020-01-01T00:00:00Z" } });
   const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => ({ order: locallyExpired }) }; });
   ui.context.renderPaymentState(locallyExpired);
-  await ui.context.resumeLorentsenPayment(locallyExpired.orderId);
+  await ui.context.refreshPremiumOrder("resume", { force: true, orderId: locallyExpired.orderId });
   assert.deepEqual(calls, ["/api/premium/order/order_payment_ux?source=resume&refresh=1"]);
   assert.equal(calls.includes("/api/premium/payment/start"), false);
 });
@@ -323,18 +293,56 @@ test("manual payment check is available and never starts another payment", async
   assert.equal(calls.filter(url => String(url).includes("source=manual")).length, 1);
 });
 
-test("long-lived creating/nonterminal state is static and return targets the restored free result", () => {
+test("active QR polling автоматически видит PAID, запускает fulfillment и никогда не создаёт attempt", async () => {
+  const calls = [];
+  const active = order("requires_action", { paymentMethod: { link: "https://pay.example.test/current", expiresAt: "2099-01-01T00:00:00Z" } });
+  const paid = { ...active, status: "PAID", providerStatus: "settled", paymentMethod: null, nextPollAt: null };
+  const ui = harness(async url => {
+    calls.push(url);
+    if (url.includes("source=polling")) return { ok: true, json: async () => ({ order: paid }) };
+    if (url === "/api/premium/generate") return { ok: true, json: async () => ({ order: { ...paid, status: "REPORT_GENERATING" } }) };
+    if (url.startsWith("/api/premium/order/")) return { ok: true, json: async () => ({ order: { ...paid, status: "REPORT_GENERATING" } }) };
+    throw new Error(`unexpected ${url}`);
+  });
+  ui.context.renderPaymentState(active);
+  assert.equal(await ui.runNextTimer(), true);
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.filter(url => url.includes("source=polling")).length, 1);
+  assert.equal(calls.filter(url => url === "/api/premium/generate").length, 1);
+  assert.equal(calls.includes("/api/premium/payment/start"), false);
+  assert.match(ui.host.innerHTML, /REPORT_GENERATING|Готовим ваш персональный разбор/);
+});
+
+test("Pay немедленно показывает создание QR, а preparing response сохраняет этот state без Check Status", async () => {
+  let release;
+  const response = new Promise(resolve => { release = resolve; });
+  const preparing = order("preparing", { paymentId: "pay_preparing" });
+  const ui = harness(async url => {
+    assert.equal(url, "/api/premium/payment/start");
+    await response;
+    return { ok: true, json: async () => ({ order: preparing }) };
+  });
+  const pending = ui.context.submitLorentsenPayment(preparing.orderId, { email: "payer@example.test", termsAccepted: true, autoRedemptionAccepted: true });
+  assert.match(ui.host.innerHTML, /Создаём QR-код для оплаты/);
+  assert.doesNotMatch(ui.host.innerHTML, /Платёж ещё проверяется|Проверить статус/);
+  release();
+  await pending;
+  assert.match(ui.host.innerHTML, /Создаём QR-код для оплаты/);
+  assert.doesNotMatch(ui.host.innerHTML, /Проверить статус/);
+});
+
+test("creating/preparing показывают отдельное создание QR без проверки статуса", () => {
   const ui = harness(async () => ({ ok: true, json: async () => ({}) }));
   ui.resultRoot.innerHTML = '<section class="free-preview" id="free-result"><div class="premium-action"></div></section>';
   const host = ui.resultRoot.querySelector(".premium-action");
-  ui.context.renderLorentsenState(host, order("creating"));
-  assert.match(host.innerHTML, /Платёж ещё проверяется/);
-  assert.match(host.innerHTML, /Новая попытка автоматически не создаётся/);
-  assert.doesNotMatch(host.innerHTML, /checkout-progress|Готовим оплату|Пожалуйста, подождите/);
-  host.querySelector('[data-action="leave-payment"]').dispatch("click");
-  const target = ui.resultRoot.querySelector("#free-result");
-  assert.equal(target.scrollCalls.length, 1);
-  assert.equal(target.focusCalls.length, 1);
+  for (const status of ["creating", "preparing"]) {
+    ui.context.renderLorentsenState(host, order(status));
+    assert.match(host.innerHTML, /Создаём QR-код для оплаты/);
+    assert.match(host.innerHTML, /Это обычно занимает несколько секунд/);
+    assert.match(host.innerHTML, /checkout-progress/);
+    assert.doesNotMatch(host.innerHTML, /Платёж ещё проверяется|Проверить статус|Вернуться к карте/);
+  }
 });
 
 test("provider GET error replaces stale waiting animation with recoverable status and keeps the same order", async () => {
@@ -383,7 +391,7 @@ test("manual_review/processing не показывают retry, а локаль�
   for (const status of ["manual_review", "processing"]) {
     ui.context.renderLorentsenState(ui.host, order(status));
     assert.doesNotMatch(ui.host.innerHTML, /retry-payment|Обновить QR-код|Попробовать снова/);
-    assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к карте/);
+    assert.doesNotMatch(ui.host.innerHTML, /Вернуться к карте|leave-payment/);
   }
   ui.context.renderLorentsenState(ui.host, order("requires_action", {
     paymentMethod: { link: "https://pay.example.test/old", image: null, expiresAt: "2020-01-01T00:00:00Z" },
@@ -434,13 +442,13 @@ test("active QR объясняет 15 минут, Cancel скрывает QR и 
     baseAmount: 599, amount: 100, promoCode: "FRIEND100", paymentSessionStatus: "active",
     paymentMethod: { link: "https://pay.example.test/current", image: null, expiresAt: "2099-01-01T00:00:00Z" },
   });
-  const cancelled = { ...active, status: "CHECKOUT_STARTED", currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, paymentSessionStatus: null, paymentSessionEndReason: "cancelled" };
+  const cancelled = { ...active, status: "CHECKOUT_STARTED", currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, paymentSessionStatus: null, paymentSessionEndReason: "cancelled", checkoutEmail: "payer@example.test" };
   const ui = harness(async (url, options) => { calls.push({ url, options }); return url === "/api/premium/config" ? { ok: true, json: async () => config } : { ok: true, json: async () => ({ order: cancelled }) }; });
   await ui.context.openPremiumOffer();
   calls.length = 0;
   ui.context.renderLorentsenState(ui.host, active);
   assert.match(ui.host.innerHTML, /QR-код действителен 15 минут/);
-  assert.match(ui.host.innerHTML, /Вернуться к карте/);
+  assert.doesNotMatch(ui.host.innerHTML, /Вернуться к карте/);
   assert.match(ui.host.innerHTML, /Отменить оплату/);
   await ui.host.querySelector('[data-action="cancel-payment"]').dispatch("click");
   assert.equal(calls.length, 1);
@@ -449,18 +457,24 @@ test("active QR объясняет 15 минут, Cancel скрывает QR и 
   assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
   assert.match(ui.host.innerHTML, /FRIEND100|К оплате/);
   assert.doesNotMatch(ui.host.innerHTML, /pay\.example\.test\/current/);
+  await ui.host.querySelector('[data-action="checkout"]').dispatch("click");
+  assert.match(ui.host.innerHTML, /data-checkout-state="CONSENT"/);
+  assert.match(ui.host.innerHTML, /value="payer@example\.test"/);
+  assert.equal(ui.host.querySelector('[name="termsAccepted"]').checked, false);
+  assert.equal(ui.host.querySelector('[name="autoRedemptionAccepted"]').checked, false);
 });
 
-test("Вернуться к карте не мутирует session и ведёт к #free-result", () => {
-  const calls = [];
-  const ui = harness(async (url, options) => { calls.push({ url, options }); return { ok: true, json: async () => ({}) }; });
-  ui.resultRoot.innerHTML = '<section class="free-preview" id="free-result"><div class="premium-action"></div></section>';
-  const host = ui.resultRoot.querySelector(".premium-action");
-  ui.context.renderLorentsenState(host, order("requires_action", { paymentMethod: { link: "https://pay.example.test/current", image: null, expiresAt: "2099-01-01T00:00:00Z" } }));
-  host.querySelector('[data-action="leave-payment"]').dispatch("click");
-  assert.match(host.innerHTML, /Платёж не отменён и его статус не изменён/);
-  assert.equal(ui.resultRoot.querySelector("#free-result").scrollCalls.length, 1);
-  assert.deepEqual(calls, []);
+test("payment-specific screens не содержат возврат к карте", () => {
+  const ui = harness(async () => ({ ok: true, json: async () => ({}) }));
+  const states = [
+    order("requires_action", { paymentMethod: { link: "https://pay.example.test/current", image: null, expiresAt: "2099-01-01T00:00:00Z" } }),
+    order("processing"), order("manual_review"), order("preparing"),
+    order(null, { status: "CHECKOUT_STARTED", currentAttemptId: null, paymentSessionEndReason: "expired" }),
+  ];
+  for (const state of states) {
+    ui.context.renderPaymentState(state);
+    assert.doesNotMatch(ui.host.innerHTML, /Вернуться к карте|leave-payment/);
+  }
 });
 
 test("expired session показывает новый QR action, а cancelled reload показывает offer с promo", async () => {
@@ -485,6 +499,31 @@ test("expired session показывает новый QR action, а cancelled re
   await reloaded.context.restorePremiumOrder();
   assert.match(reloaded.resultRoot.querySelector(".premium-action").innerHTML, /data-checkout-state="OFFER"/);
   assert.match(reloaded.resultRoot.querySelector(".premium-action").innerHTML, /К оплате/);
+});
+
+test("reload scrolls once to QR/generation/ready and same-state polling does not fight viewport", async () => {
+  const states = [
+    order("requires_action", { paymentMethod: { link: "https://pay.example.test/restored", expiresAt: "2099-01-01T00:00:00Z" } }),
+    { ...order(null), status: "REPORT_GENERATING", providerStatus: "settled", paymentSessionStatus: null },
+    { ...order(null), status: "REPORT_READY", providerStatus: "settled", paymentSessionStatus: null, reportAccessToken: "safe_token" },
+  ];
+  for (const restored of states) {
+    const ui = harness(async url => {
+      if (url === "/api/premium/config") return { ok: true, json: async () => config };
+      return { ok: true, json: async () => ({ order: restored, freePreview: { state: "FREE_PREVIEW_READY" } }) };
+    });
+    ui.context.renderFreePreview = () => '<section class="free-preview"><div class="premium-action"></div></section>';
+    ui.context.bindPreviewActions = () => {};
+    ui.context.localStorage.setItem("tianMinOrderId", restored.orderId);
+    await ui.context.restorePremiumOrder();
+    const restoredHost = ui.resultRoot.querySelector(".premium-action");
+    assert.equal(restoredHost.querySelector(".checkout-panel").scrollCalls.length, 1);
+    assert.equal(restoredHost.querySelector(".checkout-panel").scrollCalls[0].behavior, "auto");
+    if (restored.status === "PAYMENT_PENDING") {
+      await ui.context.refreshPremiumOrder("polling", { orderId: restored.orderId });
+      assert.equal(restoredHost.querySelector(".checkout-panel").scrollCalls.length, 0);
+    }
+  }
 });
 
 test("promo UX скрыт по умолчанию, FAMILY0 показывает перерасчёт и не вызывает payment endpoint", async () => {
