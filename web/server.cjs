@@ -16,6 +16,7 @@ const { PostgresPaymentStore, PostgresReportStore } = require("./lib/production-
 const { assertProductionGenerationReady } = require("./lib/generation-config.cjs");
 
 const MIME = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml", ".png": "image/png" };
+const PREMIUM_REPORT_FILENAME = "tian-min-personal-report.pdf";
 
 function createServer(options = {}) {
   const staticRoot = options.staticRoot || (fs.existsSync(path.join(__dirname, "dist", "index.html")) ? path.join(__dirname, "dist") : path.join(__dirname, "public"));
@@ -78,13 +79,19 @@ async function handlePremiumOrder(request, response, premiumService) {
 
 async function handlePremiumDelivery(request,response,premiumService) {
   const url=new URL(request.url,"http://localhost");
-  const token=decodeURIComponent(url.pathname.split("/").pop() || "");
+  const pathParts=url.pathname.slice("/api/premium/report/".length).split("/").filter(Boolean).map(decodeURIComponent);
+  const [token,filename,...unexpectedPath]=pathParts;
+  if(!token || unexpectedPath.length || (filename && filename!==PREMIUM_REPORT_FILENAME)) return sendJson(response,404,{ error:"Отчёт не найден." });
   const result=await premiumService.deliver(token);
   if(result.status!==200) return sendJson(response,result.status,{ error:result.error });
   const disposition=url.searchParams.get("download") === "1" ? "attachment" : "inline";
-  response.writeHead(200,{ "Content-Type":"application/pdf","Content-Disposition":`${disposition}; filename="${result.filename}"`,
+  response.writeHead(200,{ "Content-Type":"application/pdf","Content-Disposition":reportContentDisposition(disposition),
     "Content-Length":result.buffer.length,"Cache-Control":"private, no-store","X-Content-Type-Options":"nosniff","Referrer-Policy":"no-referrer" });
   return response.end(result.buffer);
+}
+
+function reportContentDisposition(disposition) {
+  return `${disposition}; filename="${PREMIUM_REPORT_FILENAME}"; filename*=UTF-8''${encodeURIComponent(PREMIUM_REPORT_FILENAME)}`;
 }
 
 async function handleLorentsenWebhook(request, response, premiumService) {

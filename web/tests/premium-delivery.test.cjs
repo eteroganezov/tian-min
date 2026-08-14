@@ -166,13 +166,26 @@ test("report capability is high-entropy, bound server-side and unauthorized toke
 function get(server,url){return new Promise((resolve,reject)=>{const request=Readable.from([]);request.method="GET";request.url=url;request.headers={};const chunks=[];const response={status:0,headers:{},writeHead(status,headers){this.status=status;this.headers=headers;},end(value=""){chunks.push(Buffer.from(value));resolve({status:this.status,headers:this.headers,body:Buffer.concat(chunks)});},write(value){chunks.push(Buffer.from(value));}};server.emit("request",request,response);});}
 
 test("open/download routes set inline vs attachment and never expose internal filename",async()=>{
-  const premiumService={deliver:async()=>({status:200,buffer:Buffer.from("%PDF-route"),filename:"tian-min-personal-report.pdf"})};
+  const deliveredTokens=[];
+  const premiumService={deliver:async token=>{deliveredTokens.push(token);return /^[A-Za-z0-9_-]{43}$/.test(token)?{status:200,buffer:Buffer.from("%PDF-route"),filename:"ignored-provider-name"}:{status:404,error:"Отчёт не найден."};}};
   const server=createServer({premiumService});
   try{
-    const open=await get(server,"/api/premium/report/"+"A".repeat(43)); const download=await get(server,"/api/premium/report/"+"A".repeat(43)+"?download=1");
-    assert.equal(open.status,200); assert.match(open.headers["Content-Disposition"],/^inline; filename="tian-min-personal-report\.pdf"$/);
-    assert.match(download.headers["Content-Disposition"],/^attachment; filename="tian-min-personal-report\.pdf"$/);
+    const token="A".repeat(43);
+    const legacyOpen=await get(server,"/api/premium/report/"+token);
+    const open=await get(server,"/api/premium/report/"+token+"/tian-min-personal-report.pdf");
+    const download=await get(server,"/api/premium/report/"+token+"/tian-min-personal-report.pdf?download=1");
+    const invalidToken=await get(server,"/api/premium/report/invalid/tian-min-personal-report.pdf");
+    const invalidFilename=await get(server,"/api/premium/report/"+token+"/"+token);
+    assert.equal(legacyOpen.status,200); assert.equal(open.status,200); assert.equal(download.status,200);
+    assert.equal(open.headers["Content-Type"],"application/pdf"); assert.equal(download.headers["Content-Type"],"application/pdf");
+    assert.match(open.headers["Content-Disposition"],/^inline; filename="tian-min-personal-report\.pdf"; filename\*=UTF-8''tian-min-personal-report\.pdf$/);
+    assert.match(download.headers["Content-Disposition"],/^attachment; filename="tian-min-personal-report\.pdf"; filename\*=UTF-8''tian-min-personal-report\.pdf$/);
+    assert.doesNotMatch(open.headers["Content-Disposition"],new RegExp(token));
+    assert.doesNotMatch(download.headers["Content-Disposition"],new RegExp(token));
+    assert.equal(invalidToken.status,404); assert.equal(invalidFilename.status,404);
+    assert.deepEqual(deliveredTokens,[token,token,token,"invalid"]);
     assert.equal(open.headers["Referrer-Policy"],"no-referrer");
+    assert.equal(open.headers["Cache-Control"],"private, no-store");
   }finally{server.close();}
 });
 
@@ -207,7 +220,7 @@ test("customer UX contains generating, failed, ready, open/download and same-bro
   assert.match(source,/class="premium-button" data-action="download-report"[^>]*>Сохранить PDF</);
   assert.match(source,/class="secondary-checkout-button" data-action="open-report"[^>]*>Открыть отчёт</);
   assert.ok(source.indexOf('data-action="download-report"') < source.indexOf('data-action="open-report"'));
-  assert.match(source,/\/api\/premium\/report\/\$\{encodeURIComponent\(order\.reportAccessToken\)\}/);
+  assert.match(source,/\/api\/premium\/report\/\$\{encodeURIComponent\(order\.reportAccessToken\)\}\/tian-min-personal-report\.pdf/);
   assert.match(source,/localStorage\.getItem\("tianMinOrderId"\)/); assert.match(source,/scheduleGenerationPoll/);
   assert.doesNotMatch(source,/Тестовый отчёт сохранён|Открыть тестовый результат|Report ID:/);
   const styles=fs.readFileSync(path.resolve(__dirname,"../public/styles.css"),"utf8");
