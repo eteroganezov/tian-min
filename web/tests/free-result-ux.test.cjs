@@ -79,9 +79,11 @@ test("technical disclosures доступны с клавиатуры и пере
   assert.match(script, /class="technical-disclosure-trigger" aria-expanded="false" aria-controls="technical-bazi-panel"/);
   assert.match(script, /id="technical-bazi-panel" hidden/);
   assert.match(styles, /\.technical-disclosure-trigger:focus-visible/);
-  const source = script.match(/function toggleTechnicalDisclosure\(button\) \{[\s\S]*?\n\}/u)?.[0];
-  assert.ok(source);
-  assert.doesNotMatch(source, /api\(|fetch\(|payment|promo|generate/i);
+  const setterSource = script.match(/function setTechnicalDisclosureState\(button, expanded\) \{[\s\S]*?\n\}/u)?.[0];
+  const toggleSource = script.match(/function toggleTechnicalDisclosure\(button\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(setterSource);
+  assert.ok(toggleSource);
+  assert.doesNotMatch(`${setterSource}${toggleSource}`, /api\(|fetch\(|payment|promo|generate/i);
   const panel = { hidden: true };
   const button = {
     attrs: { "aria-controls": "panel", "aria-expanded": "false" },
@@ -91,7 +93,7 @@ test("technical disclosures доступны с клавиатуры и пере
     querySelector() { return this.action; },
     closest() { return { dataset: {} }; },
   };
-  const toggle = vm.runInNewContext(`(${source.replace(/^function toggleTechnicalDisclosure/, "function")})`, { document: { getElementById: () => panel } });
+  const toggle = vm.runInNewContext(`(() => { ${setterSource}; return ${toggleSource.replace(/^function toggleTechnicalDisclosure/, "function")}; })()`, { document: { getElementById: () => panel } });
   toggle(button);
   assert.equal(button.attrs["aria-expanded"], "true");
   assert.equal(panel.hidden, false);
@@ -115,12 +117,27 @@ test("две карты предшествуют synthesis bridge и ведут 
   assert.equal((script.match(/class="technical-disclosure-trigger" aria-expanded="false"/g) || []).length, 2);
 });
 
-test("responsive CSS использует two-column proof на desktop и compact stack на mobile", () => {
+test("responsive presentation раскрывает editorial proof на desktop и сохраняет compact stack на mobile", () => {
   assert.match(styles, /\.preview-body\{padding-bottom:0\}/);
-  assert.match(styles, /\.map-disclosures\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(script, /matchMedia\("\(min-width: 960px\)"\)/);
+  assert.match(script, /syncTechnicalDisclosures\(\)/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.technical-disclosure-trigger\{display:none\}/);
+  assert.match(styles, /@media\(min-width:960px\)[^]*\.technical-disclosure\{overflow:visible;border:0/);
   assert.match(styles, /@media\(max-width:760px\)[^]*\.map-disclosures\{grid-template-columns:1fr/);
   assert.match(styles, /\.technical-disclosure-panel\{[^}]*box-sizing:border-box/);
   assert.match(styles, /html\{overflow-x:hidden\}/);
+});
+
+test("desktop/mobile breakpoint синхронизирует hidden и aria-expanded в одном DOM", () => {
+  const setterSource = script.match(/function setTechnicalDisclosureState\(button, expanded\) \{[\s\S]*?\n\}/u)?.[0];
+  const syncSource = script.match(/function syncTechnicalDisclosures\(\) \{[\s\S]*?\n\}/u)?.[0];
+  assert.ok(setterSource);
+  assert.ok(syncSource);
+  assert.equal((script.match(/id="technical-bazi-panel"/g) || []).length, 1);
+  assert.equal((script.match(/id="technical-ziwei-panel"/g) || []).length, 1);
+  assert.match(syncSource, /desktopTechnicalMedia\.matches/);
+  assert.match(setterSource, /panel\.hidden = !expanded/);
+  assert.match(setterSource, /aria-expanded/);
 });
 
 test("наблюдаемый reverse-looking age order остаётся неизменным calculated output", () => {

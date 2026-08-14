@@ -336,6 +336,7 @@ test("promo error показывается человеческим тексто
   ui.host.querySelector('[name="promoCode"]').value = "FRIEND100";
   await ui.context.applyPromo(ui.host, { date: "1995-09-03" });
   assert.match(ui.host.innerHTML, /Промокод больше недоступен/);
+  assert.match(ui.host.innerHTML, /class="promo-toggle"[^>]*hidden/);
   assert.doesNotMatch(ui.host.innerHTML, /database|provider|minim|internal/i);
 });
 
@@ -379,4 +380,16 @@ test("SUPPORT399 summary показывает скидку 200 ₽ и paid CTA",
 test("успешный promo перерасчёт не возвращает скрытую кнопку раскрытия", () => {
   const styles = fs.readFileSync(path.resolve(__dirname, "..", "public", "styles.css"), "utf8");
   assert.match(styles, /\.promo-toggle\[hidden\]\{display:none\}/);
+});
+
+test("открытие promo form скрывает исходный disclosure trigger", () => {
+  const ui = harness(async () => ({ ok: true, json: async () => config }));
+  ui.context.renderPremiumOffer(ui.host, config);
+  const trigger = ui.host.querySelector('[data-action="show-promo"]');
+  const entry = ui.host.querySelector(".promo-entry");
+  assert.equal(trigger.hidden, false);
+  assert.equal(entry.hidden, false, "test DOM does not parse initial hidden attribute into the stub property");
+  trigger.dispatch("click");
+  assert.equal(trigger.hidden, true);
+  assert.equal(entry.hidden, false);
 });

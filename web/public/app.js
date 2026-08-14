@@ -33,6 +33,7 @@ let activePremiumOrder = null;
 let paymentPollTimer = null;
 
 const mobileFormMedia = typeof matchMedia === "function" ? matchMedia("(max-width: 620px)") : null;
+const desktopTechnicalMedia = typeof matchMedia === "function" ? matchMedia("(min-width: 960px)") : null;
 function syncMobileFormPosition() {
   if (!mobileFormMedia || !heroLayout || !mobileFormSlot) return;
   const destination = mobileFormMedia.matches ? mobileFormSlot : heroLayout;
@@ -46,6 +47,8 @@ syncMobileFormPosition();
 syncHeaderHeight();
 if (mobileFormMedia?.addEventListener) mobileFormMedia.addEventListener("change", syncMobileFormPosition);
 else mobileFormMedia?.addListener?.(syncMobileFormPosition);
+if (desktopTechnicalMedia?.addEventListener) desktopTechnicalMedia.addEventListener("change", syncTechnicalDisclosures);
+else desktopTechnicalMedia?.addListener?.(syncTechnicalDisclosures);
 if (typeof ResizeObserver === "function" && siteHeader) new ResizeObserver(syncHeaderHeight).observe(siteHeader);
 if (typeof addEventListener === "function") addEventListener("orientationchange", syncHeaderHeight);
 
@@ -187,9 +190,9 @@ function renderFreePreview(data) {
               <article><span>Система элементов</span><b>${e(conciseBureauName(data.ziwei.fiveElementBureau.name))}</b><small>${e(data.ziwei.fiveElementBureau.original)}</small></article>
             </div>
             <div class="transformations"><header><span>Четыре трансформации</span><p>Традиционные отметки рассчитанных звёзд. Персональное значение раскрывается только в контексте всей карты.</p></header><div>${data.ziwei.transformations.map(item => `<p><b>${e(item.name)}</b><small>${e(item.original)}</small></p>`).join("")}</div></div>
+            <article class="current-palace" id="current-life-period"><div><span>Текущая возрастная сфера · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определена")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
             <div class="palaces-guide"><h3>Что показывают 12 дворцов?</h3><p>Карта Цзы Вэй делит жизненный путь на 12 сфер: отношения, работу, деньги, окружение, внутреннее состояние и другие области. Звёзды внутри показывают рассчитанные акценты каждой сферы.</p><p>Короткие пояснения карточек описывают только саму жизненную сферу, не персональное значение звёзд.</p></div>
             <details class="technical-chart"><summary><span><b class="disclosure-open">Посмотреть 12 дворцов</b><b class="disclosure-close">Скрыть 12 дворцов</b><small>Нажмите на дворец, чтобы узнать значение жизненной сферы</small></span><i aria-hidden="true"></i></summary><div class="palaces-direction-note">Возрастные периоды проходят по дворцам в направлении, рассчитанном для вашей карты, поэтому соседние значения могут идти не по возрастанию.</div><div class="palaces-grid">${data.ziwei.palaces.map(renderPalace).join("")}</div></details>
-            <article class="current-palace" id="current-life-period"><div><span>Текущая возрастная сфера · ${e(currentPalace?.majorPeriod || "—")} лет</span><b>${e(currentPalace?.displayName?.name || "Не определена")}</b><small>${e([currentPalace?.displayName?.original, currentPalace?.ganZhi].filter(Boolean).join(" · "))}</small><p>Это сфера, которой соответствует текущий возрастной период в рассчитанной карте Цзы Вэй.</p></div></article>
             <p class="map-ending-note">Это рассчитанные данные, из которых строится ваша карта. Персональный смысл этих данных раскрывается в полном разборе.</p>
           </section>
         </div>
@@ -250,10 +253,10 @@ function bindPreviewActions() {
   document.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
   document.querySelectorAll(".technical-disclosure-trigger").forEach(button => button.addEventListener("click", () => toggleTechnicalDisclosure(button)));
   document.querySelectorAll(".palace-trigger").forEach(button => button.addEventListener("click", () => togglePalaceExplanation(button)));
+  syncTechnicalDisclosures();
 }
 
-function toggleTechnicalDisclosure(button) {
-  const expanded = button.getAttribute("aria-expanded") !== "true";
+function setTechnicalDisclosureState(button, expanded) {
   button.setAttribute("aria-expanded", String(expanded));
   const action = button.querySelector(".disclosure-action");
   if (action) action.textContent = expanded ? "Скрыть карту" : "Посмотреть карту";
@@ -261,6 +264,16 @@ function toggleTechnicalDisclosure(button) {
   if (disclosure) disclosure.dataset.expanded = String(expanded);
   const panel = document.getElementById(button.getAttribute("aria-controls"));
   if (panel) panel.hidden = !expanded;
+}
+
+function syncTechnicalDisclosures() {
+  if (!desktopTechnicalMedia) return;
+  document.querySelectorAll(".technical-disclosure-trigger").forEach(button => setTechnicalDisclosureState(button, desktopTechnicalMedia.matches));
+}
+
+function toggleTechnicalDisclosure(button) {
+  const expanded = button.getAttribute("aria-expanded") !== "true";
+  setTechnicalDisclosureState(button, expanded);
 }
 
 function togglePalaceExplanation(button) {
@@ -304,10 +317,12 @@ function renderPremiumOffer(host, config, options = {}) {
   const baseAmount = pricing?.baseAmount ?? config.amount;
   const finalAmount = pricing?.finalAmount ?? config.amount;
   const promoSummary = pricing ? `<div class="promo-price-summary"><span><i>Стоимость</i><b>${e(formatPrice(baseAmount, config.currency))}</b></span><span><i>Промокод</i><b>−${e(formatPrice(pricing.discountAmount, config.currency))}</b></span><span><i>К оплате</i><b>${e(formatPrice(finalAmount, config.currency))}</b></span></div>` : `<div class="offer-price"><b>${e(formatPrice(config.amount, config.currency))}</b>${config.priceIsDevPlaceholder ? "<small>DEV-цена для проверки flow</small>" : ""}</div>`;
-  host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div>${promoSummary}<button type="button" class="promo-toggle" data-action="show-promo" ${pricing ? "hidden" : ""}>У меня есть промокод</button><div class="promo-entry" ${options.expanded || pricing ? "" : "hidden"}><label>Промокод<input type="text" name="promoCode" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${e(pricing?.promoCode || options.code || "")}"></label><button type="button" class="secondary-checkout-button" data-action="apply-promo">Применить</button><p class="promo-message${options.success ? " success" : ""}" role="status" ${options.message ? "" : "hidden"}>${e(options.message || "")}</p></div><button type="button" class="premium-button" data-action="checkout">${finalAmount === 0 ? "Получить персональный разбор" : "Перейти к оплате"}</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
+  host.innerHTML = `<section class="checkout-panel" data-checkout-state="OFFER"><p class="section-label">Полный персональный разбор</p><h3>Ба-цзы + Цзы Вэй</h3><div class="purchase-summary"><span>Персональный отчёт</span><span>Полный PDF</span></div>${promoSummary}<button type="button" class="promo-toggle" data-action="show-promo" ${pricing || options.expanded ? "hidden" : ""}>У меня есть промокод</button><div class="promo-entry" ${options.expanded || pricing ? "" : "hidden"}><label>Промокод<input type="text" name="promoCode" maxlength="32" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${e(pricing?.promoCode || options.code || "")}"></label><button type="button" class="secondary-checkout-button" data-action="apply-promo">Применить</button><p class="promo-message${options.success ? " success" : ""}" role="status" ${options.message ? "" : "hidden"}>${e(options.message || "")}</p></div><button type="button" class="premium-button" data-action="checkout">${finalAmount === 0 ? "Получить персональный разбор" : "Перейти к оплате"}</button><p>Разовая покупка · Персональный разбор · Полный PDF-отчёт</p></section>`;
   host.querySelector('[data-action="checkout"]').addEventListener("click", startCheckout);
   host.querySelector('[data-action="show-promo"]')?.addEventListener("click", () => {
+    const trigger = host.querySelector('[data-action="show-promo"]');
     const entry = host.querySelector(".promo-entry");
+    if (trigger) trigger.hidden = true;
     entry.hidden = false;
     host.querySelector('[name="promoCode"]')?.focus?.();
   });

@@ -156,3 +156,57 @@ html{overflow-x:hidden}body{overflow-x:visible}
 /* Variant B final micro-polish: calm map boundaries and report delivery hierarchy. */
 .preview-interpretation-note{max-width:700px;margin:8px auto 0;color:var(--jade)}.map-ending-note{max-width:760px;margin:30px 0 0;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:10px;line-height:1.65}.ready-state .premium-button,.ready-state .secondary-checkout-button{display:flex;align-items:center;justify-content:center;text-align:center;text-decoration:none}.ready-state .secondary-checkout-button{box-sizing:border-box}.ready-state{max-width:680px;margin-inline:auto}
 @media(max-width:620px){.preview-interpretation-note{margin-top:7px}.map-ending-note{margin-top:24px;padding-top:16px}.ready-state{max-width:none}}
+
+/* Variant B responsive editorial pass: compact desktop form, open chart sections, one mobile disclosure flow. */
+@media(min-width:960px){
+  .birth-form{padding:28px 32px}
+  .birth-form .form-heading{padding-bottom:0;border-bottom:0}
+  .birth-form .field{margin-top:13px}
+  .birth-form .form-row{gap:10px}
+  .birth-form .birth-date-parts{gap:7px;margin-top:6px}
+  .birth-form .birth-date-parts label{gap:4px}
+  .birth-form .birth-date-parts input,.birth-form .birth-date-parts select{height:44px}
+  .birth-form .field input{height:46px}
+  .birth-form .time-certainty-field{margin-top:14px}
+  .birth-form .time-certainty-options span{min-height:42px;padding-block:10px}
+  .birth-form .gender-field{margin-top:14px}
+  .birth-form .gender-options span{padding-block:11px}
+  .birth-form .primary-button{min-height:48px;margin-top:16px;padding-block:13px}
+  .birth-form .form-note{margin-top:9px}
+
+  .map-proof{padding-block:72px 92px}
+  .map-proof-heading{display:block;max-width:680px;margin-bottom:52px}
+  .map-proof-heading h2{margin:10px 0 13px;font-size:42px}
+  .map-proof-heading>p:last-child{max-width:610px}
+  .map-disclosures{display:block}
+  .technical-disclosure{overflow:visible;border:0;border-radius:0;background:transparent}
+  .technical-disclosure+.technical-disclosure{margin-top:74px;padding-top:74px;border-top:1px solid rgba(24,34,31,.12)}
+  .technical-disclosure-trigger{display:none}
+  .technical-disclosure-panel{padding:0}
+  .technical-disclosure-panel .preview-section{padding:0}
+  .technical-disclosure-panel .preview-heading{margin-bottom:0}
+  .technical-disclosure-panel .ten-gods-note{margin-top:28px;padding:4px 0 4px 20px;background:transparent}
+  .technical-disclosure-panel .pillars-grid{margin-top:34px}
+  .technical-disclosure-panel .fact-grid{margin-top:16px}
+  .technical-disclosure-panel .elements-card{margin-top:16px}
+  .technical-disclosure-panel .map-ending-note{max-width:680px;margin-top:38px;padding-top:20px}
+  .technical-disclosure-panel .ziwei-facts{margin-top:36px}
+  .technical-disclosure-panel .transformations{margin-top:20px;padding:26px 0;border-width:1px 0}
+  .ziwei-section>.current-palace{margin-top:22px}
+  .palaces-guide{max-width:720px;margin:48px 0 20px;padding:4px 0 4px 22px;background:transparent}
+  .technical-chart{border-width:1px 0;background:transparent}
+  .technical-chart>summary{padding-inline:0}
+  .palaces-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;padding:12px 0;border-top:1px solid rgba(24,34,31,.12)}
+  .palaces-grid article.palace-card{border-color:rgba(24,34,31,.1);border-radius:8px;background:rgba(255,253,248,.62)}
+  .palaces-grid article.palace-card.active{border-color:rgba(169,128,67,.65);box-shadow:inset 0 3px var(--gold)}
+  .palace-trigger{padding:19px 18px}
+  .palace-trigger:hover{background:rgba(246,240,226,.62)}
+  .palace-explanation{padding-inline:18px;background:rgba(246,240,226,.46)}
+}
+
+@media(min-width:761px) and (max-width:959px){
+  .map-proof-heading{display:block;max-width:650px;margin-bottom:28px}
+  .map-proof-heading h2{margin:9px 0 11px}
+  .map-disclosures{grid-template-columns:1fr}
+  .technical-disclosure[data-expanded="true"]{grid-column:auto}
+}
