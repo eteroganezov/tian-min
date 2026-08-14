@@ -8,7 +8,6 @@
 
 ## BLOCKED / WAITING
 
-- **BLOCKED BY PROVIDER CLARIFICATION:** an old production payment can remain `manual_review` with `payment_method=null` and `expires_at=null`. Obtain authoritative Lorentsen answers: (1) can it later become `settled`; (2) when is it definitively unusable; (3) when is a replacement payment allowed; and (4) which API status/field is the authoritative signal. Do not fake-expire it, use the browser clock or create a second active payment.
 - Lorentsen account profile still exposes the external organization label `Edward`; request a provider-side rename to `Тянь Мин`. Tian Min-controlled checkout copy already uses the canonical product name.
 - Independent specialist verification remains required for the explicitly skipped Zi Wei star/bureau/period cases, late 子-hour school rule and selected `TRUE_SOLAR_TIME_V1` astrological references.
 
@@ -51,6 +50,7 @@ Do not prioritize these future products ahead of: (1) Variant B user validation;
 - Mobile-first WEB v1, sticky/Telegram/mobile Safari fixes, final birth-form spacing and `birthTimeCertainty` UX. WEB visual v1 is frozen.
 - `birthTimeCertainty: exact | approximate` with default/legacy `exact`, independent from deterministic calculation sensitivity.
 - Monetization foundation: public price **599 RUB**, server-owned product config, order state machine, payment gate, persistence/recovery, terminal-payment recovery, idempotency, duplicate-generation protection and production fail-closed behavior.
+- Payment Flow v2: one order can own multiple durable provider attempts but only one current user QR session, entitlement and report. Cancel is internal-only, the QR session expires server-side after 15 minutes/authoritative `expires_at`, old attempts remain reconcilable, late `settled` remains idempotent, promo/price survive replacement and lifecycle events never create a provider payment.
 - Railway deployment structure, PostgreSQL production persistence and Lorentsen provider/webhook integration.
 - Lorentsen response parser/recovery for nested payment records, `payment_public_id`, provider status, optional payment method, retry timing and trace ID.
 - Premium Report `personal-report-v4`: deterministic evidence catalog, strict Structured Outputs schema, evidence validation, unsupported-claim protection and legacy compatibility.

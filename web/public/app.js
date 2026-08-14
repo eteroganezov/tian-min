@@ -308,12 +308,16 @@ async function openPremiumOffer() {
       await refreshPremiumOrder("resume", { force: true });
       return;
     }
+    if (activePremiumOrder?.paymentSessionEndReason === "expired") {
+      renderPaymentState(activePremiumOrder);
+      return;
+    }
     if (isActivePaymentOrder(activePremiumOrder)) {
       paymentViewDismissed = false;
       await refreshPremiumOrder("resume", { force: true });
       return;
     }
-    renderPremiumOffer(host, config);
+    renderPremiumOffer(host, config, { pricing: pricingFromOrder(activePremiumOrder) });
     revealCheckout(host);
   } catch (error) { showPremiumError(error.message); }
   finally { premiumBusy = false; }
@@ -334,6 +338,11 @@ function renderPremiumOffer(host, config, options = {}) {
     host.querySelector('[name="promoCode"]')?.focus?.();
   });
   host.querySelector('[data-action="apply-promo"]')?.addEventListener("click", () => applyPromo(host));
+}
+
+function pricingFromOrder(order) {
+  if (!order?.promoCode || !Number.isFinite(order.baseAmount) || !Number.isFinite(order.amount)) return null;
+  return { baseAmount: order.baseAmount, discountAmount: order.baseAmount - order.amount, finalAmount: order.amount, currency: order.currency, promoCode: order.promoCode };
 }
 
 async function applyPromo(host, birthInput = currentBirthInput) {
@@ -460,6 +469,12 @@ async function submitLorentsenPayment(orderId, consent, button) {
 
 function renderLorentsenState(host, order) {
   if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
+  if (order.paymentSessionEndReason === "expired") {
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_SESSION_EXPIRED"><p class="section-label">Оплата полного разбора</p><h3>Время оплаты истекло</h3><p>Этот QR-код больше не актуален. Получите новый, чтобы продолжить оплату.</p><button type="button" class="premium-button" data-action="new-payment-session">Получить новый QR-код</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+    host.querySelector('[data-action="new-payment-session"]').addEventListener("click", () => renderConsentCheckout(order, { actionLabel: "Получить новый QR-код" }));
+    host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveTerminalPaymentFlow(host, order));
+    return;
+  }
   if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
     host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
     host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => restartPremiumFromOffer(host, order));
@@ -470,14 +485,31 @@ function renderLorentsenState(host, order) {
   const methodExpiresAt = Date.parse(method?.expiresAt || "");
   const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
   if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Статус платежа проверяется автоматически.</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}<p>QR-код действителен 15 минут. Если время истечёт, вы сможете получить новый.</p><div class="payment-notice">Статус платежа проверяется автоматически.</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="cancel-payment">Отменить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
   } else {
     const copy = paymentWaitingCopy(order.providerStatus);
     host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "provider_result_unknown")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="payment-notice">${e(copy[2])}</div><p class="payment-recovery-copy">Если деньги уже списаны, повторно оплачивать не нужно.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
   }
   host.querySelector('[data-action="check-payment"]')?.addEventListener("click", event => checkPaymentNow(event.currentTarget));
+  host.querySelector('[data-action="cancel-payment"]')?.addEventListener("click", event => cancelPaymentSession(order, event.currentTarget));
   host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
   schedulePaymentPoll(order.orderId, order.nextPollAt);
+}
+
+async function cancelPaymentSession(order, button) {
+  if (premiumBusy) return;
+  premiumBusy = true;
+  clearTimeout(paymentPollTimer);
+  if (button) { button.disabled = true; button.textContent = "Отменяем…"; }
+  try {
+    const result = await api("/api/premium/payment/cancel", { orderId: order.orderId });
+    activePremiumOrder = result.order;
+    paymentViewDismissed = false;
+    renderPremiumOffer(document.querySelector(".premium-action") || resultRoot, premiumConfig, { pricing: pricingFromOrder(result.order) });
+  } catch (error) {
+    if (button) { button.disabled = false; button.textContent = "Отменить оплату"; }
+    showPremiumError(error.message);
+  } finally { premiumBusy = false; }
 }
 
 function leaveLorentsenPaymentFlow(host, order) {
@@ -659,12 +691,15 @@ async function restorePremiumOrder() {
     } else if (result.order.status === "REPORT_READY") {
       ensureRecoveryHost();
       renderReadyState(resultRoot.querySelector(".premium-action"), result.order);
+    } else if (result.order.paymentSessionEndReason === "expired") {
+      ensureRecoveryHost();
+      renderPaymentState(result.order);
     } else if (isTerminalPaymentOrder(result.order)) {
       ensureRecoveryHost();
-      renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig);
+      renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig, { pricing: pricingFromOrder(result.order) });
     } else if (result.order.status === "CHECKOUT_STARTED" && !result.order.paymentFailureReason) {
       ensureRecoveryHost();
-      if (premiumConfig.paymentMode === "lorentsen") renderConsentCheckout(result.order);
+      if (premiumConfig.paymentMode === "lorentsen") renderPremiumOffer(resultRoot.querySelector(".premium-action"), premiumConfig, { pricing: pricingFromOrder(result.order) });
       else { const payment = await api("/api/premium/payment/start", { orderId }); renderPaymentState(payment.order); }
     } else if (["CHECKOUT_STARTED", "PAYMENT_PENDING"].includes(result.order.status)) {
       ensureRecoveryHost();

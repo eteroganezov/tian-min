@@ -29,8 +29,9 @@ class PostgresPaymentStore {
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS tian_min_attempts_order_idx ON tian_min_payment_attempts(order_id, updated_at);
-      CREATE UNIQUE INDEX IF NOT EXISTS tian_min_one_active_attempt_idx ON tian_min_payment_attempts(order_id)
-        WHERE provider_status NOT IN ('failed','expired');
+      DROP INDEX IF EXISTS tian_min_one_active_attempt_idx;
+      CREATE UNIQUE INDEX IF NOT EXISTS tian_min_one_active_user_session_idx ON tian_min_payment_attempts(order_id)
+        WHERE record->>'userSessionStatus'='active';
       CREATE TABLE IF NOT EXISTS tian_min_consent_records (
         consent_reference TEXT PRIMARY KEY,
         order_id TEXT NOT NULL,
@@ -182,6 +183,10 @@ class PostgresPaymentStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
+      const locked = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1 FOR UPDATE", [order.orderId]);
+      const current = locked.rows[0]?.record;
+      if (!current) throw configurationError("Заказ для payment attempt не найден.");
+      if (current.currentAttemptId || current.status !== "CHECKOUT_STARTED") throw paymentSessionConflict();
       await client.query(
         `INSERT INTO tian_min_payment_attempts(attempt_id,order_id,external_order_id,idempotency_key,payment_public_id,provider_status,request_body_hash,record,updated_at)
          VALUES($1,$2,$3,$4,NULL,$5,$6,$7::jsonb,NOW())`,
@@ -192,9 +197,10 @@ class PostgresPaymentStore {
          VALUES($1,$2,$3,$4,$5::jsonb)`,
         [consent.externalConsentReference, consent.orderId, consent.attemptId, consent.payerEmail, JSON.stringify(consent)],
       );
+      const nextOrder = { ...clone(current), ...paymentSessionFields(order) };
       const saved = await client.query(
         "UPDATE tian_min_orders SET record=$2::jsonb,updated_at=NOW() WHERE order_id=$1 RETURNING record",
-        [order.orderId, JSON.stringify(order)],
+        [order.orderId, JSON.stringify(nextOrder)],
       );
       if (!saved.rows[0]) throw configurationError("Заказ для payment attempt не найден.");
       await client.query("COMMIT");
@@ -203,6 +209,42 @@ class PostgresPaymentStore {
       await client.query("ROLLBACK");
       throw error;
     } finally { client.release(); }
+  }
+
+  async endPaymentSession({ orderId, attemptId, reason, now }) {
+    await this.ready;
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const locked = await client.query("SELECT record FROM tian_min_orders WHERE order_id=$1 FOR UPDATE", [String(orderId)]);
+      const order = locked.rows[0]?.record;
+      if (!order) { await client.query("ROLLBACK"); return null; }
+      if (["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(order.status) || order.currentAttemptId !== attemptId) { await client.query("COMMIT"); return clone(order); }
+      const attemptResult = await client.query("SELECT record FROM tian_min_payment_attempts WHERE attempt_id=$1 FOR UPDATE", [String(attemptId)]);
+      const attempt = attemptResult.rows[0]?.record;
+      if (attempt) {
+        const endedAttempt = { ...clone(attempt), userSessionStatus: reason === "cancelled" ? "cancelled" : "expired", userSessionEndReason: reason, userSessionEndedAt: now, updatedAt: now };
+        await client.query("UPDATE tian_min_payment_attempts SET record=$2::jsonb,updated_at=NOW() WHERE attempt_id=$1", [String(attemptId), JSON.stringify(endedAttempt)]);
+      }
+      const updated = { ...clone(order), status: "CHECKOUT_STARTED", lastAttemptId: attemptId, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: reason, updatedAt: now };
+      const saved = await client.query("UPDATE tian_min_orders SET record=$2::jsonb,updated_at=NOW() WHERE order_id=$1 RETURNING record", [String(orderId), JSON.stringify(updated)]);
+      await client.query("COMMIT");
+      return clone(saved.rows[0].record);
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async saveCurrentPaymentSession({ orderId, attemptId, changes }) {
+    await this.ready;
+    const result = await this.pool.query(
+      `UPDATE tian_min_orders SET record=record || $3::jsonb,updated_at=NOW()
+       WHERE order_id=$1 AND record->>'status'='PAYMENT_PENDING' AND record->>'currentAttemptId'=$2
+       RETURNING record`,
+      [String(orderId), String(attemptId), JSON.stringify(changes)],
+    );
+    return result.rows[0] ? clone(result.rows[0].record) : this.load(orderId);
   }
 
   async recordWebhook(event) {
@@ -347,6 +389,8 @@ function createPool(connectionString) { const { Pool } = require("pg"); return n
 function recordOrNull(result) { return result.rows[0] ? clone(result.rows[0].record) : null; }
 function clone(value) { return value == null ? null : structuredClone(value); }
 function configurationError(message) { const error = new Error(message); error.code = "PAYMENT_CONFIGURATION_ERROR"; return error; }
+function paymentSessionConflict() { const error = new Error("Платёжная сессия уже существует."); error.code = "PAYMENT_SESSION_CONFLICT"; return error; }
+function paymentSessionFields(order) { return { status: order.status, currentAttemptId: order.currentAttemptId, paymentId: order.paymentId, providerStatus: order.providerStatus, paymentMethod: order.paymentMethod, nextPollAt: order.nextPollAt, paymentFailureReason: order.paymentFailureReason, paymentSessionStatus: order.paymentSessionStatus, paymentSessionExpiresAt: order.paymentSessionExpiresAt, paymentSessionEndReason: order.paymentSessionEndReason, updatedAt: order.updatedAt }; }
 async function insertPromoEvent(client, event) {
   const record = { eventId: `promo_event_${crypto.randomBytes(16).toString("hex")}`, ...event };
   await client.query(

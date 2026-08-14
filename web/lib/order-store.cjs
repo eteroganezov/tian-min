@@ -36,7 +36,25 @@ class MemoryOrderStore {
   findAttemptByPaymentId(paymentId) { const value = [...this.attempts.values()].find(item => item.paymentPublicId === paymentId); return value ? structuredClone(value) : null; }
   listAttemptsByOrder(orderId) { return [...this.attempts.values()].filter(item => item.orderId === orderId).map(item => structuredClone(item)); }
   saveConsent(record) { this.consents.set(record.externalConsentReference, structuredClone(record)); return structuredClone(record); }
-  beginPaymentAttempt({ order, attempt, consent }) { this.saveAttempt(attempt); this.saveConsent(consent); return this.save(order); }
+  beginPaymentAttempt({ order, attempt, consent }) {
+    const current = this.load(order.orderId);
+    if (!current || current.currentAttemptId || current.status !== "CHECKOUT_STARTED") throw paymentSessionConflict();
+    this.saveAttempt(attempt); this.saveConsent(consent);
+    return this.save({ ...current, ...paymentSessionFields(order) });
+  }
+  endPaymentSession({ orderId, attemptId, reason, now }) {
+    const order = this.load(orderId);
+    if (!order) return null;
+    if (["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(order.status) || order.currentAttemptId !== attemptId) return order;
+    const attempt = this.loadAttempt(attemptId);
+    if (attempt) this.saveAttempt({ ...attempt, userSessionStatus: reason === "cancelled" ? "cancelled" : "expired", userSessionEndReason: reason, userSessionEndedAt: now, updatedAt: now });
+    return this.save({ ...order, status: "CHECKOUT_STARTED", lastAttemptId: attemptId, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: reason, updatedAt: now });
+  }
+  saveCurrentPaymentSession({ orderId, attemptId, changes }) {
+    const order = this.load(orderId);
+    if (!order || order.status !== "PAYMENT_PENDING" || order.currentAttemptId !== attemptId) return order;
+    return this.save({ ...order, ...structuredClone(changes) });
+  }
   recordWebhook(event) { const existing = this.webhooks.get(event.eventId); if (!existing) { this.webhooks.set(event.eventId, structuredClone(event)); return { status: "stored" }; } return existing.payloadHash === event.payloadHash ? { status: "duplicate" } : { status: "conflict" }; }
   loadWebhook(eventId) { const value = this.webhooks.get(String(eventId)); return value ? structuredClone(value) : null; }
   listPendingWebhooks(limit = 50) { const now = Date.now(); return [...this.webhooks.values()].filter(item => ((item.processingStatus === "pending" || item.processingStatus === "retry") && (!item.nextProcessingAt || Date.parse(item.nextProcessingAt) <= now)) || (item.processingStatus === "processing" && Date.parse(item.processingLeaseUntil || 0) <= now)).slice(0, limit).map(item => structuredClone(item)); }
@@ -133,5 +151,7 @@ function safeOrderId(value) {
   return id;
 }
 function unavailable() { const error = new Error("Production order storage пока не настроено."); error.code = "ORDER_STORE_UNAVAILABLE"; return error; }
+function paymentSessionConflict() { const error = new Error("Платёжная сессия уже существует."); error.code = "PAYMENT_SESSION_CONFLICT"; return error; }
+function paymentSessionFields(order) { return { status: order.status, currentAttemptId: order.currentAttemptId, paymentId: order.paymentId, providerStatus: order.providerStatus, paymentMethod: order.paymentMethod, nextPollAt: order.nextPollAt, paymentFailureReason: order.paymentFailureReason, paymentSessionStatus: order.paymentSessionStatus, paymentSessionExpiresAt: order.paymentSessionExpiresAt, paymentSessionEndReason: order.paymentSessionEndReason, updatedAt: order.updatedAt }; }
 
 module.exports = { LocalOrderStore, MemoryOrderStore };

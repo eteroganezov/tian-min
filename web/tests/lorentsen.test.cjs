@@ -226,14 +226,17 @@ test("PostgreSQL production store создаёт durable orders, attempts, conse
   await store.ready;
   const schema = queries.join("\n");
   for (const table of ["tian_min_orders", "tian_min_payment_attempts", "tian_min_consent_records", "tian_min_webhook_inbox", "tian_min_payment_anomalies", "tian_min_reports", "tian_min_promos", "tian_min_promo_redemptions", "tian_min_promo_events"]) assert.match(schema, new RegExp(table));
+  assert.match(schema, /DROP INDEX IF EXISTS tian_min_one_active_attempt_idx/);
+  assert.match(schema, /tian_min_one_active_user_session_idx[\s\S]*userSessionStatus'='active'/);
   assert.throws(() => new PostgresPaymentStore({ env: {} }), /DATABASE_URL/);
 });
 
 test("создание attempt + consent + order status выполняется одной PostgreSQL transaction", async () => {
   const statements = [];
-  const order = { orderId: "order_123", checkoutKeyHash: "hash", status: "PAYMENT_PENDING" };
+  const storedOrder = { orderId: "order_123", checkoutKeyHash: "hash", status: "CHECKOUT_STARTED", currentAttemptId: null };
+  const order = { ...storedOrder, status: "PAYMENT_PENDING", currentAttemptId: "attempt_123", paymentSessionStatus: "active" };
   const client = {
-    query: async sql => { statements.push(sql); return String(sql).startsWith("UPDATE tian_min_orders") ? { rows: [{ record: order }] } : { rows: [], rowCount: 1 }; },
+    query: async sql => { statements.push(sql); if (String(sql).startsWith("SELECT record FROM tian_min_orders")) return { rows: [{ record: storedOrder }] }; return String(sql).startsWith("UPDATE tian_min_orders") ? { rows: [{ record: order }] } : { rows: [], rowCount: 1 }; },
     release() { statements.push("RELEASE"); },
   };
   const store = new PostgresPaymentStore({ pool: { query: async () => ({ rows: [], rowCount: 0 }), connect: async () => client } });
@@ -399,7 +402,7 @@ test("non-terminal attempt не дублируется, failed/expired разр�
   await ctx.service.reconcilePayment(first.body.order.paymentId);
   const failedOrder = (await ctx.service.getOrder(order.orderId)).body.order;
   assert.equal(failedOrder.paymentFailureReason, "failed");
-  const failedAttempt = await ctx.orderStore.loadAttempt(failedOrder.currentAttemptId);
+  const failedAttempt = await ctx.orderStore.loadAttempt(failedOrder.lastAttemptId);
   await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(ctx.provider.createCalls.length, 2);
   assert.equal(ctx.orderStore.attempts.size, 2);
@@ -414,7 +417,7 @@ test("confirmed expired создаёт replacement только по явном�
   const expired = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(expired.body.order.providerStatus, "expired");
   assert.equal(expired.body.order.status, "CHECKOUT_STARTED");
-  const original = await ctx.orderStore.loadAttempt(expired.body.order.currentAttemptId);
+  const original = await ctx.orderStore.loadAttempt(expired.body.order.lastAttemptId);
   assert.equal(ctx.provider.createCalls.length, 1);
   const replacementResult = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   const replacement = await ctx.orderStore.loadAttempt(replacementResult.body.order.currentAttemptId);
@@ -425,7 +428,7 @@ test("confirmed expired создаёт replacement только по явном�
   assert.equal(replacement.sequence, original.sequence + 1);
 });
 
-test("manual_review и processing не разрешают replacement attempt", async () => {
+test("active manual_review и processing без Cancel/expiry не дублируют attempt", async () => {
   for (const status of ["manual_review", "processing"]) {
     const ctx = serviceSetup([status]);
     const order = (await ctx.service.createCheckout(birthInput)).body.order;
@@ -435,6 +438,110 @@ test("manual_review и processing не разрешают replacement attempt", 
     assert.equal(ctx.orderStore.attempts.size, 1);
     assert.equal((await ctx.service.getOrder(order.orderId)).body.order.status, "PAYMENT_PENDING");
   }
+});
+
+test("Cancel скрывает QR, сохраняет promo/history и explicit Pay создаёт fresh attempt", async () => {
+  const ctx = serviceSetup(["requires_action", "requires_action"]);
+  const checkout = (await ctx.service.createCheckout(birthInput)).body.order;
+  const applied = await ctx.service.applyPromo({ orderId: checkout.orderId, code: "FRIEND100" });
+  const first = await ctx.service.startPayment({ orderId: checkout.orderId, ...validConsent });
+  const firstAttempt = await ctx.orderStore.loadAttempt(first.body.order.currentAttemptId);
+  const cancelled = await ctx.service.cancelPaymentSession({ orderId: checkout.orderId });
+  assert.equal(cancelled.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(cancelled.body.order.currentAttemptId, null);
+  assert.equal(cancelled.body.order.paymentMethod, null);
+  assert.equal(cancelled.body.order.promoCode, "FRIEND100");
+  assert.equal(cancelled.body.order.amount, 100);
+  const historical = await ctx.orderStore.loadAttempt(firstAttempt.attemptId);
+  assert.equal(historical.userSessionStatus, "cancelled");
+  assert.equal(historical.providerStatus, "requires_action");
+  assert.equal(historical.paymentPublicId, firstAttempt.paymentPublicId);
+  const reloaded = await ctx.service.getOrder(checkout.orderId, { refresh: true, source: "reload" });
+  assert.equal(reloaded.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(ctx.provider.createCalls.length, 1);
+  const second = await ctx.service.startPayment({ orderId: checkout.orderId, ...validConsent });
+  const secondAttempt = await ctx.orderStore.loadAttempt(second.body.order.currentAttemptId);
+  assert.equal(ctx.provider.createCalls.length, 2);
+  assert.equal(ctx.orderStore.attempts.size, 2);
+  assert.notEqual(secondAttempt.attemptId, firstAttempt.attemptId);
+  assert.notEqual(secondAttempt.externalOrderId, firstAttempt.externalOrderId);
+  assert.notEqual(secondAttempt.idempotencyKey, firstAttempt.idempotencyKey);
+  assert.equal(second.body.order.promoCode, "FRIEND100");
+  assert.equal(applied.body.order.reportId, second.body.order.reportId);
+});
+
+test("server-side 15-minute expiry hides old QR and new QR requires explicit start", async () => {
+  let current = new Date("2026-08-12T10:00:00Z");
+  const provider = new FakeLorentsenProvider();
+  provider.createPayment = async attempt => {
+    provider.createCalls.push(structuredClone(attempt));
+    return { ...payment(`pay_${attempt.sequence}`, "requires_action"), paymentMethod: { link: `https://pay.example/${attempt.sequence}`, image: null, expiresAt: new Date(current.getTime() + 15 * 60 * 1000).toISOString() } };
+  };
+  const ctx = serviceSetup([], { provider, now: () => current });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const first = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const firstAttemptId = first.body.order.currentAttemptId;
+  current = new Date("2026-08-12T10:15:01Z");
+  const expired = await ctx.service.getOrder(order.orderId, { refresh: true, source: "reload" });
+  assert.equal(expired.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(expired.body.order.paymentSessionEndReason, "expired");
+  assert.equal(expired.body.order.currentAttemptId, null);
+  assert.equal(ctx.provider.createCalls.length, 1);
+  assert.equal((await ctx.orderStore.loadAttempt(firstAttemptId)).userSessionStatus, "expired");
+  const second = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  assert.equal(ctx.provider.createCalls.length, 2);
+  assert.notEqual(second.body.order.currentAttemptId, firstAttemptId);
+});
+
+test("legacy manual_review без usable method больше не блокирует production-like order", async () => {
+  const ctx = serviceSetup(["manual_review", "requires_action"]);
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const first = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const legacyAttempt = await ctx.orderStore.loadAttempt(first.body.order.currentAttemptId);
+  delete legacyAttempt.userSessionStatus;
+  delete legacyAttempt.userSessionExpiresAt;
+  await ctx.orderStore.saveAttempt(legacyAttempt);
+  const recovered = await ctx.service.getOrder(order.orderId, { refresh: true, source: "reload" });
+  assert.equal(recovered.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(recovered.body.order.paymentSessionEndReason, "legacy_unusable");
+  assert.equal(recovered.body.order.currentAttemptId, null);
+  const second = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  assert.equal(ctx.provider.createCalls.length, 2);
+  assert.notEqual(second.body.order.currentAttemptId, legacyAttempt.attemptId);
+  assert.equal(ctx.orderStore.attempts.size, 2);
+});
+
+test("late settled hidden attempt authorizes one order and QR TTL cannot reset PAID", async () => {
+  let current = new Date("2026-08-12T10:00:00Z");
+  const ctx = serviceSetup(["requires_action"], { now: () => current });
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const first = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const paymentId = first.body.order.paymentId;
+  await ctx.service.cancelPaymentSession({ orderId: order.orderId });
+  ctx.provider.statuses.push("settled", "processing");
+  const paid = await ctx.service.reconcilePayment(paymentId, { source: "callback" });
+  assert.equal(paid.body.order.status, "PAID");
+  const confirmedAt = paid.body.order.paymentConfirmedAt;
+  current = new Date("2026-08-13T10:00:00Z");
+  const reloaded = await ctx.service.getOrder(order.orderId, { refresh: true, source: "reload" });
+  assert.equal(reloaded.body.order.status, "PAID");
+  assert.equal(reloaded.body.order.paymentConfirmedAt, confirmedAt);
+  assert.equal(ctx.provider.createCalls.length, 1);
+});
+
+test("late non-terminal reconciliation cannot resurrect a cancelled user session", async () => {
+  const ctx = serviceSetup(["requires_action"]);
+  const order = (await ctx.service.createCheckout(birthInput)).body.order;
+  const started = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
+  const staleOrder = await ctx.orderStore.load(order.orderId);
+  const attempt = await ctx.orderStore.loadAttempt(started.body.order.currentAttemptId);
+  await ctx.service.cancelPaymentSession({ orderId: order.orderId });
+  const late = { ...attempt, providerStatus: "processing", updatedAt: "2026-08-12T10:00:05.000Z" };
+  await ctx.orderStore.saveAttempt(late);
+  const result = await ctx.service.applyProviderStatus(staleOrder, late, payment(late.paymentPublicId, "processing"));
+  assert.equal(result.body.order.status, "CHECKOUT_STARTED");
+  assert.equal(result.body.order.currentAttemptId, null);
+  assert.equal(result.body.order.paymentSessionEndReason, "cancelled");
 });
 
 test("retryable create failure повторяет тот же attempt, idempotency key и exact body", async () => {

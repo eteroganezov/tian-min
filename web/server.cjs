@@ -42,6 +42,7 @@ function createServer(options = {}) {
       if (request.method === "POST" && request.url === "/api/premium/promo/apply") return await handlePremiumAction(request, response, input => premiumService.applyPromo(input), 30_000);
       if (request.method === "POST" && request.url === "/api/premium/promo/redeem") return await handlePremiumAction(request, response, input => premiumService.redeemPromo(input));
       if (request.method === "POST" && request.url === "/api/premium/payment/start") return await handlePremiumAction(request, response, input => premiumService.startPayment(input));
+      if (request.method === "POST" && request.url === "/api/premium/payment/cancel") return await handlePremiumAction(request, response, input => premiumService.cancelPaymentSession(input));
       if (request.method === "POST" && request.url === "/api/premium/dev/payment") return await handlePremiumAction(request, response, input => premiumService.applyMockOutcome(input.orderId, input.outcome));
       if (request.method === "POST" && request.url === "/api/payments/lorentsen/webhook") return await handleLorentsenWebhook(request, response, premiumService);
       if (request.method === "POST" && request.url === "/api/premium/generate") return await handlePremiumAction(request, response, input => premiumService.generate(input.orderId,{ expectedAttempt:input.reportGenerationAttempt }));

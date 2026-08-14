@@ -33,6 +33,15 @@ function getJson(server, url) {
   });
 }
 
+function postJson(server, url, body) {
+  return new Promise((resolve, reject) => {
+    const request = Readable.from([JSON.stringify(body)]);
+    request.method = "POST"; request.url = url; request.headers = { "content-type": "application/json" };
+    const response = { status: 0, writeHead(status) { this.status = status; }, end(value = "") { try { resolve({ status: this.status, body: JSON.parse(String(value)) }); } catch (error) { reject(error); } } };
+    server.emit("request", request, response);
+  });
+}
+
 test("webhook route передаёт exact raw bytes до JSON.parse", async () => {
   const expected = Buffer.from('{ "id" : "evt_exact", "unicode" : "天命" }');
   let received;
@@ -64,5 +73,17 @@ test("order recovery route forwards lifecycle source, forced refresh and preview
     const result = await getJson(server, "/api/premium/order/order_safe?source=pageshow&refresh=1&includePreview=1");
     assert.equal(result.status, 200);
     assert.deepEqual(received, { orderId: "order_safe", options: { source: "pageshow", refresh: true, includePreview: true } });
+  } finally { server.close(); }
+});
+
+test("payment cancel route changes only the internal user session", async () => {
+  let received;
+  const premiumService = { cancelPaymentSession: async input => { received = input; return { status: 200, body: { order: { orderId: input.orderId, status: "CHECKOUT_STARTED" } } }; } };
+  const server = createServer({ premiumService });
+  try {
+    const result = await postJson(server, "/api/premium/payment/cancel", { orderId: "order_safe" });
+    assert.equal(result.status, 200);
+    assert.deepEqual(received, { orderId: "order_safe" });
+    assert.equal(result.body.order.status, "CHECKOUT_STARTED");
   } finally { server.close(); }
 });

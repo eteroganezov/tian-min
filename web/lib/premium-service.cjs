@@ -13,6 +13,8 @@ const { verifyLorentsenWebhook } = require("./lorentsen-webhook.cjs");
 
 const ORDER_STATES = Object.freeze(["FREE_PREVIEW", "CHECKOUT_STARTED", "PAYMENT_PENDING", "PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"]);
 const ACTIVE_PROVIDER_STATUSES = new Set(["creating", "preparing", "processing", "requires_action", "succeeded_pending", "manual_review", "provider_result_unknown"]);
+const PAYMENT_SESSION_TTL_MS = 15 * 60 * 1000;
+const FULFILLED_ORDER_STATUSES = new Set(["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"]);
 
 class PremiumService {
   constructor(options) {
@@ -60,6 +62,7 @@ class PremiumService {
       baseAmount: this.config.amount, amount: this.config.amount, currency: this.config.currency,
       paymentProvider: this.paymentProvider.name, paymentId: null, currentAttemptId: null,
       providerStatus: null, paymentMethod: null, nextPollAt: null, paymentConfirmedAt: null,
+      paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: null,
       reportGenerationStartedAt: null, reportGenerationCompletedAt: null,
       reportGenerationLeaseUntil: null, reportGenerationAttempt: 0,
       reportAccessToken: randomToken(), reportAccessTokenHash: null,
@@ -105,7 +108,7 @@ class PremiumService {
     const request = typeof input === "string" ? { orderId: input } : input || {};
     const order = await this.orderStore.load(request.orderId);
     if (!order) return failure(404, "Заказ не найден.");
-    if (["PAID", "REPORT_GENERATING", "REPORT_READY"].includes(order.status)) return success(200, order);
+    if (FULFILLED_ORDER_STATUSES.has(order.status)) return success(200, order);
     const promoValidation = await this.validateAppliedPromo(order);
     if (promoValidation) return promoValidation;
     if (order.amount === 0) return failure(409, "Для этого промокода оплата не требуется.");
@@ -124,23 +127,29 @@ class PremiumService {
   }
 
   async startLorentsenPayment(order, input) {
+    order = await this.expirePaymentSessionIfNeeded(order);
     const attempts = await this.orderStore.listAttemptsByOrder(order.orderId);
     let attempt = order.currentAttemptId ? await this.orderStore.loadAttempt(order.currentAttemptId) : null;
-    if (attempt && ACTIVE_PROVIDER_STATUSES.has(attempt.providerStatus)) {
+    if (order.currentAttemptId && !attempt) {
+      order = await this.saveOrder(order, paymentOfferChanges("missing_attempt", order.currentAttemptId, this.isoNow()));
+    } else if (attempt && (TERMINAL_STATUSES.has(attempt.providerStatus) || !isActiveUserPaymentSession(attempt))) {
+      order = await this.endPaymentSession(order, attempt, TERMINAL_STATUSES.has(attempt.providerStatus) ? "provider_terminal" : attempt.userSessionEndReason || "expired");
+      attempt = null;
+    }
+    if (attempt && isActiveUserPaymentSession(attempt) && ACTIVE_PROVIDER_STATUSES.has(attempt.providerStatus)) {
       if (attempt.nextPollAt && Date.parse(attempt.nextPollAt) > this.now().getTime()) return success(200, order);
       if (attempt.paymentPublicId) return this.reconcilePayment(attempt.paymentPublicId);
       return this.createProviderPayment(order, attempt);
     }
-    if (attempt && !TERMINAL_STATUSES.has(attempt.providerStatus)) return failure(409, "Предыдущая попытка оплаты требует ручной проверки.");
     const validation = validatePaymentInput(input);
     if (validation.error) return failure(400, validation.error);
     attempt = this.buildAttempt(order, validation, attempts.length + 1);
     const consent = buildConsentRecord(order, attempt, validation, this.paymentProvider.config, this.isoNow());
-    const pendingOrder = { ...order, status: "PAYMENT_PENDING", currentAttemptId: attempt.attemptId, paymentId: null, providerStatus: "creating", paymentMethod: null, paymentFailureReason: null, updatedAt: this.isoNow() };
+    const pendingOrder = { ...order, status: "PAYMENT_PENDING", currentAttemptId: attempt.attemptId, paymentId: null, providerStatus: "creating", paymentMethod: null, paymentFailureReason: null, paymentSessionStatus: "active", paymentSessionExpiresAt: attempt.userSessionExpiresAt, paymentSessionEndReason: null, updatedAt: this.isoNow() };
     try {
       order = this.orderStore.beginPaymentAttempt ? await this.orderStore.beginPaymentAttempt({ order: pendingOrder, attempt, consent }) : await this.persistPaymentAttempt(pendingOrder, attempt, consent);
     } catch (error) {
-      if (error?.code === "23505") return failure(409, "Платёжная попытка уже создаётся. Обновите статус заказа.");
+      if (error?.code === "23505" || error?.code === "PAYMENT_SESSION_CONFLICT") return failure(409, "Платёжная попытка уже создаётся. Обновите статус заказа.");
       throw error;
     }
     await this.recordPromoEvent(order, "payment_attempted");
@@ -175,8 +184,37 @@ class PremiumService {
       requestBody, requestBodyHash: hash(JSON.stringify(requestBody)), paymentPublicId: null,
       providerStatus: "creating", statusHistory: [{ status: "creating", at: now }], retryTimestamps: [],
       paymentMethod: null, paymentMethodExpiry: null, nextPollAt: null, traceId: null,
-      failureInfo: null, createdAt: now, updatedAt: now,
+      failureInfo: null, userSessionStatus: "active", userSessionExpiresAt: new Date(this.now().getTime() + PAYMENT_SESSION_TTL_MS).toISOString(), userSessionEndReason: null, userSessionEndedAt: null, createdAt: now, updatedAt: now,
     };
+  }
+
+  async cancelPaymentSession(input) {
+    const order = await this.orderStore.load(input?.orderId);
+    if (!order) return failure(404, "Заказ не найден.");
+    if (FULFILLED_ORDER_STATUSES.has(order.status) || order.accessReason === "complimentary_promo") return success(200, order);
+    if (!order.currentAttemptId) return success(200, order.status === "CHECKOUT_STARTED" ? order : await this.saveOrder(order, paymentOfferChanges("cancelled", null, this.isoNow())));
+    const attempt = await this.orderStore.loadAttempt(order.currentAttemptId);
+    if (!attempt) return success(200, await this.saveOrder(order, paymentOfferChanges("cancelled", order.currentAttemptId, this.isoNow())));
+    return success(200, await this.endPaymentSession(order, attempt, "cancelled"));
+  }
+
+  async endPaymentSession(order, attempt, reason) {
+    const now = this.isoNow();
+    if (this.orderStore.endPaymentSession) return this.orderStore.endPaymentSession({ orderId: order.orderId, attemptId: attempt.attemptId, reason, now });
+    await this.orderStore.saveAttempt({ ...attempt, userSessionStatus: reason === "cancelled" ? "cancelled" : "expired", userSessionEndReason: reason, userSessionEndedAt: now, updatedAt: now });
+    return this.saveOrder(order, paymentOfferChanges(reason, attempt.attemptId, now));
+  }
+
+  async expirePaymentSessionIfNeeded(order) {
+    if (!order || FULFILLED_ORDER_STATUSES.has(order.status) || order.status !== "PAYMENT_PENDING" || !order.currentAttemptId) return order;
+    const attempt = await this.orderStore.loadAttempt(order.currentAttemptId);
+    if (!attempt) return this.saveOrder(order, paymentOfferChanges("missing_attempt", order.currentAttemptId, this.isoNow()));
+    if (!isActiveUserPaymentSession(attempt)) return this.endPaymentSession(order, attempt, attempt.userSessionEndReason || "expired");
+    const legacyUnusable = !attempt.userSessionStatus && attempt.providerStatus === "manual_review" && !attempt.paymentMethod && !order.paymentMethod;
+    const expiresAt = Date.parse(attempt.userSessionExpiresAt || attempt.paymentMethodExpiry || order.paymentSessionExpiresAt || order.paymentMethod?.expiresAt || "");
+    if (legacyUnusable) return this.endPaymentSession(order, attempt, "legacy_unusable");
+    if (Number.isFinite(expiresAt) && expiresAt <= this.now().getTime()) return this.endPaymentSession(order, attempt, "expired");
+    return order;
   }
 
   async createProviderPayment(order, attempt) {
@@ -198,7 +236,14 @@ class PremiumService {
       if (attempt.statusHistory.at(-1)?.status !== attempt.providerStatus) attempt.statusHistory = [...attempt.statusHistory, { status: attempt.providerStatus, at: now }];
       await this.orderStore.saveAttempt(attempt);
       const terminalValidation = attempt.providerStatus === "failed";
-      const saved = await this.saveOrder(order, { status: terminalValidation ? "CHECKOUT_STARTED" : "PAYMENT_PENDING", providerStatus: attempt.providerStatus, nextPollAt: terminalValidation ? null : attempt.nextPollAt, paymentFailureReason: terminalValidation ? "provider_validation" : null });
+      if (terminalValidation) {
+        const endedAt = this.isoNow();
+        attempt = { ...attempt, userSessionStatus: "provider_terminal", userSessionEndReason: "failed", userSessionEndedAt: endedAt, updatedAt: endedAt };
+        await this.orderStore.saveAttempt(attempt);
+      }
+      const saved = await this.saveOrder(order, terminalValidation
+        ? { ...paymentOfferChanges("failed", attempt.attemptId, this.isoNow()), paymentFailureReason: "provider_validation", providerStatus: "failed" }
+        : { status: "PAYMENT_PENDING", providerStatus: attempt.providerStatus, nextPollAt: attempt.nextPollAt, paymentFailureReason: null, paymentSessionStatus: "active", paymentSessionExpiresAt: attempt.userSessionExpiresAt });
       return { status: error.status === 429 ? 429 : error.status === 409 || error.status === 422 ? error.status : 503, body: { error: customerPaymentError(error), order: publicOrder(saved) } };
     }
   }
@@ -236,26 +281,36 @@ class PremiumService {
   }
 
   async applyProviderStatus(order, attempt, payment, options = {}) {
-    const changes = {
-      status: "PAYMENT_PENDING", paymentId: attempt.paymentPublicId, currentAttemptId: attempt.attemptId,
-      providerStatus: attempt.providerStatus, paymentMethod: attempt.paymentMethod || order.paymentMethod,
-      nextPollAt: attempt.nextPollAt, paymentFailureReason: null,
-      lastProviderCheckAt: attempt.updatedAt,
-    };
-    const alreadyFulfilled = ["PAID", "REPORT_GENERATING", "REPORT_READY", "REPORT_FAILED"].includes(order.status);
+    order = await this.orderStore.load(order.orderId) || order;
+    const alreadyFulfilled = FULFILLED_ORDER_STATUSES.has(order.status);
+    const isCurrentUserSession = order.currentAttemptId === attempt.attemptId && isActiveUserPaymentSession(attempt);
     if (attempt.providerStatus === "settled") {
       const all = await this.orderStore.listAttemptsByOrder(order.orderId);
       const settled = all.filter(item => item.providerStatus === "settled");
       if (settled.length > 1) await this.orderStore.saveAnomaly({ orderId: order.orderId, type: "MULTIPLE_SETTLED_ATTEMPTS", attemptIds: settled.map(item => item.attemptId), createdAt: this.isoNow() });
-      if (!alreadyFulfilled) Object.assign(changes, { status: "PAID", paymentConfirmedAt: this.isoNow(), paymentFailureReason: null });
-      else Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
-    } else if (TERMINAL_STATUSES.has(attempt.providerStatus)) {
-      if (alreadyFulfilled) Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
-      else Object.assign(changes, { status: "CHECKOUT_STARTED", paymentFailureReason: attempt.providerStatus, paymentMethod: null, nextPollAt: null });
-    } else if (alreadyFulfilled) {
-      Object.assign(changes, { status: order.status, paymentConfirmedAt: order.paymentConfirmedAt });
+      if (alreadyFulfilled) { await this.recordPromoEvent(order, "settled"); return success(200, order); }
+      const saved = await this.saveOrder(order, { status: "PAID", paymentId: attempt.paymentPublicId, currentAttemptId: attempt.attemptId, providerStatus: "settled", paymentMethod: null, nextPollAt: null, paymentFailureReason: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: null, paymentConfirmedAt: this.isoNow(), lastProviderCheckAt: attempt.updatedAt });
+      this.logPaymentState(order, saved, attempt, options.source || "provider_poll");
+      await this.recordPromoEvent(saved, "settled");
+      return success(200, saved);
     }
-    const saved = await this.saveOrder(order, changes);
+    if (!isCurrentUserSession || alreadyFulfilled) return success(200, order);
+    const changes = {
+      status: "PAYMENT_PENDING", paymentId: attempt.paymentPublicId, currentAttemptId: attempt.attemptId,
+      providerStatus: attempt.providerStatus, paymentMethod: attempt.paymentMethod || order.paymentMethod,
+      nextPollAt: attempt.nextPollAt, paymentFailureReason: null,
+      paymentSessionStatus: "active", paymentSessionExpiresAt: attempt.userSessionExpiresAt || attempt.paymentMethodExpiry || order.paymentSessionExpiresAt,
+      paymentSessionEndReason: null, lastProviderCheckAt: attempt.updatedAt,
+    };
+    if (TERMINAL_STATUSES.has(attempt.providerStatus)) {
+      const now = this.isoNow();
+      attempt = { ...attempt, userSessionStatus: "provider_terminal", userSessionEndReason: attempt.providerStatus, userSessionEndedAt: now, updatedAt: now };
+      await this.orderStore.saveAttempt(attempt);
+      Object.assign(changes, { status: "CHECKOUT_STARTED", lastAttemptId: attempt.attemptId, currentAttemptId: null, paymentId: null, paymentFailureReason: attempt.providerStatus, paymentMethod: null, nextPollAt: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: attempt.providerStatus });
+    }
+    const saved = this.orderStore.saveCurrentPaymentSession
+      ? await this.orderStore.saveCurrentPaymentSession({ orderId: order.orderId, attemptId: attempt.attemptId, changes: { ...changes, updatedAt: this.isoNow() } })
+      : await this.saveOrder(order, changes);
     this.logPaymentState(order, saved, attempt, options.source || "provider_poll");
     if (attempt.providerStatus === "settled") {
       await this.recordPromoEvent(saved, "settled");
@@ -330,6 +385,7 @@ class PremiumService {
     let order = await this.orderStore.load(orderId);
     if (!order) return failure(404, "Заказ не найден.");
     order=await this.ensureReportAccess(order);
+    order=await this.expirePaymentSessionIfNeeded(order);
     const forceRefresh = options.refresh === true && Date.parse(order.lastProviderCheckAt || 0) <= this.now().getTime() - 2_000;
     if (this.paymentProvider.name === "lorentsen" && order.status === "PAYMENT_PENDING" && (forceRefresh || !order.nextPollAt || Date.parse(order.nextPollAt) <= this.now().getTime())) {
       if (order.paymentId) return this.finalizeOrderResult(orderId, this.reconcilePayment(order.paymentId, { source: options.source }), options);
@@ -486,10 +542,15 @@ function validatePaymentInput(input) {
 function updateAttempt(attempt, payment, now) {
   const status = payment.status || "provider_result_unknown";
   const history = attempt.statusHistory.at(-1)?.status === status ? attempt.statusHistory : [...attempt.statusHistory, { status, at: now }];
+  const methodExpiry = payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry;
   return { ...attempt, paymentPublicId: payment.paymentPublicId || attempt.paymentPublicId, providerStatus: status,
     providerPaymentStatus:payment.providerPaymentStatus || status,settlement:payment.settlement || attempt.settlement || null,
-    statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: payment.paymentMethod?.expiresAt || attempt.paymentMethodExpiry, nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
+    statusHistory: history, paymentMethod: payment.paymentMethod || attempt.paymentMethod, paymentMethodExpiry: methodExpiry,
+    userSessionExpiresAt: isActiveUserPaymentSession(attempt) ? methodExpiry || attempt.userSessionExpiresAt : attempt.userSessionExpiresAt,
+    nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
 }
+function isActiveUserPaymentSession(attempt) { return Boolean(attempt && !["cancelled", "expired", "provider_terminal"].includes(attempt.userSessionStatus)); }
+function paymentOfferChanges(reason, attemptId, now) { return { status: "CHECKOUT_STARTED", lastAttemptId: attemptId || null, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: reason, updatedAt: now }; }
 function safePaymentSource(value) { const source=String(value || "provider_poll"); return new Set(["polling","focus","visibility","pageshow","reload","resume","manual","callback","provider_poll"]).has(source) ? source : "provider_poll"; }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }
 async function generatePremiumReport(order,env,onStage) {
