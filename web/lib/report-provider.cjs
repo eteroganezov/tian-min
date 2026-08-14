@@ -4,6 +4,8 @@ const OpenAI = require("openai");
 const { REPORT_JSON_SCHEMA } = require("./report-schema.cjs");
 const { createMockReport } = require("./mock-report.cjs");
 
+const LOCAL_OPENAI_OPT_IN = "ALLOW_REAL_OPENAI_LOCAL";
+
 const promptRoot = path.resolve(__dirname, "..", "..", "prompts");
 const projectPrompts = ["bazi-prompt.md", "ziwei-prompt.md", "zonghe-yinzheng-prompt.md", "zonghe-poster.md"]
   .map(name => `\n--- ${name} ---\n${fs.readFileSync(path.join(promptRoot, name), "utf8")}`)
@@ -52,9 +54,18 @@ ${projectPrompts}`;
 
 class OpenAIReportProvider {
   constructor(options = {}) {
+    const env = options.env || process.env;
+    if (!options.client) {
+      const policy = resolveReportProviderPolicy({ ...env, OPENAI_API_KEY: options.apiKey || env.OPENAI_API_KEY });
+      if (policy.providerType !== "openai") {
+        const error = new Error(policy.message);
+        error.code = policy.reason;
+        throw error;
+      }
+    }
     this.providerType = "openai";
-    this.model = options.model || process.env.OPENAI_MODEL || "gpt-5.6-terra";
-    this.client = options.client || new OpenAI({ apiKey: options.apiKey || process.env.OPENAI_API_KEY });
+    this.model = options.model || env.OPENAI_MODEL || "gpt-5.6-terra";
+    this.client = options.client || new OpenAI({ apiKey: options.apiKey || env.OPENAI_API_KEY });
   }
 
   async generate(context, retryReason) {
@@ -97,15 +108,53 @@ class MockReportProvider {
 }
 
 class UnavailableReportProvider {
-  constructor(model) { this.model = model || "gpt-5.6-terra"; this.providerType = "unavailable"; }
-  async generate() { throw Object.assign(new Error("Персональная интерпретация пока не подключена"), { code: "AI_NOT_CONFIGURED" }); }
+  constructor(model, options = {}) {
+    this.model = model || "gpt-5.6-terra";
+    this.providerType = "unavailable";
+    this.message = options.message || "Персональная интерпретация пока не подключена";
+    this.reason = options.reason || "AI_NOT_CONFIGURED";
+  }
+  async generate() { throw Object.assign(new Error(this.message), { code: "AI_NOT_CONFIGURED", reason: this.reason }); }
 }
 
 function createReportProvider(env = process.env) {
-  if (env.AI_MODE === "mock") return new MockReportProvider();
-  if (env.AI_MODE === "disabled") return new UnavailableReportProvider(env.OPENAI_MODEL);
-  if (!env.OPENAI_API_KEY) return new UnavailableReportProvider(env.OPENAI_MODEL);
-  return new OpenAIReportProvider({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL });
+  const policy = resolveReportProviderPolicy(env);
+  if (policy.providerType === "mock") return new MockReportProvider();
+  if (policy.providerType === "unavailable") return new UnavailableReportProvider(env.OPENAI_MODEL, policy);
+  return new OpenAIReportProvider({ apiKey: env.OPENAI_API_KEY, model: env.OPENAI_MODEL, env });
 }
 
-module.exports = { MockReportProvider, OpenAIReportProvider, UnavailableReportProvider, createReportProvider };
+function resolveReportProviderPolicy(env = process.env) {
+  const environment = String(env.NODE_ENV || "development").trim().toLowerCase();
+  const mode = String(env.AI_MODE || "").trim().toLowerCase();
+  const hasApiKey = Boolean(String(env.OPENAI_API_KEY || "").trim());
+
+  if (environment === "test") {
+    if (mode === "mock") return { providerType: "mock", reason: "TEST_MOCK", message: "Automated tests use the mock OpenAI provider." };
+    return {
+      providerType: "unavailable",
+      reason: "REAL_OPENAI_DISABLED_IN_TEST",
+      message: "Real OpenAI is disabled in automated tests before any network request.",
+    };
+  }
+  if (mode === "mock") return { providerType: "mock", reason: "EXPLICIT_MOCK", message: "The mock OpenAI provider is enabled." };
+  if (mode === "disabled") return { providerType: "unavailable", reason: "AI_DISABLED", message: "Персональная интерпретация пока не подключена" };
+  if (!hasApiKey) return { providerType: "unavailable", reason: "AI_NOT_CONFIGURED", message: "Персональная интерпретация пока не подключена" };
+  if (environment !== "production" && String(env[LOCAL_OPENAI_OPT_IN] || "").trim().toLowerCase() !== "true") {
+    return {
+      providerType: "unavailable",
+      reason: "LOCAL_OPENAI_OPT_IN_REQUIRED",
+      message: `Real OpenAI is disabled in local development by default. Set ${LOCAL_OPENAI_OPT_IN}=true to explicitly opt in to billable API calls.`,
+    };
+  }
+  return { providerType: "openai", reason: environment === "production" ? "PRODUCTION_REAL" : "LOCAL_EXPLICIT_OPT_IN", message: "The real OpenAI provider is enabled." };
+}
+
+module.exports = {
+  LOCAL_OPENAI_OPT_IN,
+  MockReportProvider,
+  OpenAIReportProvider,
+  UnavailableReportProvider,
+  createReportProvider,
+  resolveReportProviderPolicy,
+};

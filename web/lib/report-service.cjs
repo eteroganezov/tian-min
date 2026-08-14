@@ -95,6 +95,7 @@ async function generateReportRequest(input, options = {}) {
         responseStatus: provider.lastResponseMetadata?.responseStatus || null });
     } catch (error) {
       if (error && error.code === "AI_NOT_CONFIGURED") {
+        if (error.reason === "LOCAL_OPENAI_OPT_IN_REQUIRED") console.warn(`[AI_CONFIGURATION] ${error.message}`);
         return { status: 200, body: { aiStatus: "unavailable", message: "Персональный разбор ещё не создан", hasFullReport: hasFullReport(options.env), presentation, ...fingerprints }, internal: { failure: safeAiFailure(error, "provider_configuration") } };
       }
       lastFailure = safeAiFailure(error);
@@ -162,6 +163,7 @@ function logAiError(error, { model, attempt }) {
     stage: error?.aiStage || "provider.generate",
     status: Number.isInteger(error?.status) ? error.status : null,
     code: error?.code || null,
+    reason: error?.reason || null,
     type: error?.type || error?.name || "Error",
     message: safeAiMessage(error),
     model,

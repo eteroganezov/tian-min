@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const { assertProductionGenerationReady } = require("../lib/generation-config.cjs");
+const { LOCAL_OPENAI_OPT_IN, createReportProvider, resolveReportProviderPolicy } = require("../lib/report-provider.cjs");
 const { registerFonts } = require("../lib/pdf-template-v4.cjs");
 const allFonts = () => ({ regular:"r",bold:"b",serif:"s",serifBold:"sb",cjk:"c" });
 const readyOptions = { resolveFontPaths:allFonts, assertPdfRuntimeReady:()=>({ cjkReady:true }) };
@@ -61,6 +62,44 @@ test("Noto CJK collection selects its Simplified Chinese face for PDFKit", () =>
 
 test("development and automated mock tests do not require production credentials", () => {
   assert.doesNotThrow(() => assertProductionGenerationReady({ NODE_ENV:"test",PAYMENT_MODE:"mock",AI_MODE:"mock" }));
+});
+
+test("development API key alone cannot select the real OpenAI provider", () => {
+  const env={ NODE_ENV:"development",OPENAI_API_KEY:"present-not-real",OPENAI_MODEL:"gpt-test" };
+  assert.deepEqual(resolveReportProviderPolicy(env),{
+    providerType:"unavailable",reason:"LOCAL_OPENAI_OPT_IN_REQUIRED",
+    message:`Real OpenAI is disabled in local development by default. Set ${LOCAL_OPENAI_OPT_IN}=true to explicitly opt in to billable API calls.`,
+  });
+  assert.equal(createReportProvider(env).providerType,"unavailable");
+});
+
+test("blocked local generation explains the explicit billable opt-in without touching the network", async () => {
+  const provider=createReportProvider({ NODE_ENV:"development",OPENAI_API_KEY:"present-not-real",OPENAI_MODEL:"gpt-test" });
+  await assert.rejects(() => provider.generate({}), error =>
+    error.code === "AI_NOT_CONFIGURED"
+      && error.reason === "LOCAL_OPENAI_OPT_IN_REQUIRED"
+      && error.message.includes(`${LOCAL_OPENAI_OPT_IN}=true`)
+      && /billable API calls/.test(error.message));
+});
+
+test("development may select real OpenAI only with explicit local opt-in", () => {
+  const provider=createReportProvider({ NODE_ENV:"development",OPENAI_API_KEY:"present-not-real",OPENAI_MODEL:"gpt-test",[LOCAL_OPENAI_OPT_IN]:"true" });
+  assert.equal(provider.providerType,"openai");
+  assert.equal(provider.model,"gpt-test");
+});
+
+test("test environment blocks real OpenAI even when key and local opt-in leak into it", () => {
+  const env={ NODE_ENV:"test",AI_MODE:"real",OPENAI_API_KEY:"present-not-real",OPENAI_MODEL:"gpt-test",[LOCAL_OPENAI_OPT_IN]:"true" };
+  const provider=createReportProvider(env);
+  assert.equal(provider.providerType,"unavailable");
+  assert.equal(resolveReportProviderPolicy(env).reason,"REAL_OPENAI_DISABLED_IN_TEST");
+});
+
+test("production selects real OpenAI without the local opt-in flag", () => {
+  const env={ NODE_ENV:"production",OPENAI_API_KEY:"present-not-real",OPENAI_MODEL:"gpt-test" };
+  const provider=createReportProvider(env);
+  assert.equal(provider.providerType,"openai");
+  assert.equal(resolveReportProviderPolicy(env).reason,"PRODUCTION_REAL");
 });
 
 test("Railpack deploy image installs the frozen PDF renderer font families", () => {

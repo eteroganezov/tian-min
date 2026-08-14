@@ -79,6 +79,8 @@ After backend changes, restart Node fully and confirm an old process did not sur
 
 The deterministic calculation remains authoritative. AI only interprets the supplied evidence. Real OpenAI generation is opt-in and must never be used for visual QA. Premium Generation & Delivery v1 connects this existing pipeline only after a server-verified legitimate entitlement: authenticated Lorentsen `settled`/paid access or a separate `complimentary_promo` entitlement. Generation uses an atomic persisted claim and explicit `REPORT_GENERATING` / `REPORT_READY` / `REPORT_FAILED` lifecycle. The immutable `personal-report-v4` semantic artifact is stored in the existing report store; PDF is deterministically rendered from that saved artifact and never requires another OpenAI generation.
 
+Development and tests are safe by default: inheriting `OPENAI_API_KEY` does not select the real provider. Local real generation additionally requires `ALLOW_REAL_OPENAI_LOCAL=true`; automated tests block the real provider even if that flag leaks into their environment. Production does not require the local flag and continues to fail closed unless its real OpenAI configuration is complete.
+
 The first real Premium user successfully completed the full production path: `FAMILY0` → `complimentary_promo` entitlement → real OpenAI generation → Report v4 validation → immutable semantic persistence → PDF render → `REPORT_READY` → secure open/download. No user PII is recorded here. Once the semantic report has been persisted, a PDF retry or re-render must reuse it and make **zero** additional OpenAI generation calls.
 
 ## Premium PDF
