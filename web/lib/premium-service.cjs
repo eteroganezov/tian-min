@@ -209,10 +209,10 @@ class PremiumService {
     if (!order || FULFILLED_ORDER_STATUSES.has(order.status) || order.status !== "PAYMENT_PENDING" || !order.currentAttemptId) return order;
     const attempt = await this.orderStore.loadAttempt(order.currentAttemptId);
     if (!attempt) return this.saveOrder(order, paymentOfferChanges("missing_attempt", order.currentAttemptId, this.isoNow()));
-    if (!isActiveUserPaymentSession(attempt)) return this.endPaymentSession(order, attempt, attempt.userSessionEndReason || "expired");
     const legacyUnusable = !attempt.userSessionStatus && attempt.providerStatus === "manual_review" && !attempt.paymentMethod && !order.paymentMethod;
-    const expiresAt = Date.parse(attempt.userSessionExpiresAt || attempt.paymentMethodExpiry || order.paymentSessionExpiresAt || order.paymentMethod?.expiresAt || "");
     if (legacyUnusable) return this.endPaymentSession(order, attempt, "legacy_unusable");
+    if (!isActiveUserPaymentSession(attempt)) return this.endPaymentSession(order, attempt, attempt.userSessionEndReason || "legacy_inactive");
+    const expiresAt = Date.parse(attempt.userSessionExpiresAt || attempt.paymentMethodExpiry || order.paymentSessionExpiresAt || order.paymentMethod?.expiresAt || "");
     if (Number.isFinite(expiresAt) && expiresAt <= this.now().getTime()) return this.endPaymentSession(order, attempt, "expired");
     return order;
   }
@@ -549,7 +549,7 @@ function updateAttempt(attempt, payment, now) {
     userSessionExpiresAt: isActiveUserPaymentSession(attempt) ? methodExpiry || attempt.userSessionExpiresAt : attempt.userSessionExpiresAt,
     nextPollAt: futureIso(new Date(now), payment.retryAfterSeconds || 5), traceId: payment.traceId || attempt.traceId, failureInfo: TERMINAL_STATUSES.has(status) ? { status, at: now } : null, updatedAt: now };
 }
-function isActiveUserPaymentSession(attempt) { return Boolean(attempt && !["cancelled", "expired", "provider_terminal"].includes(attempt.userSessionStatus)); }
+function isActiveUserPaymentSession(attempt) { return attempt?.userSessionStatus === "active"; }
 function paymentOfferChanges(reason, attemptId, now) { return { status: "CHECKOUT_STARTED", lastAttemptId: attemptId || null, currentAttemptId: null, paymentId: null, providerStatus: null, paymentMethod: null, nextPollAt: null, paymentFailureReason: null, paymentSessionStatus: null, paymentSessionExpiresAt: null, paymentSessionEndReason: reason, updatedAt: now }; }
 function safePaymentSource(value) { const source=String(value || "provider_poll"); return new Set(["polling","focus","visibility","pageshow","reload","resume","manual","callback","provider_poll"]).has(source) ? source : "provider_poll"; }
 function futureIso(date, seconds) { return new Date(date.getTime() + Number(seconds || 5) * 1000).toISOString(); }

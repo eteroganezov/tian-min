@@ -72,7 +72,8 @@ const config = {
 function order(providerStatus, overrides = {}) {
   return {
     orderId: "order_payment_ux", amount: 599, currency: "RUB", status: "PAYMENT_PENDING", paymentProvider: "lorentsen",
-    providerStatus, paymentMethod: null, nextPollAt: "2026-08-13T10:00:05Z", paymentFailureReason: null, ...overrides,
+    providerStatus, currentAttemptId: "attempt_current", paymentSessionStatus: "active", paymentMethod: null,
+    nextPollAt: "2026-08-13T10:00:05Z", paymentFailureReason: null, ...overrides,
   };
 }
 
@@ -244,6 +245,39 @@ test("focus/visibility/pageshow coalesce refresh, detect PAID and request fulfil
   assert.equal(calls.filter(call => call.url === "/api/premium/generate").length, 1);
   assert.equal(calls.some(call => call.url === "/api/premium/payment/start"), false);
   assert.match(ui.host.innerHTML, /REPORT_GENERATING|Готовим ваш персональный разбор/);
+});
+
+test("delayed lifecycle response cannot turn a detached FRIEND100 order back into payment checking", async () => {
+  let releaseStatus;
+  const delayedStatus = new Promise(resolve => { releaseStatus = resolve; });
+  const offer = order(null, {
+    status: "CHECKOUT_STARTED", baseAmount: 599, amount: 100, promoCode: "FRIEND100",
+    currentAttemptId: null, paymentId: null, paymentSessionStatus: null, paymentSessionEndReason: "legacy_unusable",
+  });
+  const delayedLegacyManualReview = {
+    ...offer, status: "PAYMENT_PENDING", providerStatus: "manual_review",
+    currentAttemptId: "attempt_legacy", paymentId: "payment_legacy", paymentSessionEndReason: null,
+  };
+  const ui = harness(async url => {
+    if (url.startsWith("/api/premium/order/")) { await delayedStatus; return { ok: true, json: async () => ({ order: delayedLegacyManualReview }) }; }
+    throw new Error(`unexpected ${url}`);
+  });
+  ui.context.renderPaymentState(offer);
+  assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
+  assert.match(ui.host.innerHTML, /FRIEND100/);
+
+  ui.dispatchWindow("focus");
+  ui.document.dispatch("visibilitychange");
+  ui.dispatchWindow("pageshow");
+  await new Promise(resolve => setImmediate(resolve));
+  releaseStatus();
+  await new Promise(resolve => setImmediate(resolve));
+  await new Promise(resolve => setImmediate(resolve));
+
+  assert.match(ui.host.innerHTML, /data-checkout-state="OFFER"/);
+  assert.match(ui.host.innerHTML, /FRIEND100/);
+  assert.match(ui.host.innerHTML, /100/);
+  assert.doesNotMatch(ui.host.innerHTML, /Платёж ещё проверяется/);
 });
 
 test("reload restores the saved free preview and the same purchase without a new payment", async () => {

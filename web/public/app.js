@@ -409,7 +409,10 @@ function renderPaymentState(order) {
   }
   if (order.status === "REPORT_GENERATING") return renderGeneratingState(host,order);
   if (order.accessReason === "complimentary_promo") return renderComplimentaryState(host, order);
-  if (order.paymentProvider === "lorentsen") return renderLorentsenState(host, order);
+  if (order.paymentProvider === "lorentsen") {
+    if (isPaymentOfferOrder(order)) return renderPremiumOffer(host, premiumConfig || configFromOrder(order), { pricing: pricingFromOrder(order) });
+    return renderLorentsenState(host, order);
+  }
   if (order.status === "PAID") return renderPaidState(host, order);
   if (order.paymentFailureReason) {
     host.innerHTML = `<section class="checkout-panel dev-checkout" data-checkout-state="PAYMENT_FAILED"><p class="dev-badge">DEV · Тестовая оплата</p><h3>Оплата не завершена</h3><p>Бесплатная карта остаётся доступной. Можно безопасно повторить попытку.</p><div class="payment-notice error">Тестовый платёж отклонён</div><button type="button" class="premium-button" data-action="retry-payment">Попробовать ещё раз</button></section>`;
@@ -557,7 +560,17 @@ function isTerminalPaymentOrder(order) {
 }
 
 function isActivePaymentOrder(order) {
-  return Boolean(order?.paymentProvider === "lorentsen" && order.status === "PAYMENT_PENDING" && !isTerminalPaymentOrder(order));
+  return Boolean(order?.paymentProvider === "lorentsen" && order.status === "PAYMENT_PENDING" && order.paymentSessionStatus === "active" && order.currentAttemptId && !isTerminalPaymentOrder(order));
+}
+
+function isPaymentOfferOrder(order) {
+  if (order?.paymentProvider !== "lorentsen" || order.paymentSessionEndReason === "expired") return false;
+  if (order.status === "PAYMENT_PENDING") return order.paymentSessionStatus !== "active";
+  return order.status === "CHECKOUT_STARTED" && !order.currentAttemptId && !order.paymentId;
+}
+
+function configFromOrder(order) {
+  return { amount: order.baseAmount ?? order.amount, currency: order.currency, priceIsDevPlaceholder: false };
 }
 
 async function resumeLorentsenPayment(orderId) {
