@@ -148,7 +148,7 @@ function renderFreePreview(data) {
   const current = data.bazi.currentPeriod;
   const currentPalace = data.ziwei.currentPalace;
   const maxElement = Math.max(...data.bazi.elements.map(item => Number(item.value)), 1);
-  return `<section class="free-preview" data-state="FREE_PREVIEW_READY">
+  return `<section class="free-preview" id="free-result" data-state="FREE_PREVIEW_READY" tabindex="-1">
     <header class="preview-cover shell">
       <p class="section-label">Расчёт завершён</p>
       <h2>Ваша персональная карта рассчитана</h2>
@@ -416,7 +416,7 @@ function leaveGenerationFailure() {
   const host = document.querySelector(".premium-action") || resultRoot;
   host.innerHTML = `<button type="button" class="premium-button" data-action="premium">Получить персональный разбор</button><p>Ба-цзы + Цзы Вэй · персональный разбор · PDF-отчёт</p><div class="premium-message" role="status" tabindex="-1" hidden></div>`;
   host.querySelector('[data-action="premium"]')?.addEventListener("click", openPremiumOffer);
-  document.querySelector(".preview-cover, #result-root")?.scrollIntoView?.({ behavior:"smooth", block:"start" });
+  returnToFreeResult();
 }
 
 function renderConsentCheckout(order, options = {}) {
@@ -429,7 +429,7 @@ function renderConsentCheckout(order, options = {}) {
     <label class="consent-check"><input type="checkbox" name="termsAccepted"><span>Я принимаю <a href="${e(config.consent.termsUrl)}" target="_blank" rel="noopener noreferrer">условия покупки сертификата Lorentsen</a> и <a href="${e(config.consent.privacyUrl)}" target="_blank" rel="noopener noreferrer">политику конфиденциальности</a></span></label>
     <label class="consent-check"><input type="checkbox" name="autoRedemptionAccepted"><span>Я согласен, что сертификат, приобретаемый этой оплатой, будет немедленно погашен у партнёра «${e(config.partnerPublicName)}». <a href="${e(config.consent.autoRedemptionTermsUrl)}" target="_blank" rel="noopener noreferrer">Подробнее</a></span></label>
     <button type="button" class="premium-button" data-action="confirm-payment" disabled>${e(options.actionLabel || "Перейти к оплате")}</button>
-    <button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button>
+    <button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button>
     <p>Сумма определяется сервером. После оплаты мы автоматически проверим её статус.</p>
   </section>`;
   const email = host.querySelector('[name="payerEmail"]');
@@ -461,7 +461,7 @@ async function submitLorentsenPayment(orderId, consent, button) {
 function renderLorentsenState(host, order) {
   if (order.status === "PAID" || order.status === "REPORT_GENERATING" || order.status === "REPORT_READY" || order.status === "REPORT_FAILED") return renderPaidState(host, order);
   if (["failed", "expired"].includes(order.providerStatus) || order.paymentFailureReason) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "failed")}"><p class="section-label">Оплата не завершена</p><h3>Платёж не завершён</h3><p>Оплата не прошла. Можно безопасно попробовать ещё раз.</p><button type="button" class="premium-button" data-action="retry-payment">Попробовать снова</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
     host.querySelector('[data-action="retry-payment"]').addEventListener("click", () => restartPremiumFromOffer(host, order));
     host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveTerminalPaymentFlow(host, order));
     return;
@@ -470,10 +470,10 @@ function renderLorentsenState(host, order) {
   const methodExpiresAt = Date.parse(method?.expiresAt || "");
   const methodIsUsable = Boolean(method && (!Number.isFinite(methodExpiresAt) || methodExpiresAt > Date.now()));
   if (methodIsUsable && !["succeeded_pending", "settled", "failed", "expired"].includes(order.providerStatus)) {
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Проверяем статус оплаты…</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="requires_action"><p class="section-label">Оплата полного разбора</p><h3>Отсканируйте QR-код</h3><p>Используйте QR-код или ссылку для оплаты.</p>${method.image ? `<img class="payment-qr" src="${e(method.image)}" alt="QR-код для оплаты">` : ""}${method.link ? `<a class="premium-button payment-link" href="${e(method.link)}" target="_blank" rel="noopener noreferrer">Открыть оплату</a>` : ""}${method.expiresAt ? `<p>QR-код действует до: ${e(new Date(method.expiresAt).toLocaleString("ru-RU"))}</p>` : ""}<div class="payment-notice">Статус платежа проверяется автоматически.</div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — мы проверим эту же покупку.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
   } else {
-    const copy = { preparing: ["Платёж создаётся", "QR-код появится, когда оплата будет готова."], processing: ["Платёж обрабатывается", "Проверяем статус оплаты."], requires_action: ["Проверяем срок действия QR-кода", "Обновляем статус оплаты."], succeeded_pending: ["Оплата принята в обработку", "Подтверждение оплаты может занять немного времени."], manual_review: ["Платёж проверяется", "Проверка занимает больше времени. Новая попытка пока недоступна."], provider_result_unknown: ["Проверяем статус оплаты", "Временная ошибка связи не отменяет существующий QR-код или платёж."] }[order.providerStatus] || ["Готовим оплату", "Пожалуйста, подождите."];
-    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "preparing")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="checkout-progress" aria-label="Проверка оплаты"><i></i></div><p class="payment-recovery-copy">Если деньги уже списаны, не оплачивайте повторно — подтверждение может появиться позже.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить оплату</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к результату</button></section>`;
+    const copy = paymentWaitingCopy(order.providerStatus);
+    host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="${e(order.providerStatus || "provider_result_unknown")}"><p class="section-label">Оплата полного разбора</p><h3>${e(copy[0])}</h3><p>${e(copy[1])}</p><div class="payment-notice">${e(copy[2])}</div><p class="payment-recovery-copy">Если деньги уже списаны, повторно оплачивать не нужно.</p><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
   }
   host.querySelector('[data-action="check-payment"]')?.addEventListener("click", event => checkPaymentNow(event.currentTarget));
   host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
@@ -485,7 +485,7 @@ function leaveLorentsenPaymentFlow(host, order) {
   paymentViewDismissed = true;
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>Платёж не отменён и его статус не изменён. Можно изменить данные рождения и рассчитать новую карту; эта попытка останется связана только с прежними данными.</p><button type="button" class="secondary-checkout-button" data-action="resume-payment">Вернуться к оплате</button></section>`;
   host.querySelector('[data-action="resume-payment"]').addEventListener("click", () => resumeLorentsenPayment(order.orderId));
-  document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  returnToFreeResult();
 }
 
 function restartPremiumFromOffer(host, order) {
@@ -499,7 +499,25 @@ function leaveTerminalPaymentFlow(host, order) {
   clearTimeout(paymentPollTimer);
   activePremiumOrder = order;
   host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PAYMENT_EXIT"><p class="section-label">Персональный разбор</p><h3>Вы вернулись к карте</h3><p>История попытки оплаты сохранена. Когда будете готовы, снова откройте полный персональный разбор.</p></section>`;
-  document.querySelector(".preview-cover, #birth-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  returnToFreeResult();
+}
+
+function paymentWaitingCopy(status) {
+  return {
+    creating: ["Платёж ещё проверяется", "Платёжные данные ещё не получены от платёжного сервиса.", "Покупка сохранена. Новая попытка автоматически не создаётся."],
+    preparing: ["Платёж ещё проверяется", "Платёжный сервис подготавливает данные оплаты.", "Статус обновится автоматически."],
+    processing: ["Платёж ещё проверяется", "Платёжный сервис обрабатывает операцию.", "Статус обновится автоматически."],
+    requires_action: ["Платёж ещё проверяется", "Проверяем актуальное состояние платёжной ссылки.", "Статус обновится автоматически."],
+    succeeded_pending: ["Платёж ещё проверяется", "Оплата принята, подтверждение может занять немного времени.", "После подтверждения доступ откроется автоматически."],
+    manual_review: ["Платёж ещё проверяется", "Проверка занимает больше времени. Новая попытка пока недоступна.", "История платежа и покупка сохранены."],
+    provider_result_unknown: ["Не удалось обновить статус", "Временная ошибка связи не отменяет существующий платёж.", "Попробуйте проверить статус ещё раз немного позже."],
+  }[status] || ["Платёж ещё проверяется", "Ожидаем актуальный статус от платёжного сервиса.", "Покупка сохранена. Новая попытка автоматически не создаётся."];
+}
+
+function returnToFreeResult() {
+  const target = resultRoot.querySelector?.("#free-result") || resultRoot.querySelector?.(".free-preview") || resultRoot;
+  target.focus?.({ preventScroll: true });
+  target.scrollIntoView?.({ behavior: "smooth", block: "start" });
 }
 
 function isTerminalPaymentOrder(order) {
@@ -526,10 +544,10 @@ function schedulePaymentPoll(orderId, nextPollAt) {
 }
 
 async function checkPaymentNow(button) {
-  if (button) { button.disabled = true; button.textContent = "Проверяем оплату…"; }
+  if (button) { button.disabled = true; button.textContent = "Проверяем статус…"; }
   try { await refreshPremiumOrder("manual", { force: true }); }
-  catch (error) { showPremiumError(error.message); }
-  finally { if (button?.isConnected) { button.disabled = false; button.textContent = "Проверить оплату"; } }
+  catch (error) { if (!error.paymentStateRendered) showPremiumError(error.message); }
+  finally { if (button?.isConnected) { button.disabled = false; button.textContent = "Проверить статус"; } }
 }
 
 function premiumOrderUrl(orderId, options = {}) {
@@ -554,10 +572,26 @@ async function refreshPremiumOrder(source, options = {}) {
     else if (isActivePaymentOrder(result.order)) schedulePaymentPoll(result.order.orderId, result.order.nextPollAt);
     return result.order;
   })().catch(error => {
+    const recoveredOrder = error.payload?.order;
+    if (recoveredOrder) {
+      activePremiumOrder = recoveredOrder;
+      restoreFreePreview(error.payload?.freePreview);
+      if (!paymentViewDismissed) renderPaymentCheckError(document.querySelector(".premium-action") || resultRoot, recoveredOrder, error.message);
+      else if (isActivePaymentOrder(recoveredOrder)) schedulePaymentPoll(recoveredOrder.orderId, recoveredOrder.nextPollAt);
+      error.paymentStateRendered = true;
+    }
     if (isActivePaymentOrder(activePremiumOrder)) schedulePaymentPoll(activePremiumOrder.orderId, null);
     throw error;
   }).finally(() => { premiumRefreshPromise = null; });
   return premiumRefreshPromise;
+}
+
+function renderPaymentCheckError(host, order, message) {
+  clearTimeout(paymentPollTimer);
+  host.innerHTML = `<section class="checkout-panel production-checkout" data-checkout-state="PROVIDER_ERROR"><p class="section-label">Оплата полного разбора</p><h3>Не удалось обновить статус</h3><p>${e(message || "Платёжный сервис временно недоступен.")}</p><div class="payment-notice">Существующая покупка сохранена. Повторно оплачивать не нужно.</div><button type="button" class="secondary-checkout-button" data-action="check-payment">Проверить статус</button><button type="button" class="secondary-checkout-button" data-action="leave-payment">Вернуться к карте</button></section>`;
+  host.querySelector('[data-action="check-payment"]').addEventListener("click", event => checkPaymentNow(event.currentTarget));
+  host.querySelector('[data-action="leave-payment"]').addEventListener("click", () => leaveLorentsenPaymentFlow(host, order));
+  schedulePaymentPoll(order.orderId, order.nextPollAt);
 }
 
 function restoreFreePreview(freePreview) {
@@ -642,7 +676,12 @@ async function restorePremiumOrder() {
 async function api(url, body) {
   const response = await fetch(url, body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error || "Не удалось выполнить действие.");
+  if (!response.ok) {
+    const error = new Error(payload.error || "Не удалось выполнить действие.");
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
   return payload;
 }
 

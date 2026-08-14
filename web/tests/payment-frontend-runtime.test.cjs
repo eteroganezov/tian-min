@@ -10,12 +10,14 @@ function element() {
   let html = "";
   const node = {
     hidden: false, value: "", checked: false, disabled: false, validity: { valid: true }, dataset: {}, parentElement: null,
+    scrollCalls: [], focusCalls: [],
     addEventListener(type, listener) { listeners.set(type, listener); },
     dispatch(type, event = {}) { return listeners.get(type)?.({ preventDefault() {}, key: "", target: node, currentTarget:node, ...event }); },
-    appendChild() {}, setAttribute() {}, removeAttribute() {}, scrollIntoView() {}, insertAdjacentHTML() {}, closest() { return null; },
+    appendChild() {}, setAttribute() {}, removeAttribute() {}, scrollIntoView(options) { node.scrollCalls.push(options); }, focus(options) { node.focusCalls.push(options); }, insertAdjacentHTML() {}, closest() { return null; },
     querySelector(selector) {
       if (selector === ".checkout-panel") return html.includes("checkout-panel") ? element() : null;
       if (selector === ".free-preview") return html.includes('class="free-preview"') ? element() : null;
+      if (selector === "#free-result") return html.includes('id="free-result"') ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
       if (selector === ".premium-action") return html.includes("premium-action") ? (children.get(selector) || (children.set(selector, element()), children.get(selector))) : null;
       const action = selector.match(/^\[data-action="([^"]+)"\]$/)?.[1];
       const name = selector.match(/^\[name="([^"]+)"\]$/)?.[1];
@@ -83,7 +85,7 @@ test("expired/failed показывают terminal UX, а возврат не в
   ui.context.renderLorentsenState(ui.host, order("expired", { status: "CHECKOUT_STARTED", paymentFailureReason: "expired" }));
   assert.match(ui.host.innerHTML, /Платёж не завершён/);
   assert.match(ui.host.innerHTML, /Попробовать снова/);
-  assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к результату/);
+  assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к карте/);
   ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
   assert.match(ui.host.innerHTML, /data-checkout-state="PAYMENT_EXIT"/);
   assert.doesNotMatch(ui.host.innerHTML, /resume-payment|Вернуться к оплате/);
@@ -280,11 +282,43 @@ test("manual payment check is available and never starts another payment", async
   const ui = harness(async url => { calls.push(url); return { ok: true, json: async () => ({ order: active }) }; });
   ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
   ui.context.renderPaymentState(active);
-  assert.match(ui.host.innerHTML, /Проверить оплату/);
-  assert.match(ui.host.innerHTML, /не оплачивайте повторно/);
+  assert.match(ui.host.innerHTML, /Проверить статус/);
+  assert.match(ui.host.innerHTML, /повторно оплачивать не нужно/);
   await ui.host.querySelector('[data-action="check-payment"]').dispatch("click");
   assert.equal(calls.some(url => url === "/api/premium/payment/start"), false);
   assert.equal(calls.filter(url => String(url).includes("source=manual")).length, 1);
+});
+
+test("long-lived creating/nonterminal state is static and return targets the restored free result", () => {
+  const ui = harness(async () => ({ ok: true, json: async () => ({}) }));
+  ui.resultRoot.innerHTML = '<section class="free-preview" id="free-result"><div class="premium-action"></div></section>';
+  const host = ui.resultRoot.querySelector(".premium-action");
+  ui.context.renderLorentsenState(host, order("creating"));
+  assert.match(host.innerHTML, /Платёж ещё проверяется/);
+  assert.match(host.innerHTML, /Новая попытка автоматически не создаётся/);
+  assert.doesNotMatch(host.innerHTML, /checkout-progress|Готовим оплату|Пожалуйста, подождите/);
+  host.querySelector('[data-action="leave-payment"]').dispatch("click");
+  const target = ui.resultRoot.querySelector("#free-result");
+  assert.equal(target.scrollCalls.length, 1);
+  assert.equal(target.focusCalls.length, 1);
+});
+
+test("provider GET error replaces stale waiting animation with recoverable status and keeps the same order", async () => {
+  const active = order("processing");
+  const calls = [];
+  const ui = harness(async url => {
+    calls.push(url);
+    return { ok: false, status: 503, json: async () => ({ error: "Статус оплаты временно не удалось проверить.", order: active }) };
+  });
+  ui.context.localStorage.setItem("tianMinOrderId", active.orderId);
+  ui.context.renderPaymentState(active);
+  await ui.host.querySelector('[data-action="check-payment"]').dispatch("click");
+  assert.match(ui.host.innerHTML, /data-checkout-state="PROVIDER_ERROR"/);
+  assert.match(ui.host.innerHTML, /Проверить статус/);
+  assert.match(ui.host.innerHTML, /Повторно оплачивать не нужно/);
+  assert.doesNotMatch(ui.host.innerHTML, /checkout-progress/);
+  assert.equal(calls.some(url => url === "/api/premium/payment/start"), false);
+  assert.equal(ui.context.localStorage.getItem("tianMinOrderId"), active.orderId);
 });
 
 test("terminal retry → offer → FAMILY0 создаёт entitlement без payment POST", async () => {
@@ -315,12 +349,12 @@ test("manual_review/processing не показывают retry, а локаль�
   for (const status of ["manual_review", "processing"]) {
     ui.context.renderLorentsenState(ui.host, order(status));
     assert.doesNotMatch(ui.host.innerHTML, /retry-payment|Обновить QR-код|Попробовать снова/);
-    assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к результату/);
+    assert.match(ui.host.innerHTML, /data-action="leave-payment">Вернуться к карте/);
   }
   ui.context.renderLorentsenState(ui.host, order("requires_action", {
     paymentMethod: { link: "https://pay.example.test/old", image: null, expiresAt: "2020-01-01T00:00:00Z" },
   }));
-  assert.match(ui.host.innerHTML, /Проверяем срок действия QR-кода/);
+  assert.match(ui.host.innerHTML, /актуальное состояние платёжной ссылки/);
   assert.doesNotMatch(ui.host.innerHTML, /data-checkout-state="expired"|Обновить QR-код/);
 });
 
@@ -366,7 +400,7 @@ test("active QR имеет безопасный выход без fake cancel и
   ui.context.renderLorentsenState(ui.host, order("requires_action", {
     paymentMethod: { link: "https://pay.example.test/current", image: null, expiresAt: "2099-01-01T00:00:00Z" },
   }));
-  assert.match(ui.host.innerHTML, /Вернуться к результату/);
+  assert.match(ui.host.innerHTML, /Вернуться к карте/);
   assert.doesNotMatch(ui.host.innerHTML, /Отменить оплату/);
   ui.host.querySelector('[data-action="leave-payment"]').dispatch("click");
   assert.match(ui.host.innerHTML, /Платёж не отменён и его статус не изменён/);

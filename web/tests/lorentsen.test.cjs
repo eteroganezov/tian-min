@@ -459,7 +459,7 @@ test("retryable create failure повторяет тот же attempt, idempoten
   assert.deepEqual(provider.createCalls[0].requestBody, provider.createCalls[1].requestBody);
 });
 
-test("reload восстанавливает active attempt через тот же idempotent create и сохраняет payment method", async () => {
+test("reload не повторяет provider create, а explicit start сохраняет тот же idempotent attempt", async () => {
   const store = new MemoryOrderStore();
   const provider = new FakeLorentsenProvider();
   let calls = 0;
@@ -480,8 +480,12 @@ test("reload восстанавливает active attempt через тот ж�
   const order = (await ctx.service.createCheckout(birthInput)).body.order;
   assert.equal((await ctx.service.startPayment({ orderId: order.orderId, ...validConsent })).status, 503);
   current = new Date("2026-08-12T10:00:07Z");
-  const recovered = await ctx.service.getOrder(order.orderId);
-  assert.equal(recovered.status, 200);
+  const reloaded = await ctx.service.getOrder(order.orderId, { refresh: true, source: "reload" });
+  assert.equal(reloaded.status, 200);
+  assert.equal(reloaded.body.order.providerStatus, "provider_result_unknown");
+  assert.equal(reloaded.body.order.paymentId, null);
+  assert.equal(provider.createCalls.length, 1);
+  const recovered = await ctx.service.startPayment({ orderId: order.orderId, ...validConsent });
   assert.equal(recovered.body.order.providerStatus, "requires_action");
   assert.equal(recovered.body.order.paymentId, "pay_recovered");
   assert.equal(recovered.body.order.paymentMethod.link, "https://pay.example/exact");
@@ -521,6 +525,21 @@ test("reload использует payment_public_id из durable attempt, есл
   assert.equal(recovered.body.order.paymentMethod.link, "https://pay.example/exact");
   assert.equal(ctx.provider.createCalls.length, 1);
   assert.deepEqual(ctx.provider.getCalls, [started.body.order.paymentId]);
+});
+
+test("status refresh для creating attempt без payment_public_id не вызывает provider POST", async () => {
+  const ctx = serviceSetup([]);
+  const publicCreated = (await ctx.service.createCheckout(birthInput)).body.order;
+  const stored = await ctx.orderStore.load(publicCreated.orderId);
+  const attempt = ctx.service.buildAttempt(stored, { email: validConsent.email }, 1);
+  await ctx.orderStore.saveAttempt(attempt);
+  await ctx.orderStore.save({ ...stored, status: "PAYMENT_PENDING", currentAttemptId: attempt.attemptId, providerStatus: "creating", paymentId: null });
+  const refreshed = await ctx.service.getOrder(stored.orderId, { refresh: true, source: "manual" });
+  assert.equal(refreshed.status, 200);
+  assert.equal(refreshed.body.order.providerStatus, "creating");
+  assert.equal(refreshed.body.order.currentAttemptId, attempt.attemptId);
+  assert.equal(ctx.provider.createCalls.length, 0);
+  assert.equal(ctx.provider.getCalls.length, 0);
 });
 
 test("create failure пишет только redacted structural diagnostics", async () => {

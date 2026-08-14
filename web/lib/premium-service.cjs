@@ -336,7 +336,7 @@ class PremiumService {
       const attempt = order.currentAttemptId ? await this.orderStore.loadAttempt(order.currentAttemptId) : null;
       if (attempt && ACTIVE_PROVIDER_STATUSES.has(attempt.providerStatus)) {
         if (attempt.paymentPublicId) return this.finalizeOrderResult(orderId, this.reconcilePayment(attempt.paymentPublicId, { source: options.source }), options);
-        return this.finalizeOrderResult(orderId, this.createProviderPayment(order, attempt), options);
+        return this.finalizeOrderResult(orderId, success(200, order), options);
       }
     }
     if (order.status === "REPORT_GENERATING") {
