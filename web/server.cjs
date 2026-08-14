@@ -97,8 +97,9 @@ async function handlePremiumDelivery(request,response,premiumService) {
 
 function reportContentDisposition(disposition,personalizedFilename) {
   const utf8Filename=String(personalizedFilename || PREMIUM_REPORT_FILENAME);
+  const asciiFilename=/^[A-Za-z0-9._'-]+$/u.test(utf8Filename) ? utf8Filename : PREMIUM_REPORT_FILENAME;
   const encodedFilename=encodeURIComponent(utf8Filename).replace(/['()*]/gu,character=>`%${character.codePointAt(0).toString(16).toUpperCase()}`);
-  return `${disposition}; filename="${PREMIUM_REPORT_FILENAME}"; filename*=UTF-8''${encodedFilename}`;
+  return `${disposition}; filename="${asciiFilename}"; filename*=UTF-8''${encodedFilename}`;
 }
 
 async function handleLorentsenWebhook(request, response, premiumService) {

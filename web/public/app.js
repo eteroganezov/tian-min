@@ -629,7 +629,7 @@ function renderGeneratingState(host,order) {
 function renderReadyState(host, order) {
   clearTimeout(paymentPollTimer);
   const url=`/api/premium/report/${encodeURIComponent(order.reportAccessToken)}/tian-min-personal-report.pdf`;
-  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор</p><h3>Ваш персональный разбор готов</h3><p>Сохраните PDF, чтобы вернуться к нему в любое время.</p><a class="premium-button" data-action="download-report" href="${e(`${url}?download=1`)}" download="tian-min-personal-report.pdf">Сохранить PDF</a><a class="secondary-checkout-button" data-action="open-report" href="${e(url)}" target="_blank" rel="noopener noreferrer">Открыть отчёт</a></section>`;
+  host.innerHTML = `<section class="checkout-panel ready-state" data-checkout-state="REPORT_READY"><p class="section-label">Персональный разбор</p><h3>Ваш персональный разбор готов</h3><p>Сохраните PDF, чтобы вернуться к нему в любое время.</p><a class="premium-button" data-action="download-report" href="${e(`${url}?download=1`)}" download>Сохранить PDF</a><a class="secondary-checkout-button" data-action="open-report" href="${e(url)}" target="_blank" rel="noopener noreferrer">Открыть отчёт</a></section>`;
 }
 
 function scheduleGenerationPoll(orderId) {

@@ -203,6 +203,20 @@ test("open/download routes set inline vs attachment and never expose internal fi
     assert.deepEqual(deliveredTokens,[token,token,token,"invalid"]);
     assert.equal(open.headers["Referrer-Policy"],"no-referrer");
     assert.equal(open.headers["Cache-Control"],"private, no-store");
+    assert.equal(open.headers.Location,undefined); assert.equal(download.headers.Location,undefined);
+  }finally{server.close();}
+});
+
+test("ASCII personalized filename is also used as the legacy Content-Disposition fallback",async()=>{
+  const premiumService={deliver:async()=>({status:200,buffer:Buffer.from("%PDF-route"),filename:"Tian-Min_Eduard_1995.pdf"})};
+  const server=createServer({premiumService});
+  try{
+    const token="A".repeat(43);
+    const open=await get(server,"/api/premium/report/"+token+"/tian-min-personal-report.pdf");
+    const download=await get(server,"/api/premium/report/"+token+"/tian-min-personal-report.pdf?download=1");
+    const expected="Tian-Min_Eduard_1995.pdf";
+    assert.equal(open.headers["Content-Disposition"],`inline; filename="${expected}"; filename*=UTF-8''${expected}`);
+    assert.equal(download.headers["Content-Disposition"],`attachment; filename="${expected}"; filename*=UTF-8''${expected}`);
   }finally{server.close();}
 });
 
@@ -236,6 +250,8 @@ test("customer UX contains generating, failed, ready, open/download and same-bro
   assert.match(source,/Вернуться к результату/); assert.match(source,/reportGenerationAttempt:order\.reportGenerationAttempt/);
   assert.match(source,/Ваш персональный разбор готов/); assert.match(source,/Сохраните PDF, чтобы вернуться к нему в любое время\./);
   assert.match(source,/class="premium-button" data-action="download-report"[^>]*>Сохранить PDF</);
+  assert.match(source,/data-action="download-report"[^>]*download>Сохранить PDF</);
+  assert.doesNotMatch(source,/data-action="download-report"[^>]*download="tian-min-personal-report\.pdf"/);
   assert.match(source,/class="secondary-checkout-button" data-action="open-report"[^>]*>Открыть отчёт</);
   assert.ok(source.indexOf('data-action="download-report"') < source.indexOf('data-action="open-report"'));
   assert.match(source,/\/api\/premium\/report\/\$\{encodeURIComponent\(order\.reportAccessToken\)\}\/tian-min-personal-report\.pdf/);
