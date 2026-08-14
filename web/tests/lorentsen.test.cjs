@@ -95,19 +95,19 @@ test("актуальный direct data contract одинаково работа�
   });
 });
 
-test("authenticated GET принимает confirmed settlement + redeemed certificate как authoritative settled", async () => {
+test("authenticated GET принимает succeeded_pending + redeemed certificate как authoritative settled", async () => {
   const entries = [];
   const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: { info: (...args) => entries.push(args) }, fetch: async () => response(200, { data: {
     payment_public_id: "01REDEEMED", external_order_id: "order_redeemed_1", payment_status: "succeeded_pending",
-    settlement_status: "credited", partner_credit: { amount_minor: 10000, currency: "RUB" },
-    certificate: { public_id: "certificate_private", status: "active", redemption_status: "redeemed", redeemed_at: "2026-08-14T14:10:00Z" },
+    settlement_status: "pending", partner_credit: { amount_minor: 10000, currency: "RUB" },
+    certificate: { public_id: "certificate_private", status: "redeemed", redemption_status: "redeemed", redeemed_at: "2026-08-14T14:10:00Z" },
     retry_after_seconds: 5,
   }, request_id: "request-redeemed" }) });
   const result = await provider.getPaymentStatus("01REDEEMED");
   assert.equal(result.providerPaymentStatus, "succeeded_pending");
   assert.equal(result.status, "settled");
   assert.deepEqual(result.settlement, {
-    confirmed: true, settlementStatus: "credited", certificateStatus: "active", redemptionStatus: "redeemed", redeemedAt: "2026-08-14T14:10:00.000Z",
+    confirmed: true, settlementStatus: "pending", certificateStatus: "redeemed", redemptionStatus: "redeemed", redeemedAt: "2026-08-14T14:10:00.000Z",
   });
   const diagnostic = JSON.parse(entries[0][1]);
   assert.equal(diagnostic.settlementConfirmed, true);
@@ -122,6 +122,16 @@ test("succeeded_pending без полного settlement/redemption proof ост
   } }) });
   const result = await provider.getPaymentStatus("01INCOMPLETE");
   assert.equal(result.status, "succeeded_pending");
+  assert.equal(result.settlement.confirmed, false);
+});
+
+test("redeemed certificate без успешного customer payment status не авторизует PAID", async () => {
+  const provider = new LorentsenPaymentProvider({ env: lorentsenEnv(), logger: silentLogger, fetch: async () => response(200, { data: {
+    payment_public_id: "01REVIEWREDEEMED", external_order_id: "order_review_redeemed_1", payment_status: "manual_review",
+    settlement_status: "pending", certificate: { status: "redeemed", redemption_status: "redeemed", redeemed_at: "2026-08-14T14:10:00Z" },
+  } }) });
+  const result = await provider.getPaymentStatus("01REVIEWREDEEMED");
+  assert.equal(result.status, "manual_review");
   assert.equal(result.settlement.confirmed, false);
 });
 

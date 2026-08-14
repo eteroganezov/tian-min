@@ -181,13 +181,21 @@ function describePaymentResponse(payload) {
 }
 
 function normalizeSettlementProof(payment) {
+  const paymentStatus = safeDiagnosticToken(payment?.payment_status ?? payment?.status)?.toLowerCase() || null;
   const settlementStatus = safeDiagnosticToken(payment?.settlement_status)?.toLowerCase() || null;
   const certificateStatus = safeDiagnosticToken(payment?.certificate?.status)?.toLowerCase() || null;
   const redemptionStatus = safeDiagnosticToken(payment?.certificate?.redemption_status)?.toLowerCase() || null;
   const redeemedAt = validDate(payment?.certificate?.redeemed_at) ? new Date(payment.certificate.redeemed_at).toISOString() : null;
   const settlementConfirmed = new Set(["settled", "completed", "credited"]).has(settlementStatus);
-  const redemptionConfirmed = new Set(["redeemed", "completed", "settled"]).has(redemptionStatus) && Boolean(redeemedAt);
-  return { confirmed: settlementConfirmed && redemptionConfirmed, settlementStatus, certificateStatus, redemptionStatus, redeemedAt };
+  const redemptionConfirmed = certificateStatus === "redeemed" && redemptionStatus === "redeemed" && Boolean(redeemedAt);
+  const customerPaymentSucceeded = new Set(["succeeded_pending", "settled"]).has(paymentStatus);
+  return {
+    confirmed: redemptionConfirmed && (settlementConfirmed || customerPaymentSucceeded),
+    settlementStatus,
+    certificateStatus,
+    redemptionStatus,
+    redeemedAt,
+  };
 }
 
 function normalizePaymentMethod(value) {
